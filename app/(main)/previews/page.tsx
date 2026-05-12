@@ -404,6 +404,13 @@ export default function PreviewsPage() {
               const jobFailed =
                 report.status === "error" ||
                 (report as any).job_status === "error";
+              const canRetryFailedJob =
+                jobFailed &&
+                (report.reportType === "asset" || report.reportType === "lotListing") &&
+                Boolean(
+                  (report as any).preview_data ||
+                    (Array.isArray((report as any).lots) && (report as any).lots.length > 0)
+                );
 
               return (
                 <SurfaceCard key={report._id} sx={{ p: 2.5 }}>
@@ -496,6 +503,19 @@ export default function PreviewsPage() {
                             )}
                           </>
                         )}
+
+                        {canRetryFailedJob ? (
+                          <Button
+                            variant="outlined"
+                            startIcon={<RefreshRounded />}
+                            onClick={() => handleQuickResubmit(report)}
+                            disabled={resubmitting === report._id}
+                          >
+                            {resubmitting === report._id
+                              ? "Retrying..."
+                              : "Retry generation"}
+                          </Button>
+                        ) : null}
 
                         <Button
                           color="error"
