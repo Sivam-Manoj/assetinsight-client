@@ -7,13 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import {
-  CssBaseline,
-  GlobalStyles,
-  ThemeProvider,
-  alpha,
-  createTheme,
-} from "@mui/material";
+import { ThemeProvider, createTheme } from "@mui/material";
 
 type ColorMode = "light" | "dark";
 
@@ -138,14 +132,6 @@ export function ColorModeProvider({
         },
       },
       components: {
-        MuiCssBaseline: {
-          styleOverrides: {
-            body: {
-              backgroundColor: "var(--app-bg)",
-              color: "var(--app-text)",
-            },
-          },
-        },
         MuiPaper: {
           styleOverrides: {
             root: {
@@ -199,72 +185,6 @@ export function ColorModeProvider({
   return (
     <ColorModeContext.Provider value={contextValue}>
       <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <GlobalStyles
-          styles={{
-            ":root": {
-              colorScheme: mode,
-              "--app-bg": mode === "dark" ? "#07111f" : "#eef3f9",
-              "--app-panel": mode === "dark" ? "#0f1b2d" : "#ffffff",
-              "--app-panel-alt": mode === "dark" ? "#132238" : "#f8fafc",
-              "--app-panel-soft":
-                mode === "dark"
-                  ? "rgba(15, 27, 45, 0.78)"
-                  : "rgba(255, 255, 255, 0.82)",
-              "--app-text": mode === "dark" ? "#e5eefc" : "#0f172a",
-              "--app-text-muted": mode === "dark" ? "#94a3b8" : "#475569",
-              "--app-border":
-                mode === "dark"
-                  ? "rgba(148, 163, 184, 0.16)"
-                  : "rgba(15, 23, 42, 0.08)",
-              "--app-accent": mode === "dark" ? "#fb7185" : "#e11d48",
-              "--app-accent-soft":
-                mode === "dark"
-                  ? "rgba(251, 113, 133, 0.16)"
-                  : "rgba(225, 29, 72, 0.08)",
-              "--app-shadow-shell":
-                mode === "dark"
-                  ? "0 22px 70px rgba(2, 6, 23, 0.48)"
-                  : "0 20px 60px rgba(15, 23, 42, 0.08)",
-              "--app-shadow-card":
-                mode === "dark"
-                  ? "0 20px 45px rgba(2, 6, 23, 0.36)"
-                  : "0 16px 40px rgba(15, 23, 42, 0.08)",
-              "--app-shadow-modal":
-                mode === "dark"
-                  ? "0 30px 90px rgba(2, 6, 23, 0.58)"
-                  : "0 28px 90px rgba(15, 23, 42, 0.18)",
-              "--app-overlay":
-                mode === "dark"
-                  ? "linear-gradient(180deg, rgba(7,17,31,0.96) 0%, rgba(7,17,31,0.78) 100%)"
-                  : "linear-gradient(180deg, rgba(255,255,255,0.84) 0%, rgba(238,243,249,0.94) 100%)",
-            },
-            "*": {
-              scrollbarWidth: "thin",
-              scrollbarColor:
-                mode === "dark"
-                  ? "rgba(148,163,184,0.3) transparent"
-                  : "rgba(148,163,184,0.4) transparent",
-            },
-            "::-webkit-scrollbar": {
-              width: 10,
-              height: 10,
-            },
-            "::-webkit-scrollbar-thumb": {
-              backgroundColor:
-                mode === "dark"
-                  ? "rgba(148,163,184,0.22)"
-                  : "rgba(148,163,184,0.38)",
-              borderRadius: 999,
-            },
-            "::selection": {
-              backgroundColor: alpha(
-                mode === "dark" ? "#fb7185" : "#e11d48",
-                0.28
-              ),
-            },
-          }}
-        />
         {children}
       </ThemeProvider>
     </ColorModeContext.Provider>

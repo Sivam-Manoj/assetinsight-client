@@ -1,44 +1,40 @@
 "use client";
 
-import { motion, type Variants } from "framer-motion";
-import Surface from "./Surface";
+import { motion } from "framer-motion";
 import { featureCards } from "../data/constants";
+import { reveal } from "./motion";
+import Surface from "./Surface";
 
-interface FeatureGridProps {
-  reveal: Variants;
-}
-
-export default function FeatureGrid({ reveal }: FeatureGridProps) {
+export default function FeatureGrid() {
   return (
-    <section className="mt-20 grid gap-4 md:grid-cols-2 xl:grid-cols-4 relative z-10">
-      {featureCards.map((item, index) => (
-        <motion.div
-          key={item.title}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.25 }}
-          variants={reveal}
-          custom={0.04 + index * 0.05}
-          whileHover={{ y: -8 }}
-        >
-          <Surface className="group h-full rounded-[26px] p-5 transition duration-300 backdrop-blur-xl">
-            <div
-              className="mb-5 inline-flex rounded-2xl p-3 transition duration-300 group-hover:scale-105"
-              style={{
-                background:
-                  "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 16%, transparent) 0%, rgba(37,99,235,0.12) 100%)",
-                color: "var(--app-accent)",
-              }}
-            >
-              <item.icon className="h-5 w-5" />
-            </div>
-            <h3 className="text-xl font-black tracking-[-0.03em]">{item.title}</h3>
-            <p className="mt-3 text-sm leading-7" style={{ color: "var(--app-text-muted)" }}>
-              {item.description}
-            </p>
-          </Surface>
-        </motion.div>
-      ))}
+    <section id="workflow" className="relative z-10 mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mb-8 max-w-3xl">
+        <p className="text-sm font-bold uppercase text-[var(--welcome-primary)]">Workflow</p>
+        <h2 className="mt-3 text-3xl font-black leading-tight text-[var(--welcome-text)] sm:text-4xl">
+          Built around the work your team repeats every day.
+        </h2>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {featureCards.map((item, index) => (
+          <motion.div
+            key={item.title}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.25 }}
+            variants={reveal}
+            custom={0.04 + index * 0.04}
+          >
+            <Surface className="h-full p-5 transition hover:-translate-y-1">
+              <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--welcome-primary-soft)] text-[var(--welcome-primary)]">
+                <item.icon className="h-5 w-5" />
+              </div>
+              <h3 className="text-lg font-black text-[var(--welcome-text)]">{item.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-[var(--welcome-muted)]">{item.description}</p>
+            </Surface>
+          </motion.div>
+        ))}
+      </div>
     </section>
   );
 }

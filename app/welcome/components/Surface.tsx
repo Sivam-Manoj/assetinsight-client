@@ -1,19 +1,17 @@
-import React from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 interface SurfaceProps {
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 export default function Surface({ children, className = "", style }: SurfaceProps) {
   return (
     <div
-      className={`border shadow-[var(--app-shadow-card)] backdrop-blur-sm ${className}`}
+      className={`rounded-lg border bg-[var(--welcome-surface)] shadow-[var(--welcome-shadow)] ${className}`}
       style={{
-        borderColor: "var(--app-border)",
-        background:
-          "linear-gradient(180deg, color-mix(in srgb, var(--app-panel) 92%, transparent) 0%, color-mix(in srgb, var(--app-panel-alt) 88%, transparent) 100%)",
+        borderColor: "var(--welcome-border)",
         ...style,
       }}
     >

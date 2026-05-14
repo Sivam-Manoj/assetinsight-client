@@ -1,158 +1,141 @@
 "use client";
 
-import { motion, type Variants } from "framer-motion";
-import { BarChart3, Clock3 } from "lucide-react";
-import { useColorMode } from "@/components/providers/ColorModeProvider";
-import Surface from "./Surface";
-import { commandRows } from "../data/constants";
+import { motion } from "framer-motion";
+import { Activity, ArrowUpRight, CheckCircle2 } from "lucide-react";
+import {
+  chartBars,
+  dashboardRows,
+  insightCards,
+  reviewSteps,
+  workflowLanes,
+} from "../data/constants";
+import { reveal } from "./motion";
 
-interface OperationsCockpitProps {
-  reveal: Variants;
-}
-
-export default function OperationsCockpit({ reveal }: OperationsCockpitProps) {
-  const { resolvedTheme } = useColorMode();
-  const isDark = resolvedTheme === "dark";
-
+export default function OperationsCockpit() {
   return (
     <motion.div
       initial="hidden"
       animate="visible"
       variants={reveal}
-      custom={0.18}
+      custom={0.14}
       className="relative z-10 w-full"
     >
-      <Surface className="relative overflow-hidden rounded-[28px] p-4 sm:p-5 w-full backdrop-blur-xl">
-        <motion.div
-          aria-hidden
-          className="pointer-events-none absolute -right-10 top-0 h-48 w-48 rounded-full blur-3xl"
-          animate={{ x: [0, -20, 0], y: [0, 16, 0], scale: [1, 1.08, 1] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-          style={{
-            background: isDark ? "rgba(124,58,237,0.24)" : "rgba(124,58,237,0.12)",
-          }}
-        />
-
-        <div className="relative space-y-4">
-          <div className="flex items-center justify-between rounded-2xl border px-4 py-3"
-            style={{
-              borderColor: "var(--app-border)",
-              background: "color-mix(in srgb, var(--app-panel) 88%, transparent)",
-            }}
-          >
+      <div className="rounded-lg border border-[var(--welcome-border)] bg-[var(--welcome-console)] p-3 shadow-[var(--welcome-shadow-strong)]">
+        <div className="rounded-lg border border-[var(--welcome-border)] bg-[var(--welcome-surface)]">
+          <div className="flex items-center justify-between border-b border-[var(--welcome-border)] px-4 py-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em]" style={{ color: "var(--app-text-muted)" }}>
-                Command view
-              </p>
-              <h2 className="mt-1 text-xl font-black tracking-[-0.03em]">
+              <p className="text-xs font-semibold uppercase text-[var(--welcome-muted)]">
                 Operations cockpit
+              </p>
+              <h2 className="mt-1 text-lg font-black text-[var(--welcome-text)]">
+                Work moving today
               </h2>
             </div>
-            <div
-              className="rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-[0.18em]"
-              style={{
-                background: "color-mix(in srgb, var(--app-accent) 12%, transparent)",
-                color: "var(--app-accent)",
-              }}
-            >
+            <div className="inline-flex items-center gap-2 rounded-md bg-[var(--welcome-success-soft)] px-2.5 py-1.5 text-xs font-bold text-[var(--welcome-success)]">
+              <Activity className="h-3.5 w-3.5" />
               Live
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {commandRows.map((item, index) => (
-              <motion.div
-                key={item.label}
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.22 + index * 0.06 }}
-                whileHover={{ y: -6 }}
-              >
-                <Surface className="rounded-2xl p-4 h-full">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--app-text-muted)" }}>
-                        {item.label}
-                      </p>
-                      <p className="mt-3 text-3xl font-black tracking-[-0.05em]">{item.value}</p>
-                    </div>
-                    <div className="h-3 w-3 rounded-[4px] shrink-0" style={{ background: item.tone }} />
-                  </div>
-                </Surface>
-              </motion.div>
+          <div className="grid gap-px bg-[var(--welcome-border)] sm:grid-cols-3">
+            {workflowLanes.map((item) => (
+              <div key={item.label} className="bg-[var(--welcome-surface)] p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase text-[var(--welcome-muted)]">
+                    {item.status}
+                  </span>
+                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: item.tone }} />
+                </div>
+                <p className="mt-3 text-3xl font-black text-[var(--welcome-text)]">{item.value}</p>
+                <p className="mt-1 text-sm text-[var(--welcome-muted)]">{item.label}</p>
+              </div>
             ))}
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
-            <Surface className="rounded-2xl p-4">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4" style={{ color: "var(--app-accent)" }} />
-                <p className="text-sm font-bold">Status cadence</p>
+          <div className="grid gap-px bg-[var(--welcome-border)] lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="bg-[var(--welcome-surface)] p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-sm font-bold text-[var(--welcome-text)]">Report pipeline</p>
+                <ArrowUpRight className="h-4 w-4 text-[var(--welcome-primary)]" />
               </div>
-              <div className="mt-5 space-y-4">
-                {[
-                  { label: "Reports finalized", width: "82%" },
-                  { label: "Reviews completed", width: "68%" },
-                  { label: "Auction lots assembled", width: "74%" },
-                ].map((row) => (
-                  <div key={row.label}>
-                    <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--app-text-muted)" }}>
-                      <span>{row.label}</span>
-                      <span>{row.width}</span>
+              <div className="space-y-3">
+                {dashboardRows.map((row) => (
+                  <div key={row.name} className="rounded-lg border border-[var(--welcome-border)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-[var(--welcome-text)]">
+                          {row.name}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--welcome-muted)]">{row.owner}</p>
+                      </div>
+                      <span className="shrink-0 rounded-md bg-[var(--welcome-bg-soft)] px-2 py-1 text-xs font-semibold text-[var(--welcome-muted)]">
+                        {row.status}
+                      </span>
                     </div>
-                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "color-mix(in srgb, var(--app-border) 70%, transparent)" }}>
+                    <div className="mt-3 h-2 overflow-hidden rounded-sm bg-[var(--welcome-bg-soft)]">
                       <motion.div
-                        className="h-full rounded-full"
-                        animate={{ width: [row.width, `calc(${row.width} - 6%)`, row.width] }}
-                        transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
-                        style={{
-                          width: row.width,
-                          background:
-                            "linear-gradient(90deg, color-mix(in srgb, var(--app-accent) 84%, #ffffff 16%) 0%, #2563eb 100%)",
-                        }}
+                        className="h-full rounded-sm bg-[var(--welcome-primary)]"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${row.progress}%` }}
+                        transition={{ duration: 0.75, delay: 0.15 }}
                       />
                     </div>
                   </div>
                 ))}
               </div>
-            </Surface>
+            </div>
 
-            <Surface className="rounded-2xl p-4">
-              <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4" style={{ color: "var(--app-accent)" }} />
-                <p className="text-sm font-bold">Priority timeline</p>
-              </div>
+            <div className="bg-[var(--welcome-surface)] p-4">
+              <p className="text-sm font-bold text-[var(--welcome-text)]">Review path</p>
               <div className="mt-4 space-y-3">
-                {[
-                  "New intake logged",
-                  "Review queue prepared",
-                  "Client-ready output delivered",
-                ].map((item, index) => (
-                  <div key={item} className="flex gap-3">
+                {reviewSteps.map((step, index) => (
+                  <div key={step} className="flex gap-3">
                     <div className="flex flex-col items-center">
-                      <div
-                        className="h-3.5 w-3.5 rounded-[4px] shrink-0"
+                      <CheckCircle2
+                        className="h-4 w-4"
                         style={{
-                          background: index === 2 ? "#059669" : "var(--app-accent)",
+                          color:
+                            index === reviewSteps.length - 1
+                              ? "var(--welcome-success)"
+                              : "var(--welcome-primary)",
                         }}
                       />
-                      {index < 2 ? (
-                        <div
-                          className="mt-1 h-10 w-px"
-                          style={{ background: "var(--app-border)" }}
-                        />
+                      {index < reviewSteps.length - 1 ? (
+                        <span className="mt-1 h-7 w-px bg-[var(--welcome-border)]" />
                       ) : null}
                     </div>
-                    <p className="pt-[-2px] text-sm leading-6" style={{ color: "var(--app-text-muted)" }}>
-                      {item}
-                    </p>
+                    <p className="text-sm leading-5 text-[var(--welcome-muted)]">{step}</p>
                   </div>
                 ))}
               </div>
-            </Surface>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                {insightCards.map((item) => (
+                  <div key={item.label} className="rounded-lg border border-[var(--welcome-border)] p-3">
+                    <item.icon className="h-4 w-4 text-[var(--welcome-primary)]" />
+                    <p className="mt-3 text-xl font-black text-[var(--welcome-text)]">{item.value}</p>
+                    <p className="mt-1 text-xs text-[var(--welcome-muted)]">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-[var(--welcome-border)] p-4">
+            <div className="flex h-28 items-end gap-2">
+              {chartBars.map((height, index) => (
+                <motion.div
+                  key={`${height}-${index}`}
+                  className="min-w-0 flex-1 rounded-sm bg-[var(--welcome-chart)]"
+                  initial={{ height: "18%" }}
+                  animate={{ height: `${height}%` }}
+                  transition={{ duration: 0.7, delay: index * 0.04 }}
+                />
+              ))}
+            </div>
           </div>
         </div>
-      </Surface>
+      </div>
     </motion.div>
   );
 }

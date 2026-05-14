@@ -1,81 +1,118 @@
 import {
+  BarChart3,
+  BellRing,
+  Building2,
+  ClipboardCheck,
   FileSpreadsheet,
   Layers3,
-  Users,
+  LockKeyhole,
   ShieldCheck,
-  BellRing,
-  Smartphone,
-  Building2,
-  BarChart3,
+  Users,
 } from "lucide-react";
+
+export const navItems = ["Workflow", "Controls", "Security"];
+
+export const heroMetrics = [
+  { value: "4", label: "report tracks" },
+  { value: "42", label: "lots in queue" },
+  { value: "82%", label: "review cadence" },
+];
+
+export const workflowLanes = [
+  {
+    label: "Valuation intake",
+    status: "Active",
+    value: "18",
+    tone: "#dc2626",
+  },
+  {
+    label: "Reports in review",
+    status: "Pending",
+    value: "7",
+    tone: "#2563eb",
+  },
+  {
+    label: "Auction lots ready",
+    status: "Queued",
+    value: "42",
+    tone: "#16a34a",
+  },
+];
+
+export const reviewSteps = [
+  "Client request received",
+  "Asset photos organized",
+  "Valuation review assigned",
+  "Export package prepared",
+];
 
 export const featureCards = [
   {
-    title: "Structured appraisal reporting",
+    title: "Structured valuation reports",
     description:
-      "Build polished valuation outputs with clean sections, method visibility, and export-ready presentation.",
+      "Create consistent asset, real estate, and salvage reports with cleaner inputs and export-ready outputs.",
     icon: FileSpreadsheet,
   },
   {
-    title: "Auction and lot management",
+    title: "Auction lot preparation",
     description:
-      "Organize assets, lot groupings, and operational details in one workspace built for auction delivery.",
+      "Track assets, categories, images, lot details, and operational notes before a listing is ready.",
     icon: Layers3,
   },
   {
-    title: "Operational oversight",
+    title: "Team review workflow",
     description:
-      "Keep teams aligned with activity tracking, workflow visibility, and faster handoffs between staff.",
+      "Keep appraisers, admins, and operations staff aligned around approvals, revisions, and handoffs.",
     icon: Users,
   },
   {
-    title: "Secure client delivery",
+    title: "Secure delivery",
     description:
-      "Maintain confidence with protected access, clear status control, and dependable document handling.",
+      "Control access, organize generated files, and keep client-ready report packages easy to find.",
     icon: ShieldCheck,
   },
 ];
 
-export const workflowPillars = [
-  "Prepare valuations with consistent data structure and approval-ready outputs.",
-  "Track team actions, reminders, and progress without losing operational context.",
-  "Support desktop and mobile usage with responsive workflows and clear navigation.",
-  "Present a more credible front to clients with sharper reporting and delivery tools.",
-];
-
-export const trustStats = [
-  { value: "4", label: "valuation tracks" },
-  { value: "6+", label: "core workflow areas" },
-  { value: "24/7", label: "team visibility" },
-  { value: "Web + mobile", label: "responsive access" },
-];
-
-export const commandRows = [
-  { label: "New valuation requests", value: "18", tone: "#e11d48" },
-  { label: "Reports in review", value: "07", tone: "#2563eb" },
-  { label: "Auction lots queued", value: "42", tone: "#7c3aed" },
-  { label: "Follow-ups today", value: "13", tone: "#059669" },
-];
-
-export const credibilityFeatures = [
+export const controls = [
   {
+    title: "Approval visibility",
+    body: "See what is waiting, who owns the next action, and which reports are ready to release.",
+    icon: ClipboardCheck,
+  },
+  {
+    title: "Operational reminders",
+    body: "Follow up on pending reviews, missing details, and client delivery timing from one workspace.",
     icon: BellRing,
-    title: "Faster response rhythm",
-    body: "Stay on top of reviews, next actions, and delivery timing with less friction.",
   },
   {
-    icon: Smartphone,
-    title: "Responsive everywhere",
-    body: "The experience is designed to read cleanly across mobile, tablet, and desktop.",
-  },
-  {
+    title: "McDougall managed",
+    body: "Built around dependable valuation and auction operations, with a professional entry point for teams.",
     icon: Building2,
-    title: "Sharper market presence",
-    body: "A better landing page improves first impressions before users ever reach the dashboard.",
   },
   {
+    title: "Protected access",
+    body: "Public entry, authenticated workspace, and clean routing into signup and sign-in flows.",
+    icon: LockKeyhole,
+  },
+];
+
+export const dashboardRows = [
+  { name: "Asset appraisal", owner: "Review team", status: "In review", progress: 72 },
+  { name: "Auction lot import", owner: "Operations", status: "Queued", progress: 58 },
+  { name: "Client package", owner: "Admin", status: "Ready", progress: 91 },
+];
+
+export const chartBars = [46, 64, 38, 82, 71, 88, 56, 76];
+
+export const insightCards = [
+  {
+    label: "Cycle health",
+    value: "82%",
     icon: BarChart3,
-    title: "Executive visual language",
-    body: "Depth, motion, and structured panels create a stronger enterprise feel without being noisy.",
+  },
+  {
+    label: "Open actions",
+    value: "13",
+    icon: ClipboardCheck,
   },
 ];

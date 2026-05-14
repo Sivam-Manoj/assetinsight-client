@@ -7,6 +7,7 @@ body {
 }
 
 :root {
+  color-scheme: light;
   --app-bg: #eef3f9;
   --app-panel: #ffffff;
   --app-panel-alt: #f8fafc;
@@ -27,6 +28,7 @@ body {
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --app-bg: #07111f;
   --app-panel: #0f1b2d;
   --app-panel-alt: #132238;
@@ -61,6 +63,25 @@ body {
 
 a {
   color: inherit;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--app-text-muted) 38%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--app-text-muted) 34%, transparent);
+  border-radius: 999px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--app-accent) 28%, transparent);
 }
 
 button,
