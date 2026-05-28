@@ -1,118 +1,86 @@
 import {
-  BarChart3,
-  BellRing,
-  Building2,
   ClipboardCheck,
   FileSpreadsheet,
+  ImagePlus,
   Layers3,
-  LockKeyhole,
+  Sparkles,
   ShieldCheck,
   Users,
 } from "lucide-react";
 
-export const navItems = ["Workflow", "Controls", "Security"];
-
-export const heroMetrics = [
-  { value: "4", label: "report tracks" },
-  { value: "42", label: "lots in queue" },
-  { value: "82%", label: "review cadence" },
+export const navItems = [
+  { label: "Reports", href: "#reports" },
+  { label: "Lots", href: "#lots" },
+  { label: "Results", href: "#results" },
 ];
 
-export const workflowLanes = [
-  {
-    label: "Valuation intake",
-    status: "Active",
-    value: "18",
-    tone: "#dc2626",
-  },
-  {
-    label: "Reports in review",
-    status: "Pending",
-    value: "7",
-    tone: "#2563eb",
-  },
-  {
-    label: "Auction lots ready",
-    status: "Queued",
-    value: "42",
-    tone: "#16a34a",
-  },
-];
-
-export const reviewSteps = [
-  "Client request received",
-  "Asset photos organized",
-  "Valuation review assigned",
-  "Export package prepared",
+export const heroHighlights = [
+  "Create polished valuation reports",
+  "Prepare auction lots from field photos",
+  "Keep reviews and downloads moving",
 ];
 
 export const featureCards = [
   {
-    title: "Structured valuation reports",
+    title: "Polished appraisal reports",
     description:
-      "Create consistent asset, real estate, and salvage reports with cleaner inputs and export-ready outputs.",
+      "Build clear, professional report packages with photos, values, notes, and client-ready exports.",
+    image: "/welcome/report-package.png",
+    alt: "Layered appraisal report package artwork",
     icon: FileSpreadsheet,
   },
   {
-    title: "Auction lot preparation",
+    title: "Auction lots that stay organized",
     description:
-      "Track assets, categories, images, lot details, and operational notes before a listing is ready.",
+      "Group assets into clean listings with images, descriptions, categories, and sale-ready details.",
+    image: "/welcome/lot-gallery.png",
+    alt: "Auction lot gallery artwork",
     icon: Layers3,
   },
   {
-    title: "Team review workflow",
+    title: "Field capture made simple",
     description:
-      "Keep appraisers, admins, and operations staff aligned around approvals, revisions, and handoffs.",
+      "Capture photos and notes on the move, then bring the work back to the team for review.",
+    image: "/welcome/field-capture.png",
+    alt: "Mobile field capture artwork",
+    icon: ImagePlus,
+  },
+];
+
+export const journeySteps = [
+  {
+    title: "Capture the work",
+    body: "Add asset photos, field notes, values, and lot details while the information is fresh.",
+  },
+  {
+    title: "Shape the package",
+    body: "Organize reports and listings into a format that is easy for your team to review.",
+  },
+  {
+    title: "Send with confidence",
+    body: "Download the finished files, share the right package, and keep the next job moving.",
+  },
+];
+
+export const results = [
+  {
+    title: "Less rework",
+    body: "Photos, notes, values, and final files stay connected from the first capture.",
+    icon: ClipboardCheck,
+  },
+  {
+    title: "A stronger client impression",
+    body: "Reports and lot packages look cleaner, more consistent, and easier to approve.",
+    icon: Sparkles,
+  },
+  {
+    title: "Better team handoffs",
+    body: "Appraisers, admins, and auction staff can see what is ready and what needs attention.",
     icon: Users,
   },
   {
-    title: "Secure delivery",
-    description:
-      "Control access, organize generated files, and keep client-ready report packages easy to find.",
+    title: "Controlled access",
+    body: "Give the right people a reliable place to start, review, and deliver client work.",
     icon: ShieldCheck,
-  },
-];
-
-export const controls = [
-  {
-    title: "Approval visibility",
-    body: "See what is waiting, who owns the next action, and which reports are ready to release.",
-    icon: ClipboardCheck,
-  },
-  {
-    title: "Operational reminders",
-    body: "Follow up on pending reviews, missing details, and client delivery timing from one workspace.",
-    icon: BellRing,
-  },
-  {
-    title: "McDougall managed",
-    body: "Built around dependable valuation and auction operations, with a professional entry point for teams.",
-    icon: Building2,
-  },
-  {
-    title: "Protected access",
-    body: "Public entry, authenticated workspace, and clean routing into signup and sign-in flows.",
-    icon: LockKeyhole,
-  },
-];
-
-export const dashboardRows = [
-  { name: "Asset appraisal", owner: "Review team", status: "In review", progress: 72 },
-  { name: "Auction lot import", owner: "Operations", status: "Queued", progress: 58 },
-  { name: "Client package", owner: "Admin", status: "Ready", progress: 91 },
-];
-
-export const chartBars = [46, 64, 38, 82, 71, 88, 56, 76];
-
-export const insightCards = [
-  {
-    label: "Cycle health",
-    value: "82%",
-    icon: BarChart3,
-  },
-  {
-    label: "Open actions",
-    value: "13",
-    icon: ClipboardCheck,
   },
 ];

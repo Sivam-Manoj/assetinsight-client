@@ -23,6 +23,8 @@ import {
 import JSZip from "jszip";
 import ImageAnnotator, { AnnBox } from "./ImageAnnotator";
 
+const IMAGE_UPLOAD_ACCEPT = "image/*,.heic,.heif,image/heic,image/heif";
+
 export type MixedMode = "single_lot" | "per_item" | "per_photo";
 export type CameraLens = { 
   id: string; 
@@ -1571,7 +1573,7 @@ export default function MixedSection({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_UPLOAD_ACCEPT}
           multiple
           className="sr-only"
           onChange={(e) => onManualUpload(e.target.files)}
@@ -1586,7 +1588,7 @@ export default function MixedSection({
         <input
           ref={extraFileInputRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_UPLOAD_ACCEPT}
           multiple
           className="sr-only"
           onChange={(e) => onManualUploadExtra(e.target.files)}

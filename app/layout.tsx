@@ -16,21 +16,18 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Asset Insight | Real Estate Valuation & Appraisal Reports",
+    default: "Asset Insight | Appraisal Reports & Auction Lot Packages",
     template: "%s | Asset Insight",
   },
   description:
-    "Generate professional real estate valuation and appraisal reports. Create, manage, and download property reports with fair market value insights.",
+    "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
   keywords: [
-    "real estate valuation",
-    "property appraisal",
-    "home valuation",
-    "fair market value",
-    "FMV report",
-    "real estate report",
+    "asset appraisal",
+    "auction lot listing",
+    "valuation report",
     "appraisal report",
-    "property assessment",
-    "real estate analytics",
+    "asset report",
+    "client report package",
     "Asset Insight",
   ],
   applicationName: "Asset Insight",
@@ -43,9 +40,9 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   openGraph: {
-    title: "Asset Insight | Real Estate Valuation & Appraisal Reports",
+    title: "Asset Insight | Appraisal Reports & Auction Lot Packages",
     description:
-      "Generate professional real estate valuation and appraisal reports. Create, manage, and download property reports with fair market value insights.",
+      "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
     url: "/",
     siteName: "Asset Insight",
     locale: "en_US",
@@ -53,12 +50,12 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Asset Insight | Real Estate Valuation & Appraisal Reports",
+    title: "Asset Insight | Appraisal Reports & Auction Lot Packages",
     description:
-      "Generate professional real estate valuation and appraisal reports. Create, manage, and download property reports with fair market value insights.",
+      "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
   },
   other: {
-    tags: "real estate valuation, property appraisal, home valuation, fair market value, FMV report, real estate report, appraisal report, property assessment, real estate analytics, Asset Insight",
+    tags: "asset appraisal, auction lot listing, valuation report, appraisal report, asset report, client report package, Asset Insight",
   },
 };
 

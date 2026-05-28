@@ -18,7 +18,7 @@ export default function WelcomeHeader() {
       animate="visible"
       variants={reveal}
       custom={0}
-      className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8"
+      className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 max-[520px]:max-w-[358px] sm:px-6 lg:px-8"
     >
       <Link href="/welcome" className="flex min-w-0 items-center gap-3">
         <span className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--welcome-border)] bg-white">
@@ -36,8 +36,8 @@ export default function WelcomeHeader() {
 
       <nav className="hidden items-center gap-6 text-sm font-medium text-[var(--welcome-muted)] md:flex">
         {navItems.map((item) => (
-          <a key={item} href={`#${item.toLowerCase()}`} className="transition hover:text-[var(--welcome-text)]">
-            {item}
+          <a key={item.href} href={item.href} className="transition hover:text-[var(--welcome-text)]">
+            {item.label}
           </a>
         ))}
       </nav>
@@ -59,9 +59,10 @@ export default function WelcomeHeader() {
         </Link>
         <Link
           href="/signup"
-          className="inline-flex h-10 items-center gap-2 rounded-lg bg-[var(--welcome-primary)] px-4 text-sm font-bold !text-white shadow-[0_14px_28px_rgba(220,38,38,0.22)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[var(--welcome-ring)]"
+          aria-label="Start now"
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-[var(--welcome-primary)] px-4 text-sm font-bold !text-white shadow-[0_14px_28px_rgba(220,38,38,0.22)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[var(--welcome-ring)] max-[520px]:w-10 max-[520px]:justify-center max-[520px]:px-0"
         >
-          Start
+          <span className="max-[520px]:sr-only">Start</span>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
