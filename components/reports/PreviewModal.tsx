@@ -25,6 +25,84 @@ type FocusableFormElement =
   | HTMLTextAreaElement
   | HTMLSelectElement;
 
+type ConditionSelectionKey = "condition" | "completeness" | "legal";
+
+const conditionSelectionGroups: Array<{
+  key: ConditionSelectionKey;
+  label: string;
+  options: string[];
+}> = [
+  {
+    key: "condition",
+    label: "Condition",
+    options: [
+      "Unknown Working Condition",
+      "Starts and Runs",
+      "Untested",
+      "Non-Operational",
+      "N/A",
+    ],
+  },
+  {
+    key: "completeness",
+    label: "Completeness",
+    options: ["Has Keys", "Missing Parts", "Incomplete Unit", "N/A"],
+  },
+  {
+    key: "legal",
+    label: "Legal",
+    options: ["Salvage", "No Title", "N/A"],
+  },
+];
+
+const normalizeConditionSelection = (value: any) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/^na$/, "n/a")
+    .replace(/^not applicable$/, "n/a");
+
+const getLotDisplayNumber = (lot: any, index: number) => {
+  const candidates = [lot?.lot_number, lot?.lot_id, lot?.lot, lot?.id];
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (text) return text;
+  }
+  return String(index + 1);
+};
+
+const getMissingConditionSelectionMessage = (lots: any[] | undefined | null) => {
+  if (!Array.isArray(lots) || lots.length === 0) return null;
+
+  const missingKeys = new Set<ConditionSelectionKey>();
+  const invalidLots: string[] = [];
+
+  lots.forEach((lot, index) => {
+    const selections = lot?.condition_report_selections || {};
+    const lotMissing = conditionSelectionGroups.filter((group) => {
+      const selected = normalizeConditionSelection(selections[group.key]);
+      return !group.options.some(
+        (option) => normalizeConditionSelection(option) === selected
+      );
+    });
+
+    if (lotMissing.length > 0) {
+      invalidLots.push(getLotDisplayNumber(lot, index));
+      lotMissing.forEach((group) => missingKeys.add(group.key));
+    }
+  });
+
+  if (invalidLots.length === 0) return null;
+
+  const missingLabels = conditionSelectionGroups
+    .filter((group) => missingKeys.has(group.key))
+    .map((group) => group.label)
+    .join(", ");
+
+  return `Please select ${missingLabels} for Lot ${invalidLots.join(", ")}`;
+};
+
 export default function PreviewModal({
   reportId,
   isOpen,
@@ -178,6 +256,12 @@ export default function PreviewModal({
       return;
     }
 
+    const conditionSelectionMessage = getMissingConditionSelectionMessage(previewData?.lots);
+    if (conditionSelectionMessage) {
+      toast.error(conditionSelectionMessage);
+      return;
+    }
+
     try {
       setSubmitting(true);
       
@@ -280,6 +364,24 @@ export default function PreviewModal({
     setHasChanges(true);
   };
 
+  const updateLotConditionSelection = (
+    index: number,
+    key: ConditionSelectionKey,
+    value: string
+  ) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      lot.condition_report_selections = {
+        ...(lot.condition_report_selections || {}),
+        [key]: value,
+      };
+      newLots[index] = lot;
+      return { ...prev, lots: newLots };
+    });
+    setHasChanges(true);
+  };
+
   const deleteLot = (index: number) => {
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
@@ -337,6 +439,82 @@ export default function PreviewModal({
       ((first?.tags || []).find?.((t: string) => typeof t === "string" && t.startsWith("mode:"))?.split?.(":")?.[1] || undefined);
     return { gid, subMode: inferredMode, items };
   });
+
+  const renderConditionSelections = (
+    lot: any,
+    idx: number,
+    variant: "mobile" | "desktop"
+  ) => {
+    const selections = lot?.condition_report_selections || {};
+    const compact = variant === "desktop";
+
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+            Required selections
+          </p>
+          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+            N/A allowed
+          </span>
+        </div>
+        <div className={compact ? "space-y-2" : "space-y-3"}>
+          {conditionSelectionGroups.map((group) => {
+            const selectedValue = String(selections[group.key] || "");
+            const hasSelection = group.options.some(
+              (option) =>
+                normalizeConditionSelection(option) ===
+                normalizeConditionSelection(selectedValue)
+            );
+
+            return (
+              <div
+                key={group.key}
+                role="radiogroup"
+                aria-label={`${group.label} for lot ${idx + 1}`}
+              >
+                <div className="mb-1 text-[11px] font-semibold text-gray-700">
+                  {group.label}
+                </div>
+                <div
+                  className={`flex flex-wrap gap-1.5 rounded-md ${
+                    hasSelection ? "" : "ring-1 ring-amber-300"
+                  }`}
+                >
+                  {group.options.map((option) => {
+                    const checked =
+                      normalizeConditionSelection(selectedValue) ===
+                      normalizeConditionSelection(option);
+                    return (
+                      <label
+                        key={option}
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                          checked
+                            ? "border-amber-500 bg-white text-amber-950 shadow-sm"
+                            : "border-gray-200 bg-white/70 text-gray-700 hover:border-amber-300 hover:bg-white"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`lot-${idx}-${variant}-${group.key}`}
+                          checked={checked}
+                          onChange={() =>
+                            updateLotConditionSelection(idx, group.key, option)
+                          }
+                          className="h-3.5 w-3.5 accent-amber-600"
+                        />
+                        <span>{option}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const workflowLocked = filesGenerating || filesRegenerating;
 
@@ -815,6 +993,7 @@ export default function PreviewModal({
                                   rows={5}
                                 />
                               </div>
+                              {renderConditionSelections(lot, idx, "mobile")}
                               <div>
                                 <label className="block text-xs text-gray-600 mb-1">Value</label>
                                 <input
@@ -849,6 +1028,7 @@ export default function PreviewModal({
                             <th className="px-3 py-2 text-left">Title</th>
                             <th className="px-3 py-2 text-left">Description</th>
                             <th className="px-3 py-2 text-left">Details</th>
+                            <th className="px-3 py-2 text-left">Selections</th>
                             <th className="px-3 py-2 text-left">Value</th>
                             <th className="px-3 py-2 text-left">Actions</th>
                           </tr>
@@ -921,6 +1101,9 @@ export default function PreviewModal({
                                   placeholder="Specs / notes / attributes"
                                   rows={4}
                                 />
+                              </td>
+                              <td className="px-3 py-2 align-top min-w-[260px]">
+                                {renderConditionSelections(lot, idx, "desktop")}
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <input
