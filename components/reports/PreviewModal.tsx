@@ -26,6 +26,13 @@ type FocusableFormElement =
   | HTMLSelectElement;
 
 type ConditionSelectionKey = "condition" | "completeness" | "legal";
+type ExpandableLotTextField = "description" | "details";
+
+type ExpandedLotTextEditor = {
+  lotIndex: number;
+  field: ExpandableLotTextField;
+  variant: "mobile" | "desktop";
+};
 
 const conditionSelectionGroups: Array<{
   key: ConditionSelectionKey;
@@ -124,6 +131,7 @@ export default function PreviewModal({
   const [imageCount, setImageCount] = useState<number | undefined>(undefined);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
   const [galleryLotImages, setGalleryLotImages] = useState<{ urls: string[]; currentIdx: number } | null>(null);
   const focusStateRef = useRef<{
@@ -171,6 +179,19 @@ export default function PreviewModal({
     }
   }, [isOpen, previewData]);
 
+  useEffect(() => {
+    if (!expandedLotTextEditor) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeExpandedLotTextEditor();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [expandedLotTextEditor]);
+
   const rememberFocusState = (element: FocusableFormElement) => {
     const fieldId = element.dataset.focusId;
     if (!fieldId) return;
@@ -201,6 +222,17 @@ export default function PreviewModal({
     onKeyUpCapture: (event: React.SyntheticEvent<FocusableFormElement>) =>
       rememberFocusState(event.currentTarget),
   });
+
+  function closeExpandedLotTextEditor() {
+    if (focusStateRef.current.fieldId?.startsWith("expanded-lot-")) {
+      focusStateRef.current = {
+        fieldId: null,
+        selectionStart: null,
+        selectionEnd: null,
+      };
+    }
+    setExpandedLotTextEditor(null);
+  }
 
   const loadPreviewData = async () => {
     try {
@@ -362,6 +394,45 @@ export default function PreviewModal({
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
+  };
+
+  const lotTextFieldMeta: Record<ExpandableLotTextField, { label: string; placeholder: string }> = {
+    description: {
+      label: "Description",
+      placeholder: "Short description",
+    },
+    details: {
+      label: "Specs",
+      placeholder: "Specs / notes / attributes",
+    },
+  };
+
+  const renderExpandableLotTextarea = (
+    lot: any,
+    idx: number,
+    field: ExpandableLotTextField,
+    variant: "mobile" | "desktop"
+  ) => {
+    const meta = lotTextFieldMeta[field];
+    const isDesktop = variant === "desktop";
+
+    return (
+      <textarea
+        {...getFocusTrackingProps(`lot-${idx}-${field}-${variant}`)}
+        value={lot[field] || ""}
+        readOnly
+        onFocus={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
+        onClick={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
+        className={`w-full cursor-text border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-900 transition-all placeholder:text-gray-400 hover:border-rose-300 focus:border-transparent focus:ring-2 focus:ring-rose-500 ${
+          isDesktop
+            ? "min-h-[104px] min-w-[230px] rounded-md resize-none"
+            : "min-h-[120px] rounded-lg resize-y"
+        }`}
+        placeholder={meta.placeholder}
+        rows={isDesktop ? 4 : 5}
+        aria-label={`${meta.label} for lot ${getLotDisplayNumber(lot, idx)}`}
+      />
+    );
   };
 
   const updateLotConditionSelection = (
@@ -973,25 +1044,11 @@ export default function PreviewModal({
                               </div>
                               <div>
                                 <label className="block text-xs text-gray-600 mb-1">Description</label>
-                                <textarea
-                                  {...getFocusTrackingProps(`lot-${idx}-description-mobile`)}
-                                  value={lot.description || ""}
-                                  onChange={(e) => updateLot(idx, "description", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm leading-5 resize-y min-h-[120px]"
-                                  placeholder="Short description"
-                                  rows={5}
-                                />
+                                {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Details</label>
-                                <textarea
-                                  {...getFocusTrackingProps(`lot-${idx}-details-mobile`)}
-                                  value={lot.details || ""}
-                                  onChange={(e) => updateLot(idx, "details", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm leading-5 resize-y min-h-[120px]"
-                                  placeholder="Specs / notes / attributes"
-                                  rows={5}
-                                />
+                                <label className="block text-xs text-gray-600 mb-1">Specs</label>
+                                {renderExpandableLotTextarea(lot, idx, "details", "mobile")}
                               </div>
                               {renderConditionSelections(lot, idx, "mobile")}
                               <div>
@@ -1020,16 +1077,16 @@ export default function PreviewModal({
                       <div className="mb-2 text-sm font-semibold text-gray-900">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
-                      <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="min-w-[1320px] text-sm border border-gray-200 rounded-lg overflow-hidden">
                         <thead className="bg-gray-50 text-gray-700">
                           <tr>
                             <th className="px-3 py-2 text-left">Lot #</th>
-                            <th className="px-3 py-2 text-left">Photos</th>
-                            <th className="px-3 py-2 text-left">Title</th>
-                            <th className="px-3 py-2 text-left">Description</th>
-                            <th className="px-3 py-2 text-left">Details</th>
-                            <th className="px-3 py-2 text-left">Selections</th>
-                            <th className="px-3 py-2 text-left">Value</th>
+                            <th className="px-3 py-2 text-left min-w-[180px]">Photos</th>
+                            <th className="px-3 py-2 text-left min-w-[170px]">Title</th>
+                            <th className="px-3 py-2 text-left min-w-[260px]">Description</th>
+                            <th className="px-3 py-2 text-left min-w-[240px]">Specs</th>
+                            <th className="px-3 py-2 text-left min-w-[280px]">Selections</th>
+                            <th className="px-3 py-2 text-left min-w-[110px]">Value</th>
                             <th className="px-3 py-2 text-left">Actions</th>
                           </tr>
                         </thead>
@@ -1083,24 +1140,10 @@ export default function PreviewModal({
                                 />
                               </td>
                               <td className="px-3 py-2 align-top">
-                                <textarea
-                                  {...getFocusTrackingProps(`lot-${idx}-description-desktop`)}
-                                  value={lot.description || ""}
-                                  onChange={(e) => updateLot(idx, "description", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm leading-5 resize-y min-h-[100px]"
-                                  placeholder="Short description"
-                                  rows={4}
-                                />
+                                {renderExpandableLotTextarea(lot, idx, "description", "desktop")}
                               </td>
                               <td className="px-3 py-2 align-top">
-                                <textarea
-                                  {...getFocusTrackingProps(`lot-${idx}-details-desktop`)}
-                                  value={lot.details || ""}
-                                  onChange={(e) => updateLot(idx, "details", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm leading-5 resize-y min-h-[100px]"
-                                  placeholder="Specs / notes / attributes"
-                                  rows={4}
-                                />
+                                {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
                               </td>
                               <td className="px-3 py-2 align-top min-w-[260px]">
                                 {renderConditionSelections(lot, idx, "desktop")}
@@ -1350,6 +1393,56 @@ export default function PreviewModal({
               </ol>
             </div>
           </div>
+
+          {expandedLotTextEditor && (() => {
+            const { lotIndex, field } = expandedLotTextEditor;
+            const lot = previewData?.lots?.[lotIndex];
+            if (!lot) return null;
+
+            const meta = lotTextFieldMeta[field];
+            const lotNumber = getLotDisplayNumber(lot, lotIndex);
+
+            return (
+              <div
+                className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/45 px-3 py-6 backdrop-blur-sm sm:px-6"
+                onMouseDown={closeExpandedLotTextEditor}
+              >
+                <div
+                  className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-3 sm:px-5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Lot {lotNumber}
+                      </p>
+                      <h4 className="mt-0.5 text-lg font-bold text-gray-950">
+                        {meta.label}
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeExpandedLotTextEditor}
+                      aria-label="Close editor"
+                      className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    <textarea
+                      {...getFocusTrackingProps(`expanded-lot-${lotIndex}-${field}`)}
+                      autoFocus
+                      value={lot[field] || ""}
+                      onChange={(event) => updateLot(lotIndex, field, event.target.value)}
+                      className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-rose-500"
+                      placeholder={meta.placeholder}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Actions */}
           <div className="sticky bottom-0 z-10 mt-6 flex flex-col gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-4 pb-1 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
