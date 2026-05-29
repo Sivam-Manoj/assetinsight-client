@@ -7,13 +7,13 @@ import OperationsCockpit from "./components/OperationsCockpit";
 import WelcomeHeader from "./components/WelcomeHeader";
 
 const welcomeVars = {
-  "--welcome-bg": "var(--app-bg)",
-  "--welcome-bg-soft": "color-mix(in srgb, var(--app-panel-alt) 82%, var(--app-bg) 18%)",
-  "--welcome-surface": "color-mix(in srgb, var(--app-panel) 96%, transparent)",
-  "--welcome-band": "color-mix(in srgb, var(--app-panel-alt) 68%, transparent)",
-  "--welcome-text": "var(--app-text)",
-  "--welcome-muted": "var(--app-text-muted)",
-  "--welcome-border": "var(--app-border)",
+  "--welcome-bg": "#f6f8fb",
+  "--welcome-bg-soft": "#edf2f7",
+  "--welcome-surface": "rgba(255, 255, 255, 0.88)",
+  "--welcome-band": "#0b1220",
+  "--welcome-text": "#07111f",
+  "--welcome-muted": "#475569",
+  "--welcome-border": "rgba(15, 23, 42, 0.1)",
   "--welcome-primary": "#dc2626",
   "--welcome-primary-soft": "color-mix(in srgb, #dc2626 11%, transparent)",
   "--welcome-blue": "#2563eb",
@@ -21,8 +21,9 @@ const welcomeVars = {
   "--welcome-success": "#16a34a",
   "--welcome-success-soft": "color-mix(in srgb, #16a34a 13%, transparent)",
   "--welcome-ring": "color-mix(in srgb, #dc2626 42%, transparent)",
-  "--welcome-shadow": "0 16px 44px rgba(15, 23, 42, 0.08)",
-  "--welcome-shadow-strong": "0 28px 80px rgba(15, 23, 42, 0.16)",
+  "--welcome-ink": "#07111f",
+  "--welcome-shadow": "0 18px 46px rgba(15, 23, 42, 0.1)",
+  "--welcome-shadow-strong": "0 30px 90px rgba(15, 23, 42, 0.2)",
 } as CSSProperties;
 
 export default function WelcomePage() {

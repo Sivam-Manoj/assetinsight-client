@@ -18,20 +18,23 @@ export default function CallToAction() {
     >
       <div className="relative overflow-hidden rounded-lg border border-[var(--welcome-border)] shadow-[var(--welcome-shadow-strong)]">
         <Image
-          src="/welcome/field-capture.png"
-          alt="Field capture and ready for review artwork"
+          src="/welcome/salvage-vehicles-real.png"
+          alt="Salvage vehicle inspection and client report package"
           width={1200}
           height={900}
-          className="h-[420px] w-full object-cover object-[58%_center] sm:h-[460px]"
+          className="h-[430px] w-full object-cover object-[55%_center] sm:h-[500px]"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,17,31,0.9)_0%,rgba(7,17,31,0.72)_43%,rgba(7,17,31,0.2)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,17,31,0.94)_0%,rgba(7,17,31,0.76)_42%,rgba(7,17,31,0.18)_100%)]" />
         <div className="absolute inset-0 flex items-center px-5 py-10 sm:px-8 lg:px-12">
           <div className="max-w-2xl">
-            <h2 className="text-3xl font-black leading-tight text-white sm:text-5xl">
-              Give every report a cleaner finish.
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-red-200">
+              Ready when the team is
+            </p>
+            <h2 className="mt-3 text-3xl font-black leading-tight text-white sm:text-5xl">
+              Give every client file a stronger first impression.
             </h2>
             <p className="mt-4 max-w-xl text-base leading-7 text-slate-100 sm:text-lg">
-              Start with a workspace built for the way appraisal and auction teams actually deliver client work.
+              Bring asset reports, salvage vehicle records, and real estate packages into a clearer workflow that looks as professional as the work behind it.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
@@ -43,7 +46,7 @@ export default function CallToAction() {
               </Link>
               <Link
                 href="/login"
-                className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/28 bg-white/12 px-5 text-sm font-bold text-white backdrop-blur transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-white/70"
+                className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/[0.28] bg-white/[0.12] px-5 text-sm font-bold text-white backdrop-blur transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-white/70"
               >
                 Sign in
               </Link>

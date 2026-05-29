@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
+import WelcomePage from "./welcome/page";
 
-export default function Page() {
-  redirect("/welcome");
-}
+export default WelcomePage;

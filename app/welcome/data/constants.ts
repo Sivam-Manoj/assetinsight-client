@@ -1,86 +1,103 @@
 import {
+  Building2,
+  CarFront,
   ClipboardCheck,
+  FileCheck2,
   FileSpreadsheet,
-  ImagePlus,
+  LandPlot,
   Layers3,
-  Sparkles,
   ShieldCheck,
-  Users,
+  TimerReset,
 } from "lucide-react";
 
 export const navItems = [
-  { label: "Reports", href: "#reports" },
-  { label: "Lots", href: "#lots" },
-  { label: "Results", href: "#results" },
+  { label: "Workflows", href: "#workflows" },
+  { label: "Delivery", href: "#delivery" },
+  { label: "Teams", href: "#teams" },
 ];
 
 export const heroHighlights = [
-  "Create polished valuation reports",
-  "Prepare auction lots from field photos",
-  "Keep reviews and downloads moving",
+  "Asset reports",
+  "Salvage vehicle files",
+  "Real estate packages",
 ];
 
 export const featureCards = [
   {
-    title: "Polished appraisal reports",
+    title: "Asset reports",
     description:
-      "Build clear, professional report packages with photos, values, notes, and client-ready exports.",
-    image: "/welcome/report-package.png",
-    alt: "Layered appraisal report package artwork",
+      "Turn equipment photos, notes, and valuations into polished report packages your client can understand quickly.",
+    image: "/welcome/asset-reports-real.png",
+    alt: "Professional heavy equipment asset appraisal workspace",
     icon: FileSpreadsheet,
+    accent: "#dc2626",
   },
   {
-    title: "Auction lots that stay organized",
+    title: "Salvage vehicles",
     description:
-      "Group assets into clean listings with images, descriptions, categories, and sale-ready details.",
-    image: "/welcome/lot-gallery.png",
-    alt: "Auction lot gallery artwork",
-    icon: Layers3,
+      "Document vehicle condition, organize photos, and prepare auction-ready salvage packages with a stronger visual record.",
+    image: "/welcome/salvage-vehicles-real.png",
+    alt: "Damaged salvage vehicles in a professional inspection bay",
+    icon: CarFront,
+    accent: "#0f766e",
   },
   {
-    title: "Field capture made simple",
+    title: "Real estate",
     description:
-      "Capture photos and notes on the move, then bring the work back to the team for review.",
-    image: "/welcome/field-capture.png",
-    alt: "Mobile field capture artwork",
-    icon: ImagePlus,
+      "Bring property photos, site notes, maps, and supporting documents into a clean valuation experience.",
+    image: "/welcome/real-estate-real.png",
+    alt: "Rural real estate appraisal scene with property report materials",
+    icon: Building2,
+    accent: "#2563eb",
   },
 ];
 
 export const journeySteps = [
   {
-    title: "Capture the work",
-    body: "Add asset photos, field notes, values, and lot details while the information is fresh.",
+    title: "Capture every detail",
+    body: "Collect photos, notes, condition details, and values while the work is fresh.",
   },
   {
-    title: "Shape the package",
-    body: "Organize reports and listings into a format that is easy for your team to review.",
+    title: "Shape a client-ready package",
+    body: "Keep lots, reports, images, and review steps arranged in a format that feels finished.",
   },
   {
-    title: "Send with confidence",
-    body: "Download the finished files, share the right package, and keep the next job moving.",
+    title: "Deliver with confidence",
+    body: "Move from field capture to reviewed files without losing momentum between teams.",
   },
 ];
 
 export const results = [
   {
-    title: "Less rework",
-    body: "Photos, notes, values, and final files stay connected from the first capture.",
+    title: "Cleaner first drafts",
+    body: "Photos, values, and notes stay connected from the start, so reviews feel easier.",
     icon: ClipboardCheck,
   },
   {
-    title: "A stronger client impression",
-    body: "Reports and lot packages look cleaner, more consistent, and easier to approve.",
-    icon: Sparkles,
+    title: "Faster handoff",
+    body: "Appraisers, admins, and auction teams can see what is ready and what still needs attention.",
+    icon: TimerReset,
   },
   {
-    title: "Better team handoffs",
-    body: "Appraisers, admins, and auction staff can see what is ready and what needs attention.",
-    icon: Users,
+    title: "Better final files",
+    body: "Reports, image folders, spreadsheets, and lot packages keep a consistent professional finish.",
+    icon: FileCheck2,
   },
   {
-    title: "Controlled access",
-    body: "Give the right people a reliable place to start, review, and deliver client work.",
+    title: "Controlled delivery",
+    body: "Give the right people a reliable place to prepare, review, and release client work.",
     icon: ShieldCheck,
   },
+];
+
+export const deliveryStats = [
+  { label: "Reports", value: "PDF, DOCX, Excel" },
+  { label: "Media", value: "Images and video" },
+  { label: "Coverage", value: "Assets, vehicles, property" },
+];
+
+export const industryTiles = [
+  { label: "Equipment", icon: Layers3 },
+  { label: "Vehicles", icon: CarFront },
+  { label: "Property", icon: LandPlot },
 ];
