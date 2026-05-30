@@ -31,6 +31,7 @@ export interface LotListingLot {
   image_urls?: string[];
   extra_image_indexes?: number[];
   extra_image_urls?: string[];
+  cover_index?: number;
   sub_mode?: string;
   tags?: string[];
 }
