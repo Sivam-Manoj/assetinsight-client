@@ -143,11 +143,16 @@ export default function LotListingPreviewModal({
       const data = (response as any).data || response;
       setStatus(data.status);
       setDeclineReason(data.decline_reason || "");
-      setPreviewData(data.preview_data || {
+      const nextPreviewData = data.preview_data || {
         contract_no: data.contract_no,
         sales_date: data.sales_date,
         location: data.location,
         lots: data.lots || [],
+      };
+      setPreviewData({
+        ...nextPreviewData,
+        include_damage_analysis:
+          nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
       });
       setImageUrls(data.imageUrls || []);
     } catch (error: any) {
@@ -192,9 +197,8 @@ export default function LotListingPreviewModal({
         toast.success("Lot listing approved files are being regenerated.");
       } else {
         if (hasChanges) {
-          toast.warning("Please save your changes before generating approved files");
-          setSubmitting(false);
-          return;
+          await updateLotListingPreview(reportId, { preview_data: previewData });
+          setHasChanges(false);
         }
         await submitLotListingForApproval(reportId);
         toast.success("Lot listing approved files are being generated.");
@@ -259,6 +263,7 @@ export default function LotListingPreviewModal({
 
   const lotsArray: LotListingLot[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
   const displayedTotalValue = calculateTotalValue(lotsArray);
+  const includeDamageAnalysis = previewData?.include_damage_analysis !== false;
 
   const renderConditionSelections = (lot: any, idx: number) => {
     const selections = lot?.condition_report_selections || {};
@@ -407,6 +412,30 @@ export default function LotListingPreviewModal({
                     <option value="GBP">GBP - British Pound</option>
                   </select>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[var(--app-border)] bg-white p-4 shadow-[var(--app-shadow-card)] sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">Damage Analysis</h4>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Include visible damage notes in the Excel Damage Analysis column.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateField("include_damage_analysis", !includeDamageAnalysis)
+                  }
+                  className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
+                    includeDamageAnalysis
+                      ? "border-purple-500 bg-purple-50 text-purple-700"
+                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {includeDamageAnalysis ? "Included" : "Excluded"}
+                </button>
               </div>
             </div>
 

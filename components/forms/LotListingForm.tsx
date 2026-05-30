@@ -477,6 +477,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         location: location.trim(),
         language,
         currency,
+        include_damage_analysis: true,
         progress_id: jobId,
         mixed_lots: mixedLots.map((l) => ({
           count: l.files.length,

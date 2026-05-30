@@ -51,6 +51,7 @@ export interface LotListing {
   error_message?: string;
   files_generating?: boolean;
   files_regenerating?: boolean;
+  include_damage_analysis?: boolean;
   progress?: {
     phase: string;
     percent: number;
@@ -61,6 +62,7 @@ export interface LotListing {
     sales_date?: string;
     location?: string;
     currency?: string;
+    include_damage_analysis?: boolean;
   };
   lots?: LotListingLot[];
   imageUrls?: string[];
@@ -69,6 +71,7 @@ export interface LotListing {
     sales_date?: string;
     location?: string;
     currency?: string;
+    include_damage_analysis?: boolean;
     lots?: LotListingLot[];
     total_value?: number;
   };
