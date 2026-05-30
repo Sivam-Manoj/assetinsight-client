@@ -63,7 +63,7 @@ export default function InputsHistoryModal({
       setSavedInputs(inputs);
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.message || "Failed to load saved inputs"
+        error?.response?.data?.message || "Failed to load drafts"
       );
     } finally {
       setLoading(false);
@@ -176,7 +176,7 @@ export default function InputsHistoryModal({
             </Avatar>
             <Stack>
               <Typography variant="h6" sx={{ color: "var(--app-text)" }}>
-                Draft inputs
+                Drafts
               </Typography>
               <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
                 {totalLabel}
@@ -212,7 +212,7 @@ export default function InputsHistoryModal({
               No saved drafts yet
             </Typography>
             <Typography sx={{ color: "var(--app-text-muted)" }}>
-              Saved form inputs will appear here so you can resume work quickly.
+              Drafts will appear here so you can resume work quickly.
             </Typography>
           </Stack>
         ) : (

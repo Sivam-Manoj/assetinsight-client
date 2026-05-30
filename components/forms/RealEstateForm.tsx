@@ -669,6 +669,15 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
   return (
     <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
       <div className="relative flex min-h-full flex-col gap-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-white/80 p-4 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">Real Estate Appraisal</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Capture property details, supporting files, photos, and valuation notes.
+            </p>
+          </div>
+        </div>
+
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}

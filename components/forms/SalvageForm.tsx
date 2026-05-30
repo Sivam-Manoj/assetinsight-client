@@ -312,6 +312,15 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
   return (
     <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
       <div className="relative flex min-h-full flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-blue-100 bg-white/80 p-4 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">Salvage Appraisal</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Record claim details, vehicle information, damage notes, and photos.
+            </p>
+          </div>
+        </div>
+
         {!submitting && error && (
           <div className="rounded-xl border border-red-200/70 bg-red-50/80 p-3 text-sm text-red-700 shadow ring-1 ring-black/5 backdrop-blur">
             {error}

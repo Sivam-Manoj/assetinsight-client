@@ -89,7 +89,11 @@ export function PageHeader({
             </Typography>
           ) : null}
         </Box>
-        {action}
+        {action ? (
+          <Stack direction="row" spacing={1.2} sx={{ alignItems: "center" }}>
+            {action}
+          </Stack>
+        ) : null}
       </Stack>
     </Paper>
   );

@@ -278,35 +278,41 @@ export default function DashboardPage() {
         }}
       >
         <Stack spacing={{ xs: 2, md: 2.5 }}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="overline" sx={{ color: "var(--app-accent)" }}>
-              Command center
-            </Typography>
-            <Typography
-              sx={{
-                color: "var(--app-text)",
-                fontWeight: 800,
-                fontSize: { xs: "2rem", md: "2.6rem", xl: "3rem" },
-                lineHeight: 1,
-                letterSpacing: "-0.05em",
-                mt: 0.5,
-              }}
-            >
-              {mounted ? greeting : "Welcome"},{" "}
-              {user?.username || user?.email || "there"}
-            </Typography>
-            <Typography
-              sx={{
-                color: "var(--app-text-muted)",
-                mt: 1,
-                maxWidth: 760,
-                fontSize: { xs: 15, md: 17 },
-              }}
-            >
-              Monitor appraisal activity, manage recent output, and keep reporting
-              work moving from one responsive workspace.
-            </Typography>
-          </Box>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1.5}
+            sx={{ justifyContent: "space-between", alignItems: { xs: "flex-start", sm: "flex-start" } }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="overline" sx={{ color: "var(--app-accent)" }}>
+                Command center
+              </Typography>
+              <Typography
+                sx={{
+                  color: "var(--app-text)",
+                  fontWeight: 800,
+                  fontSize: { xs: "2rem", md: "2.6rem", xl: "3rem" },
+                  lineHeight: 1,
+                  letterSpacing: "-0.05em",
+                  mt: 0.5,
+                }}
+              >
+                {mounted ? greeting : "Welcome"},{" "}
+                {user?.username || user?.email || "there"}
+              </Typography>
+              <Typography
+                sx={{
+                  color: "var(--app-text-muted)",
+                  mt: 1,
+                  maxWidth: 760,
+                  fontSize: { xs: 15, md: 17 },
+                }}
+              >
+                Monitor appraisal activity, manage recent output, and keep reporting
+                work moving from one responsive workspace.
+              </Typography>
+            </Box>
+          </Stack>
 
           <Box
             sx={{

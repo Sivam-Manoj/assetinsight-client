@@ -43,15 +43,18 @@ const InputsHistoryModal = dynamic(
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardRounded },
+  { label: "My Reports", href: "/reports", icon: DescriptionRounded },
   { label: "Previews", href: "/previews", icon: VisibilityRounded },
-  { label: "Reports", href: "/reports", icon: DescriptionRounded },
+];
+
+const secondaryNavItems = [
   { label: "Settings", href: "/settings", icon: PersonRounded },
 ];
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/reports": "My Reports",
   "/previews": "Previews",
-  "/reports": "Reports",
   "/settings": "Settings",
 };
 
@@ -115,6 +118,83 @@ function NavLinkItem({
         ) : null}
       </Stack>
     </Link>
+  );
+
+  return collapsed ? (
+    <Tooltip title={label} placement="right">
+      {content}
+    </Tooltip>
+  ) : (
+    content
+  );
+}
+
+function NavActionItem({
+  collapsed,
+  active,
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  collapsed: boolean;
+  active: boolean;
+  label: string;
+  icon: typeof DashboardRounded;
+  onClick: () => void;
+}) {
+  const content = (
+    <Stack
+      direction="row"
+      spacing={collapsed ? 0 : 1.5}
+      sx={{
+        px: collapsed ? 0.75 : 1.5,
+        py: collapsed ? 0.75 : 1.1,
+        minHeight: collapsed ? 52 : 56,
+        borderRadius: collapsed ? 3 : 4,
+        alignItems: "center",
+        justifyContent: collapsed ? "center" : "flex-start",
+        color: active ? "var(--app-accent)" : "var(--app-text-muted)",
+        bgcolor: active ? "var(--app-accent-soft)" : "transparent",
+        border: active
+          ? "1px solid rgba(244, 63, 94, 0.18)"
+          : "1px solid transparent",
+        cursor: "pointer",
+        transition: "all 180ms ease",
+        "&:hover": {
+          bgcolor: active
+            ? "var(--app-accent-soft)"
+            : "rgba(148, 163, 184, 0.08)",
+          color: active ? "var(--app-accent)" : "var(--app-text)",
+        },
+      }}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      <Avatar
+        variant="rounded"
+        sx={{
+          width: collapsed ? 34 : 38,
+          height: collapsed ? 34 : 38,
+          borderRadius: collapsed ? 2.5 : 3,
+          bgcolor: active
+            ? alpha("#e11d48", 0.14)
+            : "rgba(148, 163, 184, 0.08)",
+          color: "inherit",
+        }}
+      >
+        <Icon fontSize="small" />
+      </Avatar>
+      {!collapsed ? (
+        <Typography sx={{ fontWeight: active ? 800 : 700 }}>{label}</Typography>
+      ) : null}
+    </Stack>
   );
 
   return collapsed ? (
@@ -355,6 +435,16 @@ export default function Navbar({
               onClick={!desktop ? () => setMobileOpen(false) : undefined}
             />
           ))}
+          <NavActionItem
+            collapsed={isCollapsed}
+            active={showInputsHistory}
+            label="Drafts"
+            icon={ScheduleRounded}
+            onClick={() => {
+              setShowInputsHistory(true);
+              if (!desktop) setMobileOpen(false);
+            }}
+          />
         </Stack>
 
         <Box sx={{ mt: isCollapsed ? 1.25 : 2 }}>
@@ -367,17 +457,6 @@ export default function Navbar({
               bgcolor: isCollapsed ? "transparent" : "rgba(148, 163, 184, 0.06)",
             }}
           >
-            <RailAction
-              collapsed={isCollapsed}
-              label="Draft inputs"
-              icon={<ScheduleRounded fontSize="small" />}
-              accentBg="rgba(37, 99, 235, 0.12)"
-              accentColor="#2563eb"
-              onClick={() => {
-                setShowInputsHistory(true);
-                if (!desktop) setMobileOpen(false);
-              }}
-            />
             <RailAction
               collapsed={isCollapsed}
               label={outlookStatus.connected ? "Outlook connected" : "Connect Outlook"}
@@ -411,6 +490,33 @@ export default function Navbar({
               accentColor={resolvedTheme === "dark" ? "#fbbf24" : "#0f172a"}
               onClick={toggleMode}
             />
+          </Stack>
+        </Box>
+
+        <Box sx={{ mt: isCollapsed ? 1.25 : 2 }}>
+          <Typography
+            variant="overline"
+            sx={{
+              px: isCollapsed ? 0 : 1.5,
+              color: "var(--app-text-muted)",
+              letterSpacing: "0.18em",
+              display: isCollapsed ? "none" : "block",
+            }}
+          >
+            Account
+          </Typography>
+          <Stack spacing={isCollapsed ? 0.75 : 1} sx={{ mt: isCollapsed ? 0 : 1 }}>
+            {secondaryNavItems.map((item) => (
+              <NavLinkItem
+                key={item.href}
+                collapsed={isCollapsed}
+                active={pathname === item.href || pathname?.startsWith(item.href + "/")}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                onClick={!desktop ? () => setMobileOpen(false) : undefined}
+              />
+            ))}
           </Stack>
         </Box>
       </Box>
