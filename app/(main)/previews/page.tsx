@@ -239,7 +239,7 @@ export default function PreviewsPage() {
 
   const handleSuccess = () => {
     void loadReports();
-    toast.success("Report submitted for approval!");
+    toast.success("Report submitted successfully.");
   };
 
   const handleQuickResubmit = async (report: CombinedReport) => {

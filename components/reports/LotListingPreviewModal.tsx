@@ -22,6 +22,95 @@ interface LotListingPreviewModalProps {
   isResubmitMode?: boolean;
 }
 
+type ConditionSelectionKey = "condition" | "completeness" | "legal";
+
+const conditionSelectionGroups: Array<{
+  key: ConditionSelectionKey;
+  label: string;
+  options: string[];
+}> = [
+  {
+    key: "condition",
+    label: "Condition",
+    options: [
+      "Unknown Working Condition",
+      "Starts and Runs",
+      "Untested",
+      "Non-Operational",
+      "N/A",
+    ],
+  },
+  {
+    key: "completeness",
+    label: "Completeness",
+    options: ["Has Keys", "Missing Parts", "Incomplete Unit", "N/A"],
+  },
+  {
+    key: "legal",
+    label: "Legal",
+    options: ["Salvage", "No Title", "N/A"],
+  },
+];
+
+const normalizeConditionSelection = (value: any) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/^na$/, "n/a")
+    .replace(/^not applicable$/, "n/a");
+
+const getLotDisplayNumber = (lot: any, index: number) => {
+  const candidates = [lot?.lot_number, lot?.lot_id, lot?.lot, lot?.id];
+  for (const candidate of candidates) {
+    const text = String(candidate ?? "").trim();
+    if (text) return text;
+  }
+  return String(index + 1);
+};
+
+const getMissingConditionSelectionMessage = (lots: any[] | undefined | null) => {
+  if (!Array.isArray(lots) || lots.length === 0) return null;
+
+  const missingKeys = new Set<ConditionSelectionKey>();
+  const invalidLots: string[] = [];
+
+  lots.forEach((lot, index) => {
+    const selections = lot?.condition_report_selections || {};
+    const lotMissing = conditionSelectionGroups.filter((group) => {
+      const selected = normalizeConditionSelection(selections[group.key]);
+      return !group.options.some(
+        (option) => normalizeConditionSelection(option) === selected
+      );
+    });
+
+    if (lotMissing.length > 0) {
+      invalidLots.push(getLotDisplayNumber(lot, index));
+      lotMissing.forEach((group) => missingKeys.add(group.key));
+    }
+  });
+
+  if (invalidLots.length === 0) return null;
+
+  const missingLabels = conditionSelectionGroups
+    .filter((group) => missingKeys.has(group.key))
+    .map((group) => group.label)
+    .join(", ");
+
+  return `Please select ${missingLabels} for Lot ${invalidLots.join(", ")}`;
+};
+
+const parseEstimatedValue = (value: unknown) => {
+  const parsed = Number(String(value ?? "").replace(/[^0-9.-]+/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const calculateTotalValue = (lots: any[] | undefined | null) =>
+  (Array.isArray(lots) ? lots : []).reduce(
+    (sum, lot) => sum + parseEstimatedValue(lot?.estimated_value),
+    0
+  );
+
 export default function LotListingPreviewModal({
   reportId,
   isOpen,
@@ -88,20 +177,27 @@ export default function LotListingPreviewModal({
       return;
     }
 
+    const conditionSelectionMessage = getMissingConditionSelectionMessage(previewData?.lots);
+    if (conditionSelectionMessage) {
+      toast.error(conditionSelectionMessage);
+      return;
+    }
+
     try {
       setSubmitting(true);
 
       if (isResubmitMode) {
-        await resubmitLotListing(reportId);
-        toast.success("Lot listing resubmitted! Files are being regenerated.");
+        await resubmitLotListing(reportId, { preview_data: previewData });
+        setHasChanges(false);
+        toast.success("Lot listing approved files are being regenerated.");
       } else {
         if (hasChanges) {
-          toast.warning("Please save your changes before submitting");
+          toast.warning("Please save your changes before generating approved files");
           setSubmitting(false);
           return;
         }
         await submitLotListingForApproval(reportId);
-        toast.success("Lot listing submitted for approval!");
+        toast.success("Lot listing approved files are being generated.");
       }
 
       if (onSuccess) onSuccess();
@@ -122,6 +218,31 @@ export default function LotListingPreviewModal({
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
       newLots[index] = { ...newLots[index], [field]: value };
+      return {
+        ...prev,
+        lots: newLots,
+        total_value:
+          field === "estimated_value"
+            ? calculateTotalValue(newLots)
+            : prev.total_value,
+      };
+    });
+    setHasChanges(true);
+  };
+
+  const updateLotConditionSelection = (
+    index: number,
+    key: ConditionSelectionKey,
+    value: string
+  ) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      lot.condition_report_selections = {
+        ...(lot.condition_report_selections || {}),
+        [key]: value,
+      };
+      newLots[index] = lot;
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
@@ -131,12 +252,84 @@ export default function LotListingPreviewModal({
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
       lots.splice(index, 1);
-      return { ...prev, lots };
+      return { ...prev, lots, total_value: calculateTotalValue(lots) };
     });
     setHasChanges(true);
   };
 
   const lotsArray: LotListingLot[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
+  const displayedTotalValue = calculateTotalValue(lotsArray);
+
+  const renderConditionSelections = (lot: any, idx: number) => {
+    const selections = lot?.condition_report_selections || {};
+
+    return (
+      <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+            Required selections
+          </p>
+          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+            N/A allowed
+          </span>
+        </div>
+        <div className="space-y-3">
+          {conditionSelectionGroups.map((group) => {
+            const selectedValue = String(selections[group.key] || "");
+            const hasSelection = group.options.some(
+              (option) =>
+                normalizeConditionSelection(option) ===
+                normalizeConditionSelection(selectedValue)
+            );
+
+            return (
+              <div
+                key={group.key}
+                role="radiogroup"
+                aria-label={`${group.label} for lot ${idx + 1}`}
+              >
+                <div className="mb-1 text-[11px] font-semibold text-gray-700">
+                  {group.label}
+                </div>
+                <div
+                  className={`flex flex-wrap gap-1.5 rounded-md ${
+                    hasSelection ? "" : "ring-1 ring-amber-300"
+                  }`}
+                >
+                  {group.options.map((option) => {
+                    const checked =
+                      normalizeConditionSelection(selectedValue) ===
+                      normalizeConditionSelection(option);
+                    return (
+                      <label
+                        key={option}
+                        className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                          checked
+                            ? "border-amber-500 bg-white text-amber-950 shadow-sm"
+                            : "border-gray-200 bg-white/70 text-gray-700 hover:border-amber-300 hover:bg-white"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`lot-listing-${idx}-${group.key}`}
+                          checked={checked}
+                          onChange={() =>
+                            updateLotConditionSelection(idx, group.key, option)
+                          }
+                          className="h-3.5 w-3.5 accent-amber-600"
+                        />
+                        <span>{option}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Lot Listing Preview">
@@ -235,8 +428,8 @@ export default function LotListingPreviewModal({
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-amber-600">
-                    {previewData?.total_value
-                      ? `${previewData.currency || "CAD"} ${Number(previewData.total_value).toLocaleString()}`
+                    {displayedTotalValue
+                      ? `${previewData.currency || "CAD"} ${displayedTotalValue.toLocaleString()}`
                       : "-"}
                   </div>
                   <div className="text-xs text-gray-600">Total Value</div>
@@ -403,15 +596,16 @@ export default function LotListingPreviewModal({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Condition</label>
+                          <label className="block text-xs text-gray-600 mb-1">Item Condition</label>
                           <input
                             type="text"
                             value={lot.item_condition || ""}
                             onChange={(e) => updateLot(idx, "item_condition", e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                            placeholder="Condition"
+                            placeholder="Excel item condition"
                           />
                         </div>
+                        {renderConditionSelections(lot, idx)}
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Serial Number</label>
                           <input
@@ -470,7 +664,7 @@ export default function LotListingPreviewModal({
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {isResubmitMode ? "Resubmit" : "Submit for Approval"}
+                {isResubmitMode ? "Regenerate Approved Files" : "Generate Approved Files"}
               </button>
             </div>
           </div>

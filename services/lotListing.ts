@@ -6,6 +6,14 @@ export interface LotListingLot {
   title?: string;
   description?: string;
   details?: string;
+  damage_analysis?: string;
+  condition_report_specs?: Record<string, string>;
+  lotted_by?: string;
+  condition_report_selections?: {
+    condition?: string;
+    completeness?: string;
+    legal?: string;
+  };
   estimated_value?: string;
   quantity?: number;
   must_take?: boolean;
@@ -128,8 +136,8 @@ export async function submitLotListingForApproval(id: string): Promise<LotListin
 }
 
 // Resubmit lot listing (regenerate files)
-export async function resubmitLotListing(id: string): Promise<LotListing> {
-  const response = await API.post<LotListing>(`/lot-listing/${id}/resubmit`);
+export async function resubmitLotListing(id: string, data?: { preview_data?: any }): Promise<LotListing> {
+  const response = await API.post<LotListing>(`/lot-listing/${id}/resubmit`, data || {});
   return response.data;
 }
 
