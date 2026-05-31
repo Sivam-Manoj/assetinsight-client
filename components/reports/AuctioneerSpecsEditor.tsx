@@ -87,6 +87,10 @@ export default function AuctioneerSpecsEditor({
       ? "focus:ring-purple-500"
       : "focus:ring-rose-500";
 
+  const categoryChipText = categorySpec
+    ? `${categorySpec.childCategory} • ${fields.length} fields`
+    : "Category not matched";
+
   return (
     <div className={`rounded-lg border p-3 ${accentClasses}`}>
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -99,14 +103,18 @@ export default function AuctioneerSpecsEditor({
               ? `${categorySpec.childCategory} field names`
               : lot?.categories
                 ? "No matching category field list found"
-                : "Select a category to show field names"}
+              : "Select a category to show field names"}
           </p>
         </div>
-        {categorySpec && (
-          <span className="w-fit rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-gray-700 ring-1 ring-black/10">
-            {visibleFields.length} fields
-          </span>
-        )}
+        <span
+          className={`w-fit rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold ring-1 ${
+            categorySpec
+              ? "text-gray-800 ring-black/10"
+              : "text-amber-800 ring-amber-200"
+          }`}
+        >
+          {categoryChipText}
+        </span>
       </div>
 
       {visibleFields.length > 0 ? (

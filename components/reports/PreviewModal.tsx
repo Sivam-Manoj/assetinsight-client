@@ -289,10 +289,10 @@ export default function PreviewModal({
         if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
         pdfRefreshed = true;
       } catch (pdfError: any) {
-        toast.error(pdfError.response?.data?.message || "Changes saved, but printable PDF could not be refreshed.");
+        toast.error(pdfError.response?.data?.message || "Changes saved, but Conditional Report could not be refreshed.");
       }
       setHasChanges(false);
-      toast.success(pdfRefreshed ? "Changes saved and printable PDF refreshed." : "Changes saved successfully.");
+      toast.success(pdfRefreshed ? "Changes saved and Conditional Report refreshed." : "Changes saved successfully.");
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
@@ -651,7 +651,7 @@ export default function PreviewModal({
     if (!specPdfUrl) return;
     const printWindow = window.open(specPdfUrl, "_blank", "noopener,noreferrer");
     if (!printWindow) {
-      toast.info("Open the PDF download, then print from your browser.");
+      toast.info("Open the Conditional Report download, then print from your browser.");
       return;
     }
     window.setTimeout(() => {
@@ -695,8 +695,8 @@ export default function PreviewModal({
       {specPdfUrl && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="mr-auto">
-            <p className="text-sm font-semibold text-slate-900">Lot detail PDF</p>
-            <p className="text-xs text-slate-500">Printable category field sheet for each lot.</p>
+            <p className="text-sm font-semibold text-slate-900">Conditional Report</p>
+            <p className="text-xs text-slate-500">Printable category field report for each lot.</p>
           </div>
           <button
             type="button"
@@ -713,7 +713,7 @@ export default function PreviewModal({
             className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
           >
             <Download className="h-4 w-4" />
-            Download PDF
+            Download Conditional Report
           </a>
         </div>
       )}
