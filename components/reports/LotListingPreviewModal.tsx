@@ -153,6 +153,10 @@ export default function LotListingPreviewModal({
         ...nextPreviewData,
         include_damage_analysis:
           nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
+        valuation_methods:
+          nextPreviewData.valuation_methods ||
+          data.valuation_methods ||
+          ["FML"],
       });
       setImageUrls(data.imageUrls || []);
     } catch (error: any) {

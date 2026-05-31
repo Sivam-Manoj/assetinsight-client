@@ -63,6 +63,7 @@ export interface LotListing {
     location?: string;
     currency?: string;
     include_damage_analysis?: boolean;
+    valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
   };
   lots?: LotListingLot[];
   imageUrls?: string[];
@@ -72,6 +73,7 @@ export interface LotListing {
     location?: string;
     currency?: string;
     include_damage_analysis?: boolean;
+    valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
     lots?: LotListingLot[];
     total_value?: number;
   };

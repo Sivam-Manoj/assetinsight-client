@@ -19,6 +19,35 @@ type MixedLot = {
   mode?: "single_lot" | "per_item" | "per_photo";
 };
 
+type ValuationMethod = "FML" | "TKV" | "OLV" | "FLV";
+
+const VALUATION_METHOD_OPTIONS: Array<{
+  value: ValuationMethod;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "FML",
+    label: "FML (Fair Market Value)",
+    description: "Primary per-lot auction FMV estimate",
+  },
+  {
+    value: "TKV",
+    label: "TKV (Trade Value)",
+    description: "Dealer or trade-oriented value context",
+  },
+  {
+    value: "OLV",
+    label: "OLV (Orderly Liquidation)",
+    description: "Auction reserve with reasonable marketing time",
+  },
+  {
+    value: "FLV",
+    label: "FLV (Forced Liquidation)",
+    description: "Quick-sale value under time pressure",
+  },
+];
+
 type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
@@ -51,6 +80,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [currencyTouched, setCurrencyTouched] = useState(false);
+  const [selectedValuationMethods, setSelectedValuationMethods] = useState<ValuationMethod[]>(["FML"]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +151,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         location,
         language,
         currency,
+        selectedValuationMethods,
         lots: mixedLots.map((lot) => ({
           id: lot.id,
           coverIndex: lot.coverIndex,
@@ -174,7 +205,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     } catch (e) {
       console.warn("[LotListing Draft] Save failed:", e);
     }
-  }, [submitting, mixedLots, contractNo, salesDate, location, language, currency]);
+  }, [submitting, mixedLots, contractNo, salesDate, location, language, currency, selectedValuationMethods]);
 
   // Restore draft from localStorage
   const restoreDraft = useCallback(async () => {
@@ -195,6 +226,9 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       if (formData.location) setLocation(formData.location);
       if (formData.language) setLanguage(formData.language);
       if (formData.currency) setCurrency(formData.currency);
+      if (Array.isArray(formData.selectedValuationMethods) && formData.selectedValuationMethods.length > 0) {
+        setSelectedValuationMethods(formData.selectedValuationMethods);
+      }
 
       // Reconstruct lots with files
       const restoredLots: MixedLot[] = [];
@@ -359,12 +393,28 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     if (!salesDate) e.salesDate = "Required";
     if (!currency || !/^[A-Z]{3}$/.test(currency))
       e.currency = "Use 3-letter code (e.g., CAD)";
+    if (selectedValuationMethods.length === 0)
+      e.valuation_methods = "Select at least one valuation method";
     setErrors(e);
     if (Object.keys(e).length > 0) {
       toast.error("Please fix required fields");
       return false;
     }
     return true;
+  }
+
+  function toggleValuationMethod(method: ValuationMethod) {
+    setSelectedValuationMethods((prev) => {
+      if (prev.includes(method)) {
+        if (prev.length === 1) {
+          toast.warning("At least one valuation method must be selected");
+          return prev;
+        }
+        return prev.filter((item) => item !== method);
+      }
+      return [...prev, method];
+    });
+    if (errors.valuation_methods) clearError("valuation_methods");
   }
 
   function clearForm(showToast = true) {
@@ -374,6 +424,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     setLocation("");
     setLanguage("en");
     setCurrency("CAD");
+    setSelectedValuationMethods(["FML"]);
     setCurrencyTouched(false);
     setError(null);
     setProgressPhase("idle");
@@ -477,6 +528,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         location: location.trim(),
         language,
         currency,
+        valuation_methods: selectedValuationMethods,
         include_damage_analysis: true,
         progress_id: jobId,
         mixed_lots: mixedLots.map((l) => ({
@@ -757,6 +809,43 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                     <p className="text-xs text-red-500">{errors.currency}</p>
                   )}
                 </div>
+              </div>
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50/50 to-blue-50/30 p-4 shadow-sm">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  FMV Valuation Method
+                </h3>
+                <p className="mt-0.5 text-xs text-gray-600">
+                  Required for per-lot FMV estimates in the Lot Listing Excel.
+                </p>
+              </div>
+              {errors.valuation_methods && (
+                <p className="text-xs text-red-600">{errors.valuation_methods}</p>
+              )}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {VALUATION_METHOD_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-start gap-2 rounded-lg border border-sky-200 bg-white/80 p-3 transition hover:bg-sky-50/60"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedValuationMethods.includes(option.value)}
+                      onChange={() => toggleValuationMethod(option.value)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="flex-1">
+                      <span className="block text-xs font-semibold text-gray-900">
+                        {option.label}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-gray-600">
+                        {option.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
               </div>
             </section>
 
