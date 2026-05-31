@@ -203,7 +203,7 @@ export default function LotListingPreviewModal({
       } else {
         await updateLotListingPreview(reportId, { preview_data: previewData });
         setHasChanges(false);
-        await submitLotListingForApproval(reportId);
+        await submitLotListingForApproval(reportId, { preview_data: previewData });
         toast.success("Lot listing approved files are being generated.");
       }
 

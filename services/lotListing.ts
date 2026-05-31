@@ -136,8 +136,11 @@ export async function updateLotListingPreview(
 }
 
 // Submit lot listing for approval
-export async function submitLotListingForApproval(id: string): Promise<LotListing> {
-  const response = await API.post<LotListing>(`/lot-listing/${id}/submit-approval`);
+export async function submitLotListingForApproval(
+  id: string,
+  data?: { preview_data?: any }
+): Promise<LotListing> {
+  const response = await API.post<LotListing>(`/lot-listing/${id}/submit-approval`, data || {});
   return response.data;
 }
 
