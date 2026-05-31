@@ -24,7 +24,11 @@ const normalizeKey = (value: unknown) =>
 
 const isUsefulValue = (value: unknown) => {
   const text = String(value ?? "").trim();
-  return !!text && !/^(n\/a|na|none|null|unknown|not visible|not found|tbd)$/i.test(text);
+  return (
+    !!text &&
+    !/^(n\/a|na|none|null|unknown|not visible|not found|tbd)$/i.test(text) &&
+    !/title clearance clarification fee|applied to your invoice|over and above the purchase price|applicable taxes|following the close of the sale/i.test(text)
+  );
 };
 
 const getSpecRecord = (value: unknown): Record<string, string> => {

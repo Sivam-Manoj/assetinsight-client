@@ -310,11 +310,9 @@ export default function PreviewModal({
         await resubmitReport(reportId, hasChanges ? previewData : undefined);
         toast.success("Report resubmitted! Files are being regenerated.");
       } else {
-        // For normal mode: must save changes first
         if (hasChanges) {
-          toast.warning("Please save your changes before submitting");
-          setSubmitting(false);
-          return;
+          await updatePreviewData(reportId, previewData);
+          setHasChanges(false);
         }
         await submitForApproval(reportId);
         toast.success("Report submitted for approval successfully!");
