@@ -26,7 +26,7 @@ const isUsefulValue = (value: unknown) => {
   const text = String(value ?? "").trim();
   return (
     !!text &&
-    !/^(n\/a|na|none|null|unknown|not visible|not found|tbd)$/i.test(text) &&
+    !/^(n\/a|na|none|null|unknown|not visible|tbd)$/i.test(text) &&
     !/title clearance clarification fee|applied to your invoice|over and above the purchase price|applicable taxes|following the close of the sale/i.test(text)
   );
 };
@@ -54,7 +54,7 @@ const getValueForField = (record: Record<string, string>, fieldName: string) => 
   if (record[fieldName] !== undefined) return record[fieldName];
   const fieldKey = normalizeKey(fieldName);
   const matchingKey = Object.keys(record).find((key) => normalizeKey(key) === fieldKey);
-  return matchingKey ? record[matchingKey] : "";
+  return matchingKey ? record[matchingKey] : "Not Found";
 };
 
 const isDamageField = (fieldName: string) => {
@@ -122,7 +122,7 @@ export default function AuctioneerSpecsEditor({
                   value={getValueForField(specRecord, fieldName)}
                   onChange={(event) => onChange(lotIndex, fieldName, event.target.value)}
                   className={`w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
-                  placeholder="Blank if unknown"
+                  placeholder="Not Found"
                 />
               </label>
             ))}

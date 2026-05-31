@@ -7,6 +7,7 @@ import {
   getLotListingPreview,
   getLotListingSubmittedPreview,
   updateLotListingPreview,
+  refreshLotListingSpecPdf,
   submitLotListingForApproval,
   resubmitLotListing,
   type LotListing,
@@ -179,9 +180,24 @@ export default function LotListingPreviewModal({
   const handleSaveChanges = async () => {
     try {
       setSaving(true);
-      await updateLotListingPreview(reportId, { preview_data: previewData });
+      const saved = await updateLotListingPreview(reportId, { preview_data: previewData });
+      const savedPreviewData = (saved as any)?.data?.preview_data || (saved as any)?.preview_data;
+      if (savedPreviewData) setPreviewData(savedPreviewData);
+      let pdfRefreshed = false;
+      try {
+        const pdf = await refreshLotListingSpecPdf(reportId);
+        setPreviewFiles((prev: any) => ({
+          ...(prev || {}),
+          ...(pdf.data?.preview_files || {}),
+          spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
+        }));
+        if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
+        pdfRefreshed = true;
+      } catch (pdfError: any) {
+        toast.error(pdfError.response?.data?.message || "Changes saved, but printable PDF could not be refreshed.");
+      }
       setHasChanges(false);
-      toast.success("Changes saved successfully!");
+      toast.success(pdfRefreshed ? "Changes saved and printable PDF refreshed." : "Changes saved successfully.");
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
@@ -260,11 +276,7 @@ export default function LotListingPreviewModal({
                   .filter((entry: string[]) => entry[0])
               )
             : {};
-      if (value.trim()) {
-        existingSpecs[fieldName] = value;
-      } else {
-        delete existingSpecs[fieldName];
-      }
+      existingSpecs[fieldName] = value.trim() ? value : "Not Found";
       lot.condition_report_specs = existingSpecs;
       newLots[index] = lot;
       return { ...prev, lots: newLots, total_value: calculateTotalValue(newLots) };

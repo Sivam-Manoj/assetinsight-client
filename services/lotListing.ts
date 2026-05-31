@@ -137,6 +137,19 @@ export async function updateLotListingPreview(
   return response.data;
 }
 
+export async function refreshLotListingSpecPdf(
+  id: string
+): Promise<{
+  message: string;
+  data: { spec_pdf: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+}> {
+  const response = await API.post<{
+    message: string;
+    data: { spec_pdf: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+  }>(`/lot-listing/${id}/preview/spec-pdf`, {});
+  return response.data;
+}
+
 // Submit lot listing for approval
 export async function submitLotListingForApproval(
   id: string,
@@ -178,6 +191,7 @@ export const LotListingService = {
   getLotListingPreview,
   getLotListingSubmittedPreview,
   updateLotListingPreview,
+  refreshLotListingSpecPdf,
   submitLotListingForApproval,
   resubmitLotListing,
   deleteLotListing,

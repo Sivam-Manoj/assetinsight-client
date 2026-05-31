@@ -94,6 +94,19 @@ export const updatePreviewData = async (
   return data;
 };
 
+export const refreshAssetSpecPdf = async (
+  reportId: string
+): Promise<{
+  message: string;
+  data: { spec_pdf: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+}> => {
+  const { data } = await API.post<{
+    message: string;
+    data: { spec_pdf: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+  }>(`/asset/${reportId}/preview/spec-pdf`, {});
+  return data;
+};
+
 /**
  * Submit report for admin approval
  */
