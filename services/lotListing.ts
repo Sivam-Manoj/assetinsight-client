@@ -2,7 +2,7 @@ import API from "@/lib/api";
 
 export interface LotListingLot {
   lot_id: string;
-  lot_number: number;
+  lot_number: string | number;
   title?: string;
   description?: string;
   details?: string;

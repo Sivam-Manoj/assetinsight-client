@@ -654,7 +654,7 @@ export default function LotListingPreviewModal({
                     <div key={idx} className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur">
                       <div className="flex items-center justify-between mb-3">
                         <div className="text-sm font-semibold text-gray-900">
-                          Lot #{lot.lot_number || idx + 1}
+                          Lot #{getLotDisplayNumber(lot, idx)}
                         </div>
                         <button
                           onClick={() => deleteLot(idx)}
@@ -696,6 +696,16 @@ export default function LotListingPreviewModal({
 
                       {/* Lot Fields */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">Lot #</label>
+                          <input
+                            type="text"
+                            value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
+                            onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            placeholder={String(idx + 1)}
+                          />
+                        </div>
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Title</label>
                           <input

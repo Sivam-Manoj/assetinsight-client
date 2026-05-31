@@ -1087,7 +1087,7 @@ export default function PreviewModal({
                         {group.items.map(({ lot, idx }) => (
                           <div key={idx} className="rounded-[1.25rem] border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-3 shadow-[var(--app-shadow-card)]">
                             <div className="flex items-center justify-between mb-2">
-                              <div className="text-sm font-semibold text-gray-900">Lot {String(lot.lot_id || idx + 1)}</div>
+                              <div className="text-sm font-semibold text-gray-900">Lot {getLotDisplayNumber(lot, idx)}</div>
                               <button
                                 onClick={() => deleteLot(idx)}
                                 aria-label={`Delete lot ${idx + 1}`}
@@ -1136,6 +1136,17 @@ export default function PreviewModal({
                               );
                             })()}
                             <div className="space-y-2">
+                              <div>
+                                <label className="block text-xs text-gray-600 mb-1">Lot #</label>
+                                <input
+                                  type="text"
+                                  {...getFocusTrackingProps(`lot-${idx}-lot-number-mobile`)}
+                                  value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
+                                  onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  placeholder={String(idx + 1)}
+                                />
+                              </div>
                               <div>
                                 <label className="block text-xs text-gray-600 mb-1">Title</label>
                                 <input
@@ -1225,7 +1236,16 @@ export default function PreviewModal({
                             return (
                             <React.Fragment key={idx}>
                             <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                              <td className="px-3 py-2 text-gray-800 font-medium align-top">{String(lot.lot_id || idx + 1)}</td>
+                              <td className="px-3 py-2 text-gray-800 font-medium align-top">
+                                <input
+                                  type="text"
+                                  {...getFocusTrackingProps(`lot-${idx}-lot-number-desktop`)}
+                                  value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
+                                  onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
+                                  className="w-24 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold"
+                                  placeholder={String(idx + 1)}
+                                />
+                              </td>
                               <td className="px-3 py-2 align-top min-w-[180px]">
                                 {lotImages.length > 0 ? (
                                   <div className="space-y-1">
