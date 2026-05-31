@@ -434,7 +434,6 @@ export default function LotListingPreviewModal({
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="mr-auto">
             <p className="text-sm font-semibold text-slate-900">Conditional Report</p>
-            <p className="text-xs text-slate-500">Printable category field report for each lot.</p>
           </div>
           <button
             type="button"
