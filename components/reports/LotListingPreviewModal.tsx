@@ -12,7 +12,9 @@ import {
   type LotListing,
   type LotListingLot,
 } from "@/services/lotListing";
+import { getAssetCategorySpecs, type AssetCategorySpec } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
+import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -126,6 +128,7 @@ export default function LotListingPreviewModal({
   const [previewData, setPreviewData] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [galleryLotImages, setGalleryLotImages] = useState<{ urls: string[]; currentIdx: number } | null>(null);
 
   useEffect(() => {
@@ -137,9 +140,13 @@ export default function LotListingPreviewModal({
   const loadPreviewData = async () => {
     try {
       setLoading(true);
-      const response = isResubmitMode
-        ? await getLotListingSubmittedPreview(reportId)
-        : await getLotListingPreview(reportId);
+      const [response, categorySpecResponse] = await Promise.all([
+        isResubmitMode
+          ? getLotListingSubmittedPreview(reportId)
+          : getLotListingPreview(reportId),
+        getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
+      ]);
+      setCategorySpecs(categorySpecResponse.specs || []);
       const data = (response as any).data || response;
       setStatus(data.status);
       setDeclineReason(data.decline_reason || "");
@@ -236,6 +243,46 @@ export default function LotListingPreviewModal({
     });
     setHasChanges(true);
   };
+
+  const updateLotSpec = (index: number, fieldName: string, value: string) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      const existingSpecs =
+        lot.condition_report_specs && typeof lot.condition_report_specs === "object" && !Array.isArray(lot.condition_report_specs)
+          ? { ...lot.condition_report_specs }
+          : Array.isArray(lot.condition_report_specs)
+            ? Object.fromEntries(
+                lot.condition_report_specs
+                  .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value || "").trim()])
+                  .filter((entry: string[]) => entry[0])
+              )
+            : {};
+      if (value.trim()) {
+        existingSpecs[fieldName] = value;
+      } else {
+        delete existingSpecs[fieldName];
+      }
+      lot.condition_report_specs = existingSpecs;
+      newLots[index] = lot;
+      return { ...prev, lots: newLots, total_value: calculateTotalValue(newLots) };
+    });
+    setHasChanges(true);
+  };
+
+  const specsByCategory = React.useMemo(
+    () =>
+      new Map(
+        categorySpecs.map((spec) => [
+          String(spec.childCategory || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ""),
+          spec,
+        ])
+      ),
+    [categorySpecs]
+  );
 
   const updateLotConditionSelection = (
     index: number,
@@ -357,6 +404,11 @@ export default function LotListingPreviewModal({
         </div>
       ) : (
         <>
+          <datalist id="lot-listing-auctioneer-categories">
+            {categorySpecs.map((spec) => (
+              <option key={spec.childCategory} value={spec.childCategory} />
+            ))}
+          </datalist>
           {/* Listing Details */}
           <div className="space-y-6 max-w-5xl mx-auto pb-28">
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
@@ -621,6 +673,7 @@ export default function LotListingPreviewModal({
                           <label className="block text-xs text-gray-600 mb-1">Category</label>
                           <input
                             type="text"
+                            list="lot-listing-auctioneer-categories"
                             value={lot.categories || ""}
                             onChange={(e) => updateLot(idx, "categories", e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
@@ -638,6 +691,15 @@ export default function LotListingPreviewModal({
                           />
                         </div>
                         {renderConditionSelections(lot, idx)}
+                        <div className="sm:col-span-2">
+                          <AuctioneerSpecsEditor
+                            lot={lot}
+                            lotIndex={idx}
+                            specsByCategory={specsByCategory}
+                            onChange={updateLotSpec}
+                            accent="purple"
+                          />
+                        </div>
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Serial Number</label>
                           <input

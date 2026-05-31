@@ -9,8 +9,11 @@ import {
   submitForApproval,
   getSubmittedPreviewData,
   resubmitReport,
+  getAssetCategorySpecs,
+  type AssetCategorySpec,
 } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
+import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 
 interface PreviewModalProps {
   reportId: string;
@@ -130,6 +133,7 @@ export default function PreviewModal({
   const [groupingMode, setGroupingMode] = useState<string | undefined>(undefined);
   const [imageCount, setImageCount] = useState<number | undefined>(undefined);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
@@ -240,9 +244,11 @@ export default function PreviewModal({
       setFilesGenerating(false);
       setFilesRegenerating(false);
       // Use different endpoint based on mode
-      const response = isResubmitMode 
-        ? await getSubmittedPreviewData(reportId)
-        : await getPreviewData(reportId);
+      const [response, categorySpecResponse] = await Promise.all([
+        isResubmitMode ? getSubmittedPreviewData(reportId) : getPreviewData(reportId),
+        getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
+      ]);
+      setCategorySpecs(categorySpecResponse.specs || []);
       setStatus(response.data.status);
       setFilesGenerating(Boolean((response.data as any).files_generating));
       setFilesRegenerating(Boolean((response.data as any).files_regenerating));
@@ -395,6 +401,46 @@ export default function PreviewModal({
     });
     setHasChanges(true);
   };
+
+  const updateLotSpec = (index: number, fieldName: string, value: string) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      const existingSpecs =
+        lot.condition_report_specs && typeof lot.condition_report_specs === "object" && !Array.isArray(lot.condition_report_specs)
+          ? { ...lot.condition_report_specs }
+          : Array.isArray(lot.condition_report_specs)
+            ? Object.fromEntries(
+                lot.condition_report_specs
+                  .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value || "").trim()])
+                  .filter((entry: string[]) => entry[0])
+              )
+            : {};
+      if (value.trim()) {
+        existingSpecs[fieldName] = value;
+      } else {
+        delete existingSpecs[fieldName];
+      }
+      lot.condition_report_specs = existingSpecs;
+      newLots[index] = lot;
+      return { ...prev, lots: newLots };
+    });
+    setHasChanges(true);
+  };
+
+  const specsByCategory = React.useMemo(
+    () =>
+      new Map(
+        categorySpecs.map((spec) => [
+          String(spec.childCategory || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ""),
+          spec,
+        ])
+      ),
+    [categorySpecs]
+  );
 
   const lotTextFieldMeta: Record<ExpandableLotTextField, { label: string; placeholder: string }> = {
     description: {
@@ -623,6 +669,11 @@ export default function PreviewModal({
         </div>
       ) : (
         <>
+          <datalist id="asset-auctioneer-categories">
+            {categorySpecs.map((spec) => (
+              <option key={spec.childCategory} value={spec.childCategory} />
+            ))}
+          </datalist>
           {/* Report Details */}
           <div className="space-y-6 max-w-5xl mx-auto pb-28">
             {/* Basic Information Section */}
@@ -1043,6 +1094,18 @@ export default function PreviewModal({
                                 />
                               </div>
                               <div>
+                                <label className="block text-xs text-gray-600 mb-1">Category</label>
+                                <input
+                                  type="text"
+                                  list="asset-auctioneer-categories"
+                                  {...getFocusTrackingProps(`lot-${idx}-category-mobile`)}
+                                  value={lot.categories || ""}
+                                  onChange={(e) => updateLot(idx, "categories", e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  placeholder="Auctioneer Import category"
+                                />
+                              </div>
+                              <div>
                                 <label className="block text-xs text-gray-600 mb-1">Description</label>
                                 {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
                               </div>
@@ -1051,6 +1114,13 @@ export default function PreviewModal({
                                 {renderExpandableLotTextarea(lot, idx, "details", "mobile")}
                               </div>
                               {renderConditionSelections(lot, idx, "mobile")}
+                              <AuctioneerSpecsEditor
+                                lot={lot}
+                                lotIndex={idx}
+                                specsByCategory={specsByCategory}
+                                onChange={updateLotSpec}
+                                accent="rose"
+                              />
                               <div>
                                 <label className="block text-xs text-gray-600 mb-1">Value</label>
                                 <input
@@ -1077,12 +1147,13 @@ export default function PreviewModal({
                       <div className="mb-2 text-sm font-semibold text-gray-900">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
-                      <table className="min-w-[1320px] text-sm border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="min-w-[1500px] text-sm border border-gray-200 rounded-lg overflow-hidden">
                         <thead className="bg-gray-50 text-gray-700">
                           <tr>
                             <th className="px-3 py-2 text-left">Lot #</th>
                             <th className="px-3 py-2 text-left min-w-[180px]">Photos</th>
                             <th className="px-3 py-2 text-left min-w-[170px]">Title</th>
+                            <th className="px-3 py-2 text-left min-w-[190px]">Category</th>
                             <th className="px-3 py-2 text-left min-w-[260px]">Description</th>
                             <th className="px-3 py-2 text-left min-w-[240px]">Specs</th>
                             <th className="px-3 py-2 text-left min-w-[280px]">Selections</th>
@@ -1098,7 +1169,8 @@ export default function PreviewModal({
                               setGalleryLotImages({ urls: lotImages, currentIdx: startIdx });
                             };
                             return (
-                            <tr key={idx} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <React.Fragment key={idx}>
+                            <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                               <td className="px-3 py-2 text-gray-800 font-medium align-top">{String(lot.lot_id || idx + 1)}</td>
                               <td className="px-3 py-2 align-top min-w-[180px]">
                                 {lotImages.length > 0 ? (
@@ -1140,6 +1212,17 @@ export default function PreviewModal({
                                 />
                               </td>
                               <td className="px-3 py-2 align-top">
+                                <input
+                                  type="text"
+                                  list="asset-auctioneer-categories"
+                                  {...getFocusTrackingProps(`lot-${idx}-category-desktop`)}
+                                  value={lot.categories || ""}
+                                  onChange={(e) => updateLot(idx, "categories", e.target.value)}
+                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  placeholder="Category"
+                                />
+                              </td>
+                              <td className="px-3 py-2 align-top">
                                 {renderExpandableLotTextarea(lot, idx, "description", "desktop")}
                               </td>
                               <td className="px-3 py-2 align-top">
@@ -1168,6 +1251,18 @@ export default function PreviewModal({
                                 </button>
                               </td>
                             </tr>
+                            <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                              <td colSpan={9} className="px-3 pb-4">
+                                <AuctioneerSpecsEditor
+                                  lot={lot}
+                                  lotIndex={idx}
+                                  specsByCategory={specsByCategory}
+                                  onChange={updateLotSpec}
+                                  accent="rose"
+                                />
+                              </td>
+                            </tr>
+                            </React.Fragment>
                           );})}
                         </tbody>
                       </table>

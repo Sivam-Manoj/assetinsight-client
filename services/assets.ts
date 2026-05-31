@@ -47,6 +47,23 @@ export interface PreviewDataResponse {
   };
 }
 
+export interface AssetCategorySpec {
+  parentCategory: string;
+  childCategory: string;
+  fields: string[];
+}
+
+export const getAssetCategorySpecs = async (): Promise<{
+  categories: string[];
+  specs: AssetCategorySpec[];
+}> => {
+  const { data } = await API.get<{
+    message: string;
+    data: { categories: string[]; specs: AssetCategorySpec[] };
+  }>(`/asset/category-specs`);
+  return data.data;
+};
+
 /**
  * Get preview data for editing
  */
