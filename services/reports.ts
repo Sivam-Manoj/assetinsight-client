@@ -17,7 +17,7 @@ export type PdfReport = {
   createdAt: string; // ISO string
   report?: string; // underlying report id for grouping
   type?: string;
-  fileType?: 'pdf' | 'docx' | 'xlsx' | 'images';
+  fileType?: 'pdf' | 'spec_pdf' | 'docx' | 'xlsx' | 'images';
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   approvalNote?: string;
   reviewedBy?: string | null;

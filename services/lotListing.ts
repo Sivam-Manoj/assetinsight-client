@@ -37,6 +37,7 @@ export interface LotListingLot {
 }
 
 export interface LotListingPreviewFiles {
+  spec_pdf?: string;
   excel?: string;
   images?: string;
 }
@@ -78,6 +79,7 @@ export interface LotListing {
     total_value?: number;
   };
   preview_files?: LotListingPreviewFiles;
+  files?: LotListingPreviewFiles;
   decline_reason?: string;
   createdAt: string;
   updatedAt: string;

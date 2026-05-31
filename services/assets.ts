@@ -16,6 +16,7 @@ export interface AssetReport {
   preview_data?: any;
   preview_files?: {
     pdf?: string;
+    spec_pdf?: string;
     docx?: string;
     excel?: string;
     images?: string;
@@ -39,6 +40,13 @@ export interface PreviewDataResponse {
     files_generating?: boolean;
     files_regenerating?: boolean;
     preview_data: any;
+    preview_files?: {
+      pdf?: string;
+      spec_pdf?: string;
+      docx?: string;
+      excel?: string;
+      images?: string;
+    };
     grouping_mode?: string;
     image_count?: number;
     imageUrls?: string[];
@@ -151,6 +159,7 @@ export interface SubmittedPreviewDataResponse {
     preview_data: any;
     preview_files?: {
       pdf?: string;
+      spec_pdf?: string;
       docx?: string;
       excel?: string;
       images?: string;

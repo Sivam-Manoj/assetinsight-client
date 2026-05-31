@@ -38,6 +38,7 @@ type ReportGroup = {
   type?: string;
   variants: {
     pdf?: PdfReport;
+    specPdf?: PdfReport;
     docx?: PdfReport;
     xlsx?: PdfReport;
     images?: PdfReport;
@@ -72,8 +73,9 @@ function statusTone(status?: string) {
   };
 }
 
-function actionLabel(variant: "pdf" | "docx" | "xlsx" | "images") {
+function actionLabel(variant: "pdf" | "specPdf" | "docx" | "xlsx" | "images") {
   if (variant === "pdf") return "Data";
+  if (variant === "specPdf") return "PDF";
   if (variant === "docx") return "DOCX";
   if (variant === "xlsx") return "Excel";
   return "Images";
@@ -268,6 +270,7 @@ export default function ReportsPage() {
         (report.fileType || String(report.filename || "").split(".").pop() || "") as string
       ).toLowerCase();
       if (fileType === "pdf") group.variants.pdf = report;
+      else if (fileType === "spec_pdf") group.variants.specPdf = report;
       else if (fileType === "docx") group.variants.docx = report;
       else if (fileType === "xlsx") group.variants.xlsx = report;
       else if (fileType === "images" || fileType === "zip") group.variants.images = report;
@@ -326,6 +329,9 @@ export default function ReportsPage() {
         type: "Asset",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
+          specPdf: previewFiles.spec_pdf
+            ? createPseudoReport(previewFiles.spec_pdf, "pdf")
+            : undefined,
           docx: previewFiles.docx
             ? createPseudoReport(previewFiles.docx, "docx")
             : undefined,
@@ -439,6 +445,9 @@ export default function ReportsPage() {
         approvalStatus: listing.status === "approved" ? "approved" : "pending",
         type: "LotListing",
         variants: {
+          specPdf: previewFiles.spec_pdf
+            ? createPseudoReport(previewFiles.spec_pdf, "pdf")
+            : undefined,
           xlsx: previewFiles.excel
             ? createPseudoReport(previewFiles.excel, "xlsx")
             : undefined,
@@ -710,7 +719,7 @@ export default function ReportsPage() {
                           {group.address || "No address provided"}
                         </Typography>
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
-                          {(["pdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                          {(["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
                             const file = group.variants[variant];
                             if (!file) return null;
                             const disabled =
@@ -827,7 +836,7 @@ export default function ReportsPage() {
                                   pb: 0.5,
                                 }}
                               >
-                                {(["pdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                                {(["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
                                   const file = group.variants[variant];
                                   if (!file) return null;
                                   const disabled =

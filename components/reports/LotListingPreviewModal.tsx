@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw } from "lucide-react";
+import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getLotListingPreview,
@@ -128,6 +128,7 @@ export default function LotListingPreviewModal({
   const [previewData, setPreviewData] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [galleryLotImages, setGalleryLotImages] = useState<{ urls: string[]; currentIdx: number } | null>(null);
 
@@ -165,6 +166,7 @@ export default function LotListingPreviewModal({
           data.valuation_methods ||
           ["FML"],
       });
+      setPreviewFiles(data.preview_files || data.files || null);
       setImageUrls(data.imageUrls || []);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to load preview data");
@@ -314,6 +316,24 @@ export default function LotListingPreviewModal({
   const lotsArray: LotListingLot[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
   const displayedTotalValue = calculateTotalValue(lotsArray);
   const includeDamageAnalysis = previewData?.include_damage_analysis !== false;
+  const specPdfUrl = previewFiles?.spec_pdf;
+
+  const handlePrintSpecPdf = () => {
+    if (!specPdfUrl) return;
+    const printWindow = window.open(specPdfUrl, "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      toast.info("Open the PDF download, then print from your browser.");
+      return;
+    }
+    window.setTimeout(() => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch {
+        // Browser PDF viewers may block programmatic print for cross-origin files.
+      }
+    }, 1200);
+  };
 
   const renderConditionSelections = (lot: any, idx: number) => {
     const selections = lot?.condition_report_selections || {};
@@ -395,6 +415,32 @@ export default function LotListingPreviewModal({
             <p className="font-semibold text-red-900">Lot Listing Declined</p>
             <p className="text-sm text-red-700 mt-1">{declineReason}</p>
           </div>
+        </div>
+      )}
+
+      {specPdfUrl && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mr-auto">
+            <p className="text-sm font-semibold text-slate-900">Lot detail PDF</p>
+            <p className="text-xs text-slate-500">Printable category field sheet for each lot.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrintSpecPdf}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Printer className="h-4 w-4" />
+            Print
+          </button>
+          <a
+            href={specPdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-500"
+          >
+            <Download className="h-4 w-4" />
+            Download PDF
+          </a>
         </div>
       )}
 

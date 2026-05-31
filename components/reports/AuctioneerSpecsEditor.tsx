@@ -22,20 +22,25 @@ const normalizeKey = (value: unknown) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 
+const isUsefulValue = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  return !!text && !/^(n\/a|na|none|null|unknown|not visible|not found|tbd)$/i.test(text);
+};
+
 const getSpecRecord = (value: unknown): Record<string, string> => {
   const out: Record<string, string> = {};
   if (Array.isArray(value)) {
     value.forEach((entry: any) => {
       const field = String(entry?.field ?? "").trim();
       const text = String(entry?.value ?? "").trim();
-      if (field && text) out[field] = text;
+      if (field && isUsefulValue(text)) out[field] = text;
     });
     return out;
   }
   if (value && typeof value === "object") {
     Object.entries(value as Record<string, unknown>).forEach(([field, raw]) => {
       const text = String(raw ?? "").trim();
-      if (field && text) out[field] = text;
+      if (field && isUsefulValue(text)) out[field] = text;
     });
   }
   return out;

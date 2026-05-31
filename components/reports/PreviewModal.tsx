@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw } from "lucide-react";
+import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import { 
   getPreviewData, 
@@ -133,6 +133,7 @@ export default function PreviewModal({
   const [groupingMode, setGroupingMode] = useState<string | undefined>(undefined);
   const [imageCount, setImageCount] = useState<number | undefined>(undefined);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
@@ -254,6 +255,7 @@ export default function PreviewModal({
       setFilesRegenerating(Boolean((response.data as any).files_regenerating));
       setDeclineReason((response.data as any).decline_reason || "");
       setPreviewData(response.data.preview_data);
+      setPreviewFiles((response.data as any).preview_files || null);
       setGroupingMode(response.data.grouping_mode);
       setImageCount(response.data.image_count);
       setImageUrls(response.data.imageUrls || []);
@@ -634,6 +636,24 @@ export default function PreviewModal({
   };
 
   const workflowLocked = filesGenerating || filesRegenerating;
+  const specPdfUrl = previewFiles?.spec_pdf;
+
+  const handlePrintSpecPdf = () => {
+    if (!specPdfUrl) return;
+    const printWindow = window.open(specPdfUrl, "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      toast.info("Open the PDF download, then print from your browser.");
+      return;
+    }
+    window.setTimeout(() => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch {
+        // Browser PDF viewers may block programmatic print for cross-origin files.
+      }
+    }, 1200);
+  };
 
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report">
@@ -660,6 +680,32 @@ export default function PreviewModal({
                 : "Your preview has already been submitted. It will appear in Submitted Previews while DOCX, Excel, and Images files are generated."}
             </p>
           </div>
+        </div>
+      )}
+
+      {specPdfUrl && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mr-auto">
+            <p className="text-sm font-semibold text-slate-900">Lot detail PDF</p>
+            <p className="text-xs text-slate-500">Printable category field sheet for each lot.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrintSpecPdf}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Printer className="h-4 w-4" />
+            Print
+          </button>
+          <a
+            href={specPdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
+          >
+            <Download className="h-4 w-4" />
+            Download PDF
+          </a>
         </div>
       )}
 
