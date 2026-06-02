@@ -120,6 +120,156 @@ const getMissingConditionSelectionMessage = (lots: any[] | undefined | null) => 
   return `Please select ${missingLabels} for Lot ${invalidLots.join(", ")}`;
 };
 
+type SignaturePadProps = {
+  value?: string;
+  disabled?: boolean;
+  onChange: (value: string | null) => void;
+};
+
+const SIGNATURE_CANVAS_WIDTH = 900;
+const SIGNATURE_CANVAS_HEIGHT = 260;
+
+function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const hasInkRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearCanvas = React.useCallback(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+
+    clearCanvas();
+    hasInkRef.current = false;
+
+    if (!value) return;
+
+    const image = new window.Image();
+    image.onload = () => {
+      clearCanvas();
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      hasInkRef.current = true;
+    };
+    image.src = value;
+  }, [clearCanvas, value]);
+
+  const getCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (disabled) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    const point = getCanvasPoint(event);
+    if (!canvas || !ctx || !point) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawingRef.current = true;
+    hasInkRef.current = true;
+    lastPointRef.current = point;
+
+    ctx.fillStyle = "#111827";
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (disabled || !drawingRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    const point = getCanvasPoint(event);
+    const lastPoint = lastPointRef.current;
+    if (!canvas || !ctx || !point || !lastPoint) return;
+
+    event.preventDefault();
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(lastPoint.x, lastPoint.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+    lastPointRef.current = point;
+  };
+
+  const finishDrawing = () => {
+    const canvas = canvasRef.current;
+    if (!drawingRef.current || !canvas) return;
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    if (hasInkRef.current) {
+      onChange(canvas.toDataURL("image/png"));
+    }
+  };
+
+  const handleClear = () => {
+    if (disabled) return;
+    clearCanvas();
+    hasInkRef.current = false;
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    onChange(null);
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <label className="block text-xs sm:text-sm font-semibold text-gray-800">
+            Appraiser Signature
+          </label>
+          <p className="mt-0.5 text-xs text-gray-500">
+            This signature is added to the DOCX appraisal signature areas.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleClear}
+          disabled={disabled || !value}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Clear
+        </button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={SIGNATURE_CANVAS_WIDTH}
+        height={SIGNATURE_CANVAS_HEIGHT}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrawing}
+        onPointerCancel={finishDrawing}
+        onPointerLeave={finishDrawing}
+        className={`h-40 w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 touch-none ${
+          disabled ? "cursor-not-allowed opacity-60" : "cursor-crosshair"
+        }`}
+        aria-label="Draw appraiser signature"
+      />
+      <p className="mt-2 text-xs text-gray-500">
+        {value ? "Saved signature ready for DOCX generation." : "Draw inside the box, then save changes."}
+      </p>
+    </div>
+  );
+}
+
 export default function PreviewModal({
   reportId,
   isOpen,
@@ -350,6 +500,21 @@ export default function PreviewModal({
 
   const updateField = (field: string, value: any) => {
     setPreviewData((prev: any) => ({ ...prev, [field]: value }));
+    setHasChanges(true);
+  };
+
+  const updateAppraiserSignature = (dataUrl: string | null) => {
+    setPreviewData((prev: any) => {
+      const next = { ...(prev || {}) };
+      if (dataUrl) {
+        next.appraiser_signature_data_url = dataUrl;
+        next.appraiser_signature_updated_at = new Date().toISOString();
+      } else {
+        delete next.appraiser_signature_data_url;
+        delete next.appraiser_signature_updated_at;
+      }
+      return next;
+    });
     setHasChanges(true);
   };
 
@@ -927,6 +1092,13 @@ export default function PreviewModal({
                       onChange={(e) => updateField("appraisal_company", e.target.value)}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
                       placeholder="e.g., Asset Insight Appraisals"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <AppraiserSignaturePad
+                      value={previewData?.appraiser_signature_data_url || ""}
+                      disabled={workflowLocked}
+                      onChange={updateAppraiserSignature}
                     />
                   </div>
                 </div>
