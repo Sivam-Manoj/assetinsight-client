@@ -74,6 +74,12 @@ const normalizeConditionSelection = (value: any) =>
     .replace(/^na$/, "n/a")
     .replace(/^not applicable$/, "n/a");
 
+const normalizeSpecKey = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+
 const getLotDisplayNumber = (lot: any, index: number) => {
   const candidates = [lot?.lot_number, lot?.lot_id, lot?.lot, lot?.id];
   for (const candidate of candidates) {
@@ -289,10 +295,10 @@ export default function PreviewModal({
         if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
         pdfRefreshed = true;
       } catch (pdfError: any) {
-        toast.error(pdfError.response?.data?.message || "Changes saved, but Conditional Report could not be refreshed.");
+        toast.error(pdfError.response?.data?.message || "Changes saved, but CR could not be refreshed.");
       }
       setHasChanges(false);
-      toast.success(pdfRefreshed ? "Changes saved and Conditional Report refreshed." : "Changes saved successfully.");
+      toast.success(pdfRefreshed ? "Changes saved and CR refreshed." : "Changes saved successfully.");
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
@@ -431,7 +437,24 @@ export default function PreviewModal({
                   .filter((entry: string[]) => entry[0])
               )
             : {};
-      existingSpecs[fieldName] = value.trim() ? value : "Not Found";
+      const deletedSpecs = Array.isArray(lot.condition_report_specs_deleted)
+        ? lot.condition_report_specs_deleted
+            .map((field: any) => String(field || "").trim())
+            .filter(Boolean)
+        : [];
+      const fieldKey = normalizeSpecKey(fieldName);
+      if (value.trim()) {
+        existingSpecs[fieldName] = value.trim();
+        lot.condition_report_specs_deleted = deletedSpecs.filter(
+          (field: string) => normalizeSpecKey(field) !== fieldKey
+        );
+      } else {
+        delete existingSpecs[fieldName];
+        if (!deletedSpecs.some((field: string) => normalizeSpecKey(field) === fieldKey)) {
+          deletedSpecs.push(fieldName);
+        }
+        lot.condition_report_specs_deleted = deletedSpecs;
+      }
       lot.condition_report_specs = existingSpecs;
       newLots[index] = lot;
       return { ...prev, lots: newLots };
@@ -651,7 +674,7 @@ export default function PreviewModal({
     if (!specPdfUrl) return;
     const printWindow = window.open(specPdfUrl, "_blank", "noopener,noreferrer");
     if (!printWindow) {
-      toast.info("Open the Conditional Report download, then print from your browser.");
+      toast.info("Open the CR download, then print from your browser.");
       return;
     }
     window.setTimeout(() => {
@@ -695,7 +718,7 @@ export default function PreviewModal({
       {specPdfUrl && (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="mr-auto">
-            <p className="text-sm font-semibold text-slate-900">Conditional Report</p>
+            <p className="text-sm font-semibold text-slate-900">CR</p>
           </div>
           <button
             type="button"
@@ -712,7 +735,7 @@ export default function PreviewModal({
             className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
           >
             <Download className="h-4 w-4" />
-            Download Conditional Report
+            Download CR
           </a>
         </div>
       )}

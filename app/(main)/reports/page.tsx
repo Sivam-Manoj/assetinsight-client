@@ -75,7 +75,7 @@ function statusTone(status?: string) {
 
 function actionLabel(variant: "pdf" | "specPdf" | "docx" | "xlsx" | "images") {
   if (variant === "pdf") return "Data";
-  if (variant === "specPdf") return "Conditional Report";
+  if (variant === "specPdf") return "CR";
   if (variant === "docx") return "DOCX";
   if (variant === "xlsx") return "Excel";
   return "Images";

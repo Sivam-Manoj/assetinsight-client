@@ -26,7 +26,7 @@ const isUsefulValue = (value: unknown) => {
   const text = String(value ?? "").trim();
   return (
     !!text &&
-    !/^(n\/a|na|none|null|unknown|not visible|tbd)$/i.test(text) &&
+    !/^(n\/a|na|none|null|unknown|not visible|not found|tbd|no|false|not available|not applicable)$/i.test(text) &&
     !/title clearance clarification fee|applied to your invoice|over and above the purchase price|applicable taxes|following the close of the sale/i.test(text)
   );
 };
@@ -57,6 +57,12 @@ const getValueForField = (record: Record<string, string>, fieldName: string) => 
   return matchingKey ? record[matchingKey] : "Not Found";
 };
 
+const hasValueForField = (record: Record<string, string>, fieldName: string) => {
+  if (record[fieldName] !== undefined) return true;
+  const fieldKey = normalizeKey(fieldName);
+  return Object.keys(record).some((key) => normalizeKey(key) === fieldKey);
+};
+
 const isDamageField = (fieldName: string) => {
   const key = normalizeKey(fieldName);
   return key === "damage" || key === "damages" || key === "damageanalysis";
@@ -77,7 +83,10 @@ export default function AuctioneerSpecsEditor({
     if (isDamageField(field)) return false;
     return !fields.some((knownField) => normalizeKey(knownField) === normalizeKey(field));
   });
-  const visibleFields = [...fields, ...extraFields];
+  const visibleFields = [
+    ...fields.filter((field) => hasValueForField(specRecord, field)),
+    ...extraFields,
+  ];
   const accentClasses =
     accent === "purple"
       ? "border-purple-200 bg-purple-50/50 text-purple-900"
@@ -88,7 +97,7 @@ export default function AuctioneerSpecsEditor({
       : "focus:ring-rose-500";
 
   const categoryChipText = categorySpec
-    ? `${categorySpec.childCategory} • ${fields.length} fields`
+    ? `${categorySpec.childCategory} - ${fields.length} fields`
     : "Category not matched";
 
   return (
@@ -96,11 +105,11 @@ export default function AuctioneerSpecsEditor({
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide">
-            Auctioneer Import specs
+            Auctioneer Specs
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
             {categorySpec
-              ? `${categorySpec.childCategory} field names`
+              ? `Found values for ${categorySpec.childCategory}`
               : lot?.categories
                 ? "No matching category field list found"
               : "Select a category to show field names"}
@@ -122,15 +131,23 @@ export default function AuctioneerSpecsEditor({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {visibleFields.map((fieldName) => (
               <label key={fieldName} className="block">
-                <span className="mb-1 block text-[11px] font-medium text-gray-700">
-                  {fieldName}
+                <span className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
+                  <span className="min-w-0 break-words">{fieldName}</span>
+                  <button
+                    type="button"
+                    onClick={() => onChange(lotIndex, fieldName, "")}
+                    className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-red-200 bg-red-50 text-sm font-bold leading-none text-red-600 transition hover:bg-red-100"
+                    aria-label={`Remove ${fieldName}`}
+                  >
+                    x
+                  </button>
                 </span>
                 <input
                   type="text"
                   value={getValueForField(specRecord, fieldName)}
                   onChange={(event) => onChange(lotIndex, fieldName, event.target.value)}
                   className={`w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
-                  placeholder="Not Found"
+                  placeholder="Value found in uploaded images"
                 />
               </label>
             ))}
@@ -138,7 +155,7 @@ export default function AuctioneerSpecsEditor({
         </div>
       ) : (
         <div className="rounded-md border border-dashed border-gray-300 bg-white/70 px-3 py-4 text-xs text-gray-600">
-          Enter an exact Auctioneer Import category to edit its field names.
+          No spec values were found from the uploaded images yet.
         </div>
       )}
     </div>
