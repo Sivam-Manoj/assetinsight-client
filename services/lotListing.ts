@@ -97,6 +97,13 @@ export interface LotListingProgress {
   };
 }
 
+type ApiEnvelope<T> = T | { message?: string; data?: T };
+
+function unwrapApiData<T>(value: ApiEnvelope<T>): T {
+  const maybeData = (value as any)?.data;
+  return (maybeData ?? value) as T;
+}
+
 // Get all lot listings for current user
 export async function getLotListings(): Promise<{ data: LotListing[] }> {
   const response = await API.get<{ data: LotListing[]; message?: string }>("/lot-listing");
@@ -107,8 +114,8 @@ export async function getLotListings(): Promise<{ data: LotListing[] }> {
 
 // Get lot listing by ID
 export async function getLotListingById(id: string): Promise<LotListing> {
-  const response = await API.get<LotListing>(`/lot-listing/${id}`);
-  return response.data;
+  const response = await API.get<ApiEnvelope<LotListing>>(`/lot-listing/${id}`);
+  return unwrapApiData(response.data);
 }
 
 // Get lot listing progress
@@ -119,13 +126,13 @@ export async function getLotListingProgress(id: string): Promise<LotListingProgr
 
 // Get lot listing preview
 export async function getLotListingPreview(id: string): Promise<LotListing> {
-  const response = await API.get<LotListing>(`/lot-listing/${id}/preview`);
-  return response.data;
+  const response = await API.get<ApiEnvelope<LotListing>>(`/lot-listing/${id}/preview`);
+  return unwrapApiData(response.data);
 }
 
 export async function getLotListingSubmittedPreview(id: string): Promise<LotListing> {
-  const response = await API.get<LotListing>(`/lot-listing/${id}/submitted-preview`);
-  return response.data;
+  const response = await API.get<ApiEnvelope<LotListing>>(`/lot-listing/${id}/submitted-preview`);
+  return unwrapApiData(response.data);
 }
 
 // Update lot listing preview
@@ -163,14 +170,14 @@ export async function submitLotListingForApproval(
   id: string,
   data?: { preview_data?: any }
 ): Promise<LotListing> {
-  const response = await API.post<LotListing>(`/lot-listing/${id}/submit-approval`, data || {});
-  return response.data;
+  const response = await API.post<ApiEnvelope<LotListing>>(`/lot-listing/${id}/submit-approval`, data || {});
+  return unwrapApiData(response.data);
 }
 
 // Resubmit lot listing (regenerate files)
 export async function resubmitLotListing(id: string, data?: { preview_data?: any }): Promise<LotListing> {
-  const response = await API.post<LotListing>(`/lot-listing/${id}/resubmit`, data || {});
-  return response.data;
+  const response = await API.post<ApiEnvelope<LotListing>>(`/lot-listing/${id}/resubmit`, data || {});
+  return unwrapApiData(response.data);
 }
 
 // Delete lot listing

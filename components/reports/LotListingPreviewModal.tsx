@@ -147,6 +147,41 @@ export default function LotListingPreviewModal({
     }
   }, [isOpen, reportId]);
 
+  const applyLotListingState = (
+    listing: any,
+    options: { assumeFilesGenerating?: boolean; assumeFilesRegenerating?: boolean } = {}
+  ) => {
+    const data = (listing as any)?.data || listing || {};
+    if (data.status) setStatus(data.status);
+    setDeclineReason(data.decline_reason || "");
+    setFilesGenerating(Boolean(data.files_generating ?? options.assumeFilesGenerating));
+    setFilesRegenerating(Boolean(data.files_regenerating ?? options.assumeFilesRegenerating));
+
+    const nextPreviewData = data.preview_data || {
+      contract_no: data.contract_no,
+      sales_date: data.sales_date,
+      location: data.location,
+      currency: data.currency,
+      total_value: data.total_value,
+      lots: data.lots || [],
+    };
+    if (nextPreviewData) {
+      setPreviewData({
+        ...nextPreviewData,
+        include_damage_analysis:
+          nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
+        valuation_methods:
+          nextPreviewData.valuation_methods ||
+          data.valuation_methods ||
+          ["FML"],
+      });
+    }
+
+    const nextPreviewFiles = data.preview_files || data.files;
+    if (nextPreviewFiles) setPreviewFiles(nextPreviewFiles);
+    setImageUrls(Array.isArray(data.imageUrls) ? data.imageUrls : []);
+  };
+
   const loadPreviewData = async () => {
     try {
       setLoading(true);
@@ -157,28 +192,7 @@ export default function LotListingPreviewModal({
         getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
       ]);
       setCategorySpecs(categorySpecResponse.specs || []);
-      const data = (response as any).data || response;
-      setStatus(data.status);
-      setDeclineReason(data.decline_reason || "");
-      setFilesGenerating(Boolean(data.files_generating));
-      setFilesRegenerating(Boolean(data.files_regenerating));
-      const nextPreviewData = data.preview_data || {
-        contract_no: data.contract_no,
-        sales_date: data.sales_date,
-        location: data.location,
-        lots: data.lots || [],
-      };
-      setPreviewData({
-        ...nextPreviewData,
-        include_damage_analysis:
-          nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
-        valuation_methods:
-          nextPreviewData.valuation_methods ||
-          data.valuation_methods ||
-          ["FML"],
-      });
-      setPreviewFiles(data.preview_files || data.files || null);
-      setImageUrls(data.imageUrls || []);
+      applyLotListingState(response);
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to load preview data");
       onClose();
@@ -196,12 +210,13 @@ export default function LotListingPreviewModal({
     try {
       setSaving(true);
       const saved = await updateLotListingPreview(reportId, { preview_data: previewData });
-      const savedPreviewData = (saved as any)?.data?.preview_data || (saved as any)?.preview_data;
-      if (savedPreviewData) setPreviewData(savedPreviewData);
+      if ((saved as any)?.data) applyLotListingState((saved as any).data);
       if ((saved as any)?.files_regeneration_queued) {
         setHasChanges(false);
-        setFilesGenerating(true);
-        setFilesRegenerating(true);
+        applyLotListingState((saved as any).data, {
+          assumeFilesGenerating: true,
+          assumeFilesRegenerating: true,
+        });
         toast.success("Changes saved. Files are being regenerated with the updated report data.");
         if (onSuccess) onSuccess();
         onClose();
@@ -250,10 +265,12 @@ export default function LotListingPreviewModal({
       setSubmitting(true);
 
       if (isResubmitMode) {
-        await resubmitLotListing(reportId, { preview_data: previewData });
+        const updated = await resubmitLotListing(reportId, { preview_data: previewData });
         setHasChanges(false);
-        setFilesGenerating(true);
-        setFilesRegenerating(true);
+        applyLotListingState(updated, {
+          assumeFilesGenerating: true,
+          assumeFilesRegenerating: true,
+        });
         toast.success("Lot listing approved files are being regenerated.");
       } else {
         await updateLotListingPreview(reportId, {
@@ -261,7 +278,11 @@ export default function LotListingPreviewModal({
           regenerate_files_on_lot_number_change: false,
         });
         setHasChanges(false);
-        await submitLotListingForApproval(reportId, { preview_data: previewData });
+        const submitted = await submitLotListingForApproval(reportId, { preview_data: previewData });
+        applyLotListingState(submitted, {
+          assumeFilesGenerating: true,
+          assumeFilesRegenerating: false,
+        });
         toast.success("Lot listing approved files are being generated.");
       }
 
@@ -862,7 +883,7 @@ export default function LotListingPreviewModal({
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSubmitForApproval}
-                disabled={submitting || saving}
+                disabled={submitting || saving || filesGenerating || filesRegenerating}
                 className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/30 transition-all"
               >
                 {submitting || saving ? (

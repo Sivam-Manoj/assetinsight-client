@@ -62,7 +62,13 @@ function typeLabel(type?: string) {
 }
 
 function isFileGenerationActive(report: any) {
-  return Boolean(report?.files_generating) || Boolean(report?.files_regenerating);
+  return (
+    Boolean(report?.files_generating) ||
+    Boolean(report?.files_regenerating) ||
+    report?.status === "processing" ||
+    report?.job_status === "queued" ||
+    report?.job_status === "processing"
+  );
 }
 
 function statusTone(status?: string, isGeneratingFiles = false) {
