@@ -252,6 +252,8 @@ export default function LotListingPreviewModal({
       if (isResubmitMode) {
         await resubmitLotListing(reportId, { preview_data: previewData });
         setHasChanges(false);
+        setFilesGenerating(true);
+        setFilesRegenerating(true);
         toast.success("Lot listing approved files are being regenerated.");
       } else {
         await updateLotListingPreview(reportId, {
