@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import {
   DownloadRounded,
+  RefreshRounded,
   SearchRounded,
 } from "@mui/icons-material";
 import { toast } from "react-toastify";
@@ -176,6 +177,7 @@ function GeneratingFilesProgress() {
 export default function ReportsPage() {
   const [reports, setReports] = useState<PdfReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -189,11 +191,20 @@ export default function ReportsPage() {
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
+  const loadingReportsRef = useRef(false);
 
-  const loadReports = async () => {
-    setLoading(true);
-    setError(null);
+  const loadReports = useCallback(async (
+    options: { showLoading?: boolean; silent?: boolean; successToast?: boolean } = {}
+  ) => {
+    if (loadingReportsRef.current) return false;
+    loadingReportsRef.current = true;
+    const showFullLoading = options.showLoading === true;
     try {
+      if (showFullLoading) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       const [legacy, assetResponse, realEstateResponse, lotListingResponse] =
         await Promise.all([
           ReportsService.getMyReports(),
@@ -225,25 +236,35 @@ export default function ReportsPage() {
             report.status === "approved" ||
             report.status === "pending_approval" ||
             isFileGenerationActive(report)
-        )
+          )
       );
+      setError(null);
+      if (options.successToast) {
+        toast.success("Reports refreshed.");
+      }
+      return true;
     } catch (loadError: any) {
-      setError(
-        loadError?.response?.data?.message ||
-          loadError?.message ||
-          "Failed to load reports"
-      );
+      if (!options.silent) {
+        setError(
+          loadError?.response?.data?.message ||
+            loadError?.message ||
+            "Failed to load reports"
+        );
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (showFullLoading) setLoading(false);
+      setRefreshing(false);
+      loadingReportsRef.current = false;
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void loadReports();
+    void loadReports({ showLoading: true });
 
-    const handler = () => void loadReports();
+    const handler = () => void loadReports({ silent: true });
     const visibilityHandler = () => {
-      if (!document.hidden) void loadReports();
+      if (!document.hidden) void loadReports({ silent: true });
     };
     window.addEventListener("cv:report-created", handler as any);
     window.addEventListener("focus", handler);
@@ -255,7 +276,19 @@ export default function ReportsPage() {
       window.removeEventListener("pageshow", handler);
       document.removeEventListener("visibilitychange", visibilityHandler);
     };
-  }, []);
+  }, [loadReports]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      void loadReports({ silent: true });
+    }, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [loadReports]);
+
+  const handleManualRefresh = async () => {
+    await loadReports({ successToast: true });
+  };
 
   async function handleDelete(group: ReportGroup) {
     if (deletingKey) return;
@@ -532,11 +565,6 @@ export default function ReportsPage() {
     return Array.from(map.values());
   }, [assetReports, lotListingReports, realEstateReports, reports]);
 
-  const hasGeneratingReports = useMemo(
-    () => groups.some((group) => group.isGeneratingFiles),
-    [groups]
-  );
-
   const availableTypes = useMemo(() => {
     const values = new Set<string>();
     groups.forEach((group) => {
@@ -601,14 +629,6 @@ export default function ReportsPage() {
     setPage(1);
   }, [query, pageSize, sortBy, typeFilter]);
 
-  useEffect(() => {
-    if (!hasGeneratingReports) return;
-    const intervalId = window.setInterval(() => {
-      void loadReports();
-    }, 5000);
-    return () => window.clearInterval(intervalId);
-  }, [hasGeneratingReports]);
-
   async function handleDownload(reportId: string) {
     try {
       setDownloadingId(reportId);
@@ -669,6 +689,23 @@ export default function ReportsPage() {
         eyebrow="Records"
         title="My Reports"
         description="Search, filter, and download generated report packages across asset, real estate, salvage, and lot listing workflows."
+        action={
+          <Button
+            variant="outlined"
+            startIcon={
+              refreshing ? (
+                <CircularProgress color="inherit" size={16} />
+              ) : (
+                <RefreshRounded />
+              )
+            }
+            onClick={() => void handleManualRefresh()}
+            disabled={loading || refreshing}
+            sx={{ whiteSpace: "nowrap" }}
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+        }
       />
 
       <SectionPanel
