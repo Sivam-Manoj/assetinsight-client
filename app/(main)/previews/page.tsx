@@ -62,6 +62,11 @@ type CombinedReport =
 
 type TabType = "new" | "submitted";
 
+function requestReportsRefetch() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("cv:report-created"));
+}
+
 function summaryForReport(report: CombinedReport) {
   if (report.reportType === "realEstate") {
     return {
@@ -238,6 +243,7 @@ export default function PreviewsPage() {
   };
 
   const handleSuccess = () => {
+    requestReportsRefetch();
     void loadReports();
     toast.success("Report submitted successfully.");
   };
@@ -250,6 +256,7 @@ export default function PreviewsPage() {
       } else {
         await resubmitReport(report._id);
       }
+      requestReportsRefetch();
       toast.success("Report resubmitted. Files are being regenerated.");
       await loadReports();
     } catch (error: any) {

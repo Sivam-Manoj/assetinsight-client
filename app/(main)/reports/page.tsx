@@ -242,8 +242,19 @@ export default function ReportsPage() {
     void loadReports();
 
     const handler = () => void loadReports();
+    const visibilityHandler = () => {
+      if (!document.hidden) void loadReports();
+    };
     window.addEventListener("cv:report-created", handler as any);
-    return () => window.removeEventListener("cv:report-created", handler as any);
+    window.addEventListener("focus", handler);
+    window.addEventListener("pageshow", handler);
+    document.addEventListener("visibilitychange", visibilityHandler);
+    return () => {
+      window.removeEventListener("cv:report-created", handler as any);
+      window.removeEventListener("focus", handler);
+      window.removeEventListener("pageshow", handler);
+      document.removeEventListener("visibilitychange", visibilityHandler);
+    };
   }, []);
 
   async function handleDelete(group: ReportGroup) {
