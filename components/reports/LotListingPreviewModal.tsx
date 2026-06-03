@@ -189,6 +189,11 @@ export default function LotListingPreviewModal({
       const saved = await updateLotListingPreview(reportId, { preview_data: previewData });
       const savedPreviewData = (saved as any)?.data?.preview_data || (saved as any)?.preview_data;
       if (savedPreviewData) setPreviewData(savedPreviewData);
+      if ((saved as any)?.files_regeneration_queued) {
+        setHasChanges(false);
+        toast.success("Changes saved. Files are being regenerated with the updated report data.");
+        return;
+      }
       let pdfRefreshed = false;
       try {
         const pdf = await refreshLotListingSpecPdf(reportId);

@@ -179,7 +179,11 @@ export default function ReportsPage() {
       setLotListingReports(
         lotListingResponse.data.filter(
           (report) =>
-            report.status === "approved" || report.status === "pending_approval"
+            report.status === "approved" ||
+            report.status === "pending_approval" ||
+            (report.status === "processing" &&
+              (Boolean((report as any).files_generating) ||
+                Boolean((report as any).files_regenerating)))
         )
       );
     } catch (loadError: any) {
@@ -392,7 +396,10 @@ export default function ReportsPage() {
     }
 
     for (const listing of lotListingReports) {
-      const previewFiles = (listing as any).preview_files || {};
+      const previewFiles =
+        listing.status === "approved"
+          ? (listing as any).files || (listing as any).preview_files || {}
+          : (listing as any).preview_files || (listing as any).files || {};
       const currency = String(
         (listing as any)?.details?.currency ||
           (listing as any)?.preview_data?.currency ||

@@ -436,7 +436,7 @@ export default function PreviewModal({
       if (saved?.data) setPreviewData(saved.data);
       if (saved?.files_regeneration_queued) {
         setHasChanges(false);
-        toast.success("Changes saved. Files are being regenerated with the updated lot numbers.");
+        toast.success("Changes saved. Files are being regenerated with the updated report data.");
         return;
       }
       let pdfRefreshed = false;
