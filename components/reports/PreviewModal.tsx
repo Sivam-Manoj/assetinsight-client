@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
 import { toast } from "react-toastify";
-import { 
+import {
   getPreviewData, 
   updatePreviewData, 
   submitForApproval,
@@ -15,6 +15,11 @@ import {
 } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
+import {
+  AUCTION_LOCATIONS,
+  DEFAULT_AUCTION_LOCATION,
+  formatAuctionCoordinates,
+} from "@/lib/auctionLocations";
 
 interface PreviewModalProps {
   reportId: string;
@@ -411,7 +416,17 @@ export default function PreviewModal({
       setFilesGenerating(Boolean((response.data as any).files_generating));
       setFilesRegenerating(Boolean((response.data as any).files_regenerating));
       setDeclineReason((response.data as any).decline_reason || "");
-      setPreviewData(response.data.preview_data);
+      const nextPreviewData = response.data.preview_data || {};
+      const fallbackLocation =
+        nextPreviewData.location ||
+        (Array.isArray(nextPreviewData.lots)
+          ? nextPreviewData.lots.find((lot: any) => lot?.location)?.location
+          : "") ||
+        DEFAULT_AUCTION_LOCATION;
+      setPreviewData({
+        ...nextPreviewData,
+        location: fallbackLocation,
+      });
       setPreviewFiles((response.data as any).preview_files || null);
       setGroupingMode(response.data.grouping_mode);
       setImageCount(response.data.image_count);
@@ -585,9 +600,11 @@ export default function PreviewModal({
   };
 
   const updateLot = (index: number, field: string, value: any) => {
+    const nextValue =
+      field === "description" ? String(value || "").slice(0, 60) : value;
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      newLots[index] = { ...newLots[index], [field]: value };
+      newLots[index] = { ...newLots[index], [field]: nextValue };
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
@@ -679,6 +696,7 @@ export default function PreviewModal({
             : "min-h-[120px] rounded-lg resize-y"
         }`}
         placeholder={meta.placeholder}
+        maxLength={field === "description" ? 60 : undefined}
         rows={isDesktop ? 4 : 5}
         aria-label={`${meta.label} for lot ${getLotDisplayNumber(lot, idx)}`}
       />
@@ -1018,6 +1036,26 @@ export default function PreviewModal({
                     onChange={(e) => updateField("inspection_date", e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                    Location
+                  </label>
+                  <select
+                    {...getFocusTrackingProps("location")}
+                    value={previewData?.location || DEFAULT_AUCTION_LOCATION}
+                    onChange={(e) => updateField("location", e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                  >
+                    {AUCTION_LOCATIONS.map((auctionLocation) => (
+                      <option key={auctionLocation} value={auctionLocation}>
+                        {auctionLocation}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatAuctionCoordinates(previewData?.location || DEFAULT_AUCTION_LOCATION)}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
@@ -1806,6 +1844,7 @@ export default function PreviewModal({
                       onChange={(event) => updateLot(lotIndex, field, event.target.value)}
                       className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-rose-500"
                       placeholder={meta.placeholder}
+                      maxLength={field === "description" ? 60 : undefined}
                     />
                   </div>
                 </div>

@@ -24,6 +24,11 @@ import { Check, Save } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuthContext } from "@/context/AuthContext";
 import { SERVER_BASE } from "@/lib/config";
+import {
+  AUCTION_LOCATIONS,
+  DEFAULT_AUCTION_LOCATION,
+  formatAuctionCoordinates,
+} from "@/lib/auctionLocations";
 
 // // Code-split the CatalogueSection for camera-based lot capture (disabled for Mixed-only)
 // const CatalogueSection = dynamic(() => import("./catalogue/CatalogueSection"), {
@@ -141,6 +146,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   );
   const [industry, setIndustry] = useState("");
   const [inspectionDate, setInspectionDate] = useState(isoDate(new Date())); // YYYY-MM-DD
+  const [location, setLocation] = useState<string>(DEFAULT_AUCTION_LOCATION);
   const [contractNo, setContractNo] = useState("");
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState<string>("");
@@ -334,6 +340,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         appraisalCompany,
         industry,
         inspectionDate,
+        location,
         contractNo,
         language,
         currency,
@@ -452,6 +459,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (formData.appraisalCompany) setAppraisalCompany(formData.appraisalCompany);
     if (formData.industry) setIndustry(formData.industry);
     if (formData.inspectionDate) setInspectionDate(formData.inspectionDate);
+    if (formData.location) setLocation(formData.location);
     if (formData.contractNo) setContractNo(formData.contractNo);
     if (formData.language) setLanguage(formData.language);
     if (formData.currency) setCurrency(formData.currency);
@@ -716,6 +724,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAppraisalCompany("");
       setIndustry("");
       setInspectionDate(isoDate(new Date()));
+      setLocation(DEFAULT_AUCTION_LOCATION);
       setContractNo("");
       setLanguage("en");
       setCurrency("");
@@ -751,6 +760,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAppraisalCompany("");
       setIndustry("");
       setInspectionDate(isoDate(new Date()));
+      setLocation(DEFAULT_AUCTION_LOCATION);
       setContractNo("");
       setLanguage("en");
       setCurrency("");
@@ -801,6 +811,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         appraisalCompany,
         industry,
         inspectionDate,
+        location,
         contractNo,
         language,
         currency,
@@ -847,6 +858,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       if (typeof fd.industry === "string") setIndustry(fd.industry);
       if (typeof fd.inspectionDate === "string")
         setInspectionDate(fd.inspectionDate);
+      if (typeof fd.location === "string" && fd.location.trim())
+        setLocation(fd.location);
       if (typeof fd.contractNo === "string") setContractNo(fd.contractNo);
       if (fd.language === "en" || fd.language === "fr" || fd.language === "es")
         setLanguage(fd.language);
@@ -1177,6 +1190,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }),
         ...(industry.trim() && { industry: industry.trim() }),
         ...(inspectionDate && { inspection_date: inspectionDate }),
+        location: location.trim() || DEFAULT_AUCTION_LOCATION,
         ...(contractNo.trim() && { contract_no: contractNo.trim() }),
         language,
         ...(currency && { currency }),
@@ -1561,6 +1575,23 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     onChange={(e) => setInspectionDate(e.target.value)}
                     className="w-full rounded-xl border border-gray-200/70 bg-white/80 px-3 py-2 text-sm text-gray-900 shadow-inner ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-rose-300"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-600">Location</label>
+                  <select
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(251,113,133,0.15)] transition-all cursor-pointer hover:border-gray-400"
+                  >
+                    {AUCTION_LOCATIONS.map((auctionLocation) => (
+                      <option key={auctionLocation} value={auctionLocation}>
+                        {auctionLocation}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500">
+                    {formatAuctionCoordinates(location)}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-gray-600">Contract No</label>

@@ -10,6 +10,7 @@ export type AssetFormData = {
   appraisalCompany?: string;
   industry?: string;
   inspectionDate?: string;
+  location?: string;
   contractNo?: string;
   language?: "en" | "fr" | "es";
   currency?: string;

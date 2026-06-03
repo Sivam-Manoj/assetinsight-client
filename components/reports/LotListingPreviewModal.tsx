@@ -16,6 +16,11 @@ import {
 import { getAssetCategorySpecs, type AssetCategorySpec } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
+import {
+  AUCTION_LOCATIONS,
+  DEFAULT_AUCTION_LOCATION,
+  formatAuctionCoordinates,
+} from "@/lib/auctionLocations";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -165,9 +170,16 @@ export default function LotListingPreviewModal({
       total_value: data.total_value,
       lots: data.lots || [],
     };
+    const fallbackLocation =
+      nextPreviewData.location ||
+      (Array.isArray(nextPreviewData.lots)
+        ? nextPreviewData.lots.find((lot: any) => lot?.location)?.location
+        : "") ||
+      DEFAULT_AUCTION_LOCATION;
     if (nextPreviewData) {
       setPreviewData({
         ...nextPreviewData,
+        location: fallbackLocation,
         include_damage_analysis:
           nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
         valuation_methods:
@@ -301,9 +313,11 @@ export default function LotListingPreviewModal({
   };
 
   const updateLot = (index: number, field: string, value: any) => {
+    const nextValue =
+      field === "description" ? String(value || "").slice(0, 60) : value;
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      newLots[index] = { ...newLots[index], [field]: value };
+      newLots[index] = { ...newLots[index], [field]: nextValue };
       return {
         ...prev,
         lots: newLots,
@@ -559,26 +573,22 @@ export default function LotListingPreviewModal({
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
-                    Sales Date
-                  </label>
-                  <input
-                    type="date"
-                    value={previewData?.sales_date?.split("T")[0] || ""}
-                    onChange={(e) => updateField("sales_date", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
                     Location
                   </label>
-                  <input
-                    type="text"
-                    value={previewData?.location || ""}
+                  <select
+                    value={previewData?.location || DEFAULT_AUCTION_LOCATION}
                     onChange={(e) => updateField("location", e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    placeholder="e.g., Toronto, ON"
-                  />
+                  >
+                    {AUCTION_LOCATIONS.map((auctionLocation) => (
+                      <option key={auctionLocation} value={auctionLocation}>
+                        {auctionLocation}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatAuctionCoordinates(previewData?.location || DEFAULT_AUCTION_LOCATION)}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
@@ -802,6 +812,7 @@ export default function LotListingPreviewModal({
                           <textarea
                             value={lot.description || ""}
                             onChange={(e) => updateLot(idx, "description", e.target.value)}
+                            maxLength={60}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-y min-h-[80px]"
                             placeholder="Description"
                             rows={3}
