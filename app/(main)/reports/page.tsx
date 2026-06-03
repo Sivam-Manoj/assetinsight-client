@@ -295,12 +295,17 @@ export default function ReportsPage() {
     const realEstateReportIds = new Set(
       realEstateReports.map((report) => report._id)
     );
+    const lotListingReportIds = new Set(
+      lotListingReports.map((report) => report._id)
+    );
 
     for (const report of reports) {
       const reportRef = (report as any).report as string | undefined;
       if (
         reportRef &&
-        (assetReportIds.has(reportRef) || realEstateReportIds.has(reportRef))
+        (assetReportIds.has(reportRef) ||
+          realEstateReportIds.has(reportRef) ||
+          lotListingReportIds.has(reportRef))
       ) {
         continue;
       }
