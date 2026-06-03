@@ -62,6 +62,8 @@ export interface LotListing {
     contract_no?: string;
     sales_date?: string;
     location?: string;
+    latitude?: number;
+    longitude?: number;
     currency?: string;
     include_damage_analysis?: boolean;
     valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
@@ -72,6 +74,8 @@ export interface LotListing {
     contract_no?: string;
     sales_date?: string;
     location?: string;
+    latitude?: number;
+    longitude?: number;
     currency?: string;
     include_damage_analysis?: boolean;
     valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
+import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, LocateFixed } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getLotListingPreview,
@@ -17,10 +17,9 @@ import { getAssetCategorySpecs, type AssetCategorySpec } from "@/services/assets
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
-  AUCTION_LOCATIONS,
-  DEFAULT_AUCTION_LOCATION,
-  formatAuctionCoordinates,
-} from "@/lib/auctionLocations";
+  CURRENT_BROWSER_LOCATION_LABEL,
+  formatBrowserCoordinates,
+} from "@/lib/browserLocation";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -175,11 +174,27 @@ export default function LotListingPreviewModal({
       (Array.isArray(nextPreviewData.lots)
         ? nextPreviewData.lots.find((lot: any) => lot?.location)?.location
         : "") ||
-      DEFAULT_AUCTION_LOCATION;
+      CURRENT_BROWSER_LOCATION_LABEL;
+    const fallbackCoordinates = Array.isArray(nextPreviewData.lots)
+      ? nextPreviewData.lots.find((lot: any) =>
+          Number.isFinite(Number(lot?.latitude)) &&
+          Number.isFinite(Number(lot?.longitude))
+        )
+      : undefined;
     if (nextPreviewData) {
       setPreviewData({
         ...nextPreviewData,
         location: fallbackLocation,
+        latitude: Number.isFinite(Number(nextPreviewData.latitude))
+          ? Number(nextPreviewData.latitude)
+          : Number.isFinite(Number(fallbackCoordinates?.latitude))
+            ? Number(fallbackCoordinates.latitude)
+            : nextPreviewData.latitude,
+        longitude: Number.isFinite(Number(nextPreviewData.longitude))
+          ? Number(nextPreviewData.longitude)
+          : Number.isFinite(Number(fallbackCoordinates?.longitude))
+            ? Number(fallbackCoordinates.longitude)
+            : nextPreviewData.longitude,
         include_damage_analysis:
           nextPreviewData.include_damage_analysis ?? (data.include_damage_analysis !== false),
         valuation_methods:
@@ -310,6 +325,35 @@ export default function LotListingPreviewModal({
   const updateField = (field: string, value: any) => {
     setPreviewData((prev: any) => ({ ...prev, [field]: value }));
     setHasChanges(true);
+  };
+
+  const requestCurrentLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      toast.info("Browser location access is unavailable.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords || ({} as any);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          toast.error("Could not detect latitude and longitude.");
+          return;
+        }
+        setPreviewData((prev: any) => ({
+          ...prev,
+          location: CURRENT_BROWSER_LOCATION_LABEL,
+          latitude,
+          longitude,
+        }));
+        setHasChanges(true);
+        toast.success("Current location updated.");
+      },
+      () => {
+        toast.error("Browser location access denied or unavailable.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
   };
 
   const updateLot = (index: number, field: string, value: any) => {
@@ -573,21 +617,27 @@ export default function LotListingPreviewModal({
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
-                    Location
+                    Current Location
                   </label>
-                  <select
-                    value={previewData?.location || DEFAULT_AUCTION_LOCATION}
-                    onChange={(e) => updateField("location", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                  >
-                    {AUCTION_LOCATIONS.map((auctionLocation) => (
-                      <option key={auctionLocation} value={auctionLocation}>
-                        {auctionLocation}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={previewData?.location || CURRENT_BROWSER_LOCATION_LABEL}
+                      readOnly
+                      className="min-w-0 flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={requestCurrentLocation}
+                      className="inline-flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      aria-label="Refresh current location"
+                      title="Refresh current location"
+                    >
+                      <LocateFixed className="h-4 w-4" />
+                    </button>
+                  </div>
                   <p className="mt-1 text-xs text-gray-500">
-                    {formatAuctionCoordinates(previewData?.location || DEFAULT_AUCTION_LOCATION)}
+                    {formatBrowserCoordinates(previewData?.latitude, previewData?.longitude)}
                   </p>
                 </div>
                 <div>

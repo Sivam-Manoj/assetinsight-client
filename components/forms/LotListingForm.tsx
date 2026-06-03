@@ -3,13 +3,13 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "react-toastify";
-import { Check, RotateCcw, Save, X } from "lucide-react";
+import { Check, LocateFixed, RotateCcw, Save, X } from "lucide-react";
 import API from "@/lib/api";
 import {
-  AUCTION_LOCATIONS,
-  DEFAULT_AUCTION_LOCATION,
-  formatAuctionCoordinates,
-} from "@/lib/auctionLocations";
+  CURRENT_BROWSER_LOCATION_LABEL,
+  formatBrowserCoordinates,
+  isValidBrowserCoordinates,
+} from "@/lib/browserLocation";
 
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
@@ -55,7 +55,10 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
   const [mixedLots, setMixedLots] = useState<MixedLot[]>([]);
   const [contractNo, setContractNo] = useState("");
   const [salesDate, setSalesDate] = useState(isoDate(new Date()));
-  const [location, setLocation] = useState<string>(DEFAULT_AUCTION_LOCATION);
+  const [location, setLocation] = useState<string>(CURRENT_BROWSER_LOCATION_LABEL);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationStatus, setLocationStatus] = useState("Detecting current location...");
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [currencyTouched, setCurrencyTouched] = useState(false);
@@ -127,6 +130,8 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         contractNo,
         salesDate,
         location,
+        latitude,
+        longitude,
         language,
         currency,
         selectedValuationMethods: LOT_LISTING_VALUATION_METHODS,
@@ -183,7 +188,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     } catch (e) {
       console.warn("[LotListing Draft] Save failed:", e);
     }
-  }, [submitting, mixedLots, contractNo, salesDate, location, language, currency]);
+  }, [submitting, mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency]);
 
   // Restore draft from localStorage
   const restoreDraft = useCallback(async () => {
@@ -202,6 +207,11 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       if (formData.contractNo) setContractNo(formData.contractNo);
       if (formData.salesDate) setSalesDate(formData.salesDate);
       if (formData.location) setLocation(formData.location);
+      if (isValidBrowserCoordinates(formData.latitude, formData.longitude)) {
+        setLatitude(Number(formData.latitude));
+        setLongitude(Number(formData.longitude));
+        setLocationStatus("Current location detected");
+      }
       if (formData.language) setLanguage(formData.language);
       if (formData.currency) setCurrency(formData.currency);
 
@@ -268,6 +278,36 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     }
   }, []);
 
+  const requestCurrentLocation = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationStatus("Browser location access is unavailable");
+      return;
+    }
+
+    setLocationStatus("Detecting current location...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords || ({} as any);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          setLocationStatus("Latitude/Longitude not detected");
+          return;
+        }
+        setLatitude(latitude);
+        setLongitude(longitude);
+        setLocation(CURRENT_BROWSER_LOCATION_LABEL);
+        setLocationStatus("Current location detected");
+      },
+      () => {
+        setLocationStatus("Browser location access denied or unavailable");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    requestCurrentLocation();
+  }, [requestCurrentLocation]);
+
   // Check for existing draft on mount
   useEffect(() => {
     const checkDraft = async () => {
@@ -297,7 +337,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     return () => {
       if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     };
-  }, [mixedLots, contractNo, salesDate, location, language, currency, autoSaveDraft]);
+  }, [mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency, autoSaveDraft]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -379,7 +419,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     setMixedLots([]);
     setContractNo("");
     setSalesDate(isoDate(new Date()));
-    setLocation(DEFAULT_AUCTION_LOCATION);
+    setLocation(CURRENT_BROWSER_LOCATION_LABEL);
     setLanguage("en");
     setCurrency("CAD");
     setCurrencyTouched(false);
@@ -482,7 +522,13 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       const details = {
         contract_no: contractNo.trim(),
         sales_date: salesDate,
-        location: location.trim() || DEFAULT_AUCTION_LOCATION,
+        location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+        ...(isValidBrowserCoordinates(latitude, longitude)
+          ? {
+              latitude: Number(latitude),
+              longitude: Number(longitude),
+            }
+          : {}),
         language,
         currency,
         valuation_methods: LOT_LISTING_VALUATION_METHODS,
@@ -705,21 +751,28 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Location</label>
-                  <select
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-purple-400 transition-all placeholder:text-gray-400 hover:border-gray-400"
-                  >
-                    {AUCTION_LOCATIONS.map((auctionLocation) => (
-                      <option key={auctionLocation} value={auctionLocation}>
-                        {auctionLocation}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="text-xs text-gray-600">Current Location</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={location}
+                      readOnly
+                      className="min-w-0 flex-1 rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={requestCurrentLocation}
+                      className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                      aria-label="Refresh current location"
+                      title="Refresh current location"
+                    >
+                      <LocateFixed className="h-4 w-4" />
+                    </button>
+                  </div>
                   <p className="text-xs text-gray-500">
-                    {formatAuctionCoordinates(location)}
+                    {formatBrowserCoordinates(latitude, longitude)}
                   </p>
+                  <p className="text-xs text-gray-500">{locationStatus}</p>
                 </div>
 
                 <div className="space-y-1">

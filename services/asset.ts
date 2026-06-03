@@ -21,6 +21,8 @@ export type AssetCreateDetails = {
   industry?: string;
   inspection_date?: string; // ISO date string (YYYY-MM-DD)
   location?: string;
+  latitude?: number;
+  longitude?: number;
   // New optional fields
   contract_no?: string; // user-provided contract number
   language?: 'en' | 'fr' | 'es'; // report output language for DOCX (default 'en')

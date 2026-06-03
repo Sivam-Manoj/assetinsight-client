@@ -20,15 +20,15 @@ import {
   type AssetFormData,
   type DraftImageData,
 } from "@/services/savedInputs";
-import { Check, Save } from "lucide-react";
+import { Check, LocateFixed, Save } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuthContext } from "@/context/AuthContext";
 import { SERVER_BASE } from "@/lib/config";
 import {
-  AUCTION_LOCATIONS,
-  DEFAULT_AUCTION_LOCATION,
-  formatAuctionCoordinates,
-} from "@/lib/auctionLocations";
+  CURRENT_BROWSER_LOCATION_LABEL,
+  formatBrowserCoordinates,
+  isValidBrowserCoordinates,
+} from "@/lib/browserLocation";
 
 // // Code-split the CatalogueSection for camera-based lot capture (disabled for Mixed-only)
 // const CatalogueSection = dynamic(() => import("./catalogue/CatalogueSection"), {
@@ -146,7 +146,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   );
   const [industry, setIndustry] = useState("");
   const [inspectionDate, setInspectionDate] = useState(isoDate(new Date())); // YYYY-MM-DD
-  const [location, setLocation] = useState<string>(DEFAULT_AUCTION_LOCATION);
+  const [location, setLocation] = useState<string>(CURRENT_BROWSER_LOCATION_LABEL);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationStatus, setLocationStatus] = useState("Detecting current location...");
   const [contractNo, setContractNo] = useState("");
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState<string>("");
@@ -341,6 +344,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         industry,
         inspectionDate,
         location,
+        latitude,
+        longitude,
         contractNo,
         language,
         currency,
@@ -460,6 +465,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (formData.industry) setIndustry(formData.industry);
     if (formData.inspectionDate) setInspectionDate(formData.inspectionDate);
     if (formData.location) setLocation(formData.location);
+    if (isValidBrowserCoordinates(formData.latitude, formData.longitude)) {
+      setLatitude(Number(formData.latitude));
+      setLongitude(Number(formData.longitude));
+      setLocationStatus("Current location detected");
+    }
     if (formData.contractNo) setContractNo(formData.contractNo);
     if (formData.language) setLanguage(formData.language);
     if (formData.currency) setCurrency(formData.currency);
@@ -724,7 +734,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAppraisalCompany("");
       setIndustry("");
       setInspectionDate(isoDate(new Date()));
-      setLocation(DEFAULT_AUCTION_LOCATION);
+      setLocation(CURRENT_BROWSER_LOCATION_LABEL);
       setContractNo("");
       setLanguage("en");
       setCurrency("");
@@ -760,7 +770,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAppraisalCompany("");
       setIndustry("");
       setInspectionDate(isoDate(new Date()));
-      setLocation(DEFAULT_AUCTION_LOCATION);
+      setLocation(CURRENT_BROWSER_LOCATION_LABEL);
       setContractNo("");
       setLanguage("en");
       setCurrency("");
@@ -812,6 +822,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         industry,
         inspectionDate,
         location,
+        latitude,
+        longitude,
         contractNo,
         language,
         currency,
@@ -860,6 +872,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         setInspectionDate(fd.inspectionDate);
       if (typeof fd.location === "string" && fd.location.trim())
         setLocation(fd.location);
+      if (isValidBrowserCoordinates(fd.latitude, fd.longitude)) {
+        setLatitude(Number(fd.latitude));
+        setLongitude(Number(fd.longitude));
+        setLocationStatus("Current location detected");
+      }
       if (typeof fd.contractNo === "string") setContractNo(fd.contractNo);
       if (fd.language === "en" || fd.language === "fr" || fd.language === "es")
         setLanguage(fd.language);
@@ -966,6 +983,38 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     } catch {}
   };
 
+  const applyCurrentPosition = (pos: GeolocationPosition) => {
+    const { latitude, longitude } = pos.coords || ({} as any);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      setLocationStatus("Latitude/Longitude not detected");
+      return null;
+    }
+
+    setLatitude(latitude);
+    setLongitude(longitude);
+    setLocation(CURRENT_BROWSER_LOCATION_LABEL);
+    setLocationStatus("Current location detected");
+    return { latitude, longitude };
+  };
+
+  const requestCurrentLocation = () => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationStatus("Browser location access is unavailable");
+      return;
+    }
+
+    setLocationStatus("Detecting current location...");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyCurrentPosition(pos);
+      },
+      () => {
+        setLocationStatus("Browser location access denied or unavailable");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  };
+
   // On first open, use browser geolocation to detect currency
   useEffect(() => {
     if (currencyPromptedRef.current) return;
@@ -983,8 +1032,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
-            const { latitude, longitude } = pos.coords || ({} as any);
-            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            const coords = applyCurrentPosition(pos);
+            if (!coords) {
               console.warn(
                 "[CurrencyDetect] Invalid coordinates from geolocation",
                 pos.coords
@@ -992,6 +1041,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               setCurrencyLoading(false);
               return;
             }
+            const { latitude, longitude } = coords;
             console.log("[CurrencyDetect] Geolocation success", {
               latitude,
               longitude,
@@ -1029,9 +1079,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           // User denied or error; rely on locale fallback above
           setCurrencyLoading(false);
           console.warn("[CurrencyDetect] Geolocation error", error);
+          setLocationStatus("Browser location access denied or unavailable");
           applyLocaleFallbackCurrency();
         },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
       );
     } catch {}
   }, [currencyTouched]);
@@ -1190,7 +1241,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }),
         ...(industry.trim() && { industry: industry.trim() }),
         ...(inspectionDate && { inspection_date: inspectionDate }),
-        location: location.trim() || DEFAULT_AUCTION_LOCATION,
+        location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+        ...(isValidBrowserCoordinates(latitude, longitude)
+          ? {
+              latitude: Number(latitude),
+              longitude: Number(longitude),
+            }
+          : {}),
         ...(contractNo.trim() && { contract_no: contractNo.trim() }),
         language,
         ...(currency && { currency }),
@@ -1577,21 +1634,28 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Location</label>
-                  <select
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(251,113,133,0.15)] transition-all cursor-pointer hover:border-gray-400"
-                  >
-                    {AUCTION_LOCATIONS.map((auctionLocation) => (
-                      <option key={auctionLocation} value={auctionLocation}>
-                        {auctionLocation}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="text-xs text-gray-600">Current Location</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={location}
+                      readOnly
+                      className="min-w-0 flex-1 rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={requestCurrentLocation}
+                      className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                      aria-label="Refresh current location"
+                      title="Refresh current location"
+                    >
+                      <LocateFixed className="h-4 w-4" />
+                    </button>
+                  </div>
                   <p className="text-xs text-gray-500">
-                    {formatAuctionCoordinates(location)}
+                    {formatBrowserCoordinates(latitude, longitude)}
                   </p>
+                  <p className="text-xs text-gray-500">{locationStatus}</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-gray-600">Contract No</label>

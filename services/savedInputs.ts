@@ -11,6 +11,8 @@ export type AssetFormData = {
   industry?: string;
   inspectionDate?: string;
   location?: string;
+  latitude?: number;
+  longitude?: number;
   contractNo?: string;
   language?: "en" | "fr" | "es";
   currency?: string;
