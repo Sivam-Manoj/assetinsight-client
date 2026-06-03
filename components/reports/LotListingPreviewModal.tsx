@@ -132,6 +132,8 @@ export default function LotListingPreviewModal({
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [declineReason, setDeclineReason] = useState<string>("");
+  const [filesGenerating, setFilesGenerating] = useState(false);
+  const [filesRegenerating, setFilesRegenerating] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -158,6 +160,8 @@ export default function LotListingPreviewModal({
       const data = (response as any).data || response;
       setStatus(data.status);
       setDeclineReason(data.decline_reason || "");
+      setFilesGenerating(Boolean(data.files_generating));
+      setFilesRegenerating(Boolean(data.files_regenerating));
       const nextPreviewData = data.preview_data || {
         contract_no: data.contract_no,
         sales_date: data.sales_date,
@@ -184,6 +188,11 @@ export default function LotListingPreviewModal({
   };
 
   const handleSaveChanges = async () => {
+    if (filesGenerating || filesRegenerating) {
+      toast.info("This lot listing is already generating files.");
+      return;
+    }
+
     try {
       setSaving(true);
       const saved = await updateLotListingPreview(reportId, { preview_data: previewData });
@@ -191,7 +200,11 @@ export default function LotListingPreviewModal({
       if (savedPreviewData) setPreviewData(savedPreviewData);
       if ((saved as any)?.files_regeneration_queued) {
         setHasChanges(false);
+        setFilesGenerating(true);
+        setFilesRegenerating(true);
         toast.success("Changes saved. Files are being regenerated with the updated report data.");
+        if (onSuccess) onSuccess();
+        onClose();
         return;
       }
       let pdfRefreshed = false;
@@ -228,14 +241,15 @@ export default function LotListingPreviewModal({
       return;
     }
 
+    if (filesGenerating || filesRegenerating) {
+      toast.info("This lot listing is already generating files.");
+      return;
+    }
+
     try {
       setSubmitting(true);
 
       if (isResubmitMode) {
-        await updateLotListingPreview(reportId, {
-          preview_data: previewData,
-          regenerate_files_on_lot_number_change: false,
-        });
         await resubmitLotListing(reportId, { preview_data: previewData });
         setHasChanges(false);
         toast.success("Lot listing approved files are being regenerated.");
