@@ -7,6 +7,7 @@ import {
   Button,
   CircularProgress,
   InputAdornment,
+  LinearProgress,
   MenuItem,
   Select,
   Stack,
@@ -35,6 +36,7 @@ type ReportGroup = {
   createdAt: string;
   contract_no?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
+  isGeneratingFiles?: boolean;
   type?: string;
   variants: {
     pdf?: PdfReport;
@@ -59,7 +61,18 @@ function typeLabel(type?: string) {
   return "Asset";
 }
 
-function statusTone(status?: string) {
+function isFileGenerationActive(report: any) {
+  return Boolean(report?.files_generating) || Boolean(report?.files_regenerating);
+}
+
+function statusTone(status?: string, isGeneratingFiles = false) {
+  if (isGeneratingFiles) {
+    return {
+      bg: "rgba(37,99,235,0.12)",
+      color: "#2563eb",
+      label: "Generating files",
+    };
+  }
   if (status === "approved") {
     return { bg: "rgba(5,150,105,0.12)", color: "#059669", label: "Approved" };
   }
@@ -134,6 +147,26 @@ function actionButtonSx(kind: "download" | "delete") {
   };
 }
 
+function GeneratingFilesProgress() {
+  return (
+    <Box sx={{ minWidth: { xs: 180, sm: 220 } }}>
+      <Stack spacing={0.75}>
+        <Typography
+          sx={{
+            color: "#2563eb",
+            fontSize: 12,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Generating updated files...
+        </Typography>
+        <LinearProgress sx={{ height: 6, borderRadius: 99 }} />
+      </Stack>
+    </Box>
+  );
+}
+
 export default function ReportsPage() {
   const [reports, setReports] = useState<PdfReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,13 +200,17 @@ export default function ReportsPage() {
       setAssetReports(
         assetResponse.data.filter(
           (report) =>
-            report.status === "approved" || report.status === "pending_approval"
+            report.status === "approved" ||
+            report.status === "pending_approval" ||
+            isFileGenerationActive(report)
         )
       );
       setRealEstateReports(
         realEstateResponse.data.filter(
           (report) =>
-            report.status === "approved" || report.status === "pending_approval"
+            report.status === "approved" ||
+            report.status === "pending_approval" ||
+            isFileGenerationActive(report)
         )
       );
       setLotListingReports(
@@ -181,9 +218,7 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
-            (report.status === "processing" &&
-              (Boolean((report as any).files_generating) ||
-                Boolean((report as any).files_regenerating)))
+            isFileGenerationActive(report)
         )
       );
     } catch (loadError: any) {
@@ -264,6 +299,7 @@ export default function ReportsPage() {
           createdAt: report.createdAt,
           contract_no: (report as any).contract_no,
           approvalStatus: report.approvalStatus,
+          isGeneratingFiles: false,
           type: (report as any).type,
           variants: {},
         };
@@ -320,6 +356,7 @@ export default function ReportsPage() {
           createdAt: asset.createdAt,
           approvalStatus: asset.status === "approved" ? "approved" : "pending",
         }) as PdfReport;
+      const isGenerating = isFileGenerationActive(asset);
 
       map.set(asset._id, {
         key: asset._id,
@@ -330,6 +367,7 @@ export default function ReportsPage() {
         contract_no:
           (asset as any).contract_no || (asset as any).preview_data?.contract_no,
         approvalStatus: asset.status === "approved" ? "approved" : "pending",
+        isGeneratingFiles: isGenerating,
         type: "Asset",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -371,6 +409,7 @@ export default function ReportsPage() {
           createdAt: report.createdAt,
           approvalStatus: report.status === "approved" ? "approved" : "pending",
         }) as PdfReport;
+      const isGenerating = isFileGenerationActive(report);
 
       map.set(report._id, {
         key: report._id,
@@ -379,6 +418,7 @@ export default function ReportsPage() {
         fairMarketValue,
         createdAt: report.createdAt,
         approvalStatus: report.status === "approved" ? "approved" : "pending",
+        isGeneratingFiles: isGenerating,
         type: "RealEstate",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -439,6 +479,7 @@ export default function ReportsPage() {
           createdAt: listing.createdAt,
           approvalStatus: listing.status === "approved" ? "approved" : "pending",
         }) as PdfReport;
+      const isGenerating = isFileGenerationActive(listing);
 
       map.set(listing._id, {
         key: listing._id,
@@ -450,6 +491,7 @@ export default function ReportsPage() {
           (listing as any).details?.contract_no ||
           (listing as any).preview_data?.contract_no,
         approvalStatus: listing.status === "approved" ? "approved" : "pending",
+        isGeneratingFiles: isGenerating,
         type: "LotListing",
         variants: {
           specPdf: previewFiles.spec_pdf
@@ -467,6 +509,11 @@ export default function ReportsPage() {
 
     return Array.from(map.values());
   }, [assetReports, lotListingReports, realEstateReports, reports]);
+
+  const hasGeneratingReports = useMemo(
+    () => groups.some((group) => group.isGeneratingFiles),
+    [groups]
+  );
 
   const availableTypes = useMemo(() => {
     const values = new Set<string>();
@@ -531,6 +578,14 @@ export default function ReportsPage() {
   useEffect(() => {
     setPage(1);
   }, [query, pageSize, sortBy, typeFilter]);
+
+  useEffect(() => {
+    if (!hasGeneratingReports) return;
+    const intervalId = window.setInterval(() => {
+      void loadReports();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [hasGeneratingReports]);
 
   async function handleDownload(reportId: string) {
     try {
@@ -684,7 +739,7 @@ export default function ReportsPage() {
             <>
               <Stack spacing={1.5} sx={{ display: { xs: "flex", md: "none" } }}>
                 {paginatedGroups.map((group) => {
-                  const status = statusTone(group.approvalStatus);
+                  const status = statusTone(group.approvalStatus, group.isGeneratingFiles);
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} · ${group.contract_no}`
                     : group.address || typeLabel(group.type);
@@ -726,24 +781,28 @@ export default function ReportsPage() {
                           {group.address || "No address provided"}
                         </Typography>
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
-                          {(["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
-                            const file = group.variants[variant];
-                            if (!file) return null;
-                            const disabled =
-                              downloadingId === file._id ||
-                              (!!file.approvalStatus && file.approvalStatus !== "approved");
-                            return (
-                              <Button
-                                key={variant}
-                                size="small"
-                                onClick={() => handleDownload(file._id)}
-                                disabled={disabled}
-                                sx={actionButtonSx("download")}
-                              >
-                                {actionLabel(variant)}
-                              </Button>
-                            );
-                          })}
+                          {group.isGeneratingFiles ? (
+                            <GeneratingFilesProgress />
+                          ) : (
+                            (["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                              const file = group.variants[variant];
+                              if (!file) return null;
+                              const disabled =
+                                downloadingId === file._id ||
+                                (!!file.approvalStatus && file.approvalStatus !== "approved");
+                              return (
+                                <Button
+                                  key={variant}
+                                  size="small"
+                                  onClick={() => handleDownload(file._id)}
+                                  disabled={disabled}
+                                  sx={actionButtonSx("download")}
+                                >
+                                  {actionLabel(variant)}
+                                </Button>
+                              );
+                            })
+                          )}
                           <Button
                             size="small"
                             variant="outlined"
@@ -788,7 +847,7 @@ export default function ReportsPage() {
                     </Box>
                     <Box component="tbody">
                       {paginatedGroups.map((group) => {
-                        const status = statusTone(group.approvalStatus);
+                        const status = statusTone(group.approvalStatus, group.isGeneratingFiles);
                         const title = group.contract_no
                           ? `${typeLabel(group.type)} · ${group.contract_no}`
                           : group.address || typeLabel(group.type);
@@ -843,25 +902,29 @@ export default function ReportsPage() {
                                   pb: 0.5,
                                 }}
                               >
-                                {(["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
-                                  const file = group.variants[variant];
-                                  if (!file) return null;
-                                  const disabled =
-                                    downloadingId === file._id ||
-                                    (!!file.approvalStatus &&
-                                      file.approvalStatus !== "approved");
-                                  return (
-                                    <Button
-                                      key={variant}
-                                      size="small"
-                                      onClick={() => handleDownload(file._id)}
-                                      disabled={disabled}
-                                      sx={actionButtonSx("download")}
-                                    >
-                                      {actionLabel(variant)}
-                                    </Button>
-                                  );
-                                })}
+                                {group.isGeneratingFiles ? (
+                                  <GeneratingFilesProgress />
+                                ) : (
+                                  (["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                                    const file = group.variants[variant];
+                                    if (!file) return null;
+                                    const disabled =
+                                      downloadingId === file._id ||
+                                      (!!file.approvalStatus &&
+                                        file.approvalStatus !== "approved");
+                                    return (
+                                      <Button
+                                        key={variant}
+                                        size="small"
+                                        onClick={() => handleDownload(file._id)}
+                                        disabled={disabled}
+                                        sx={actionButtonSx("download")}
+                                      >
+                                        {actionLabel(variant)}
+                                      </Button>
+                                    );
+                                  })
+                                )}
                                 <Button
                                   size="small"
                                   variant="outlined"
