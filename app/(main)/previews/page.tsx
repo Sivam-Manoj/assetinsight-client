@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -125,6 +125,7 @@ export default function PreviewsPage() {
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [resubmitting, setResubmitting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -133,10 +134,20 @@ export default function PreviewsPage() {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isResubmitMode, setIsResubmitMode] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CombinedReport | null>(null);
+  const loadingReportsRef = useRef(false);
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async (
+    options: { showLoading?: boolean; silent?: boolean; successToast?: boolean } = {}
+  ) => {
+    if (loadingReportsRef.current) return false;
+    loadingReportsRef.current = true;
+    const showFullLoading = options.showLoading === true;
     try {
-      setLoading(true);
+      if (showFullLoading) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       const [
         assetResponse,
         realEstateResponse,
@@ -211,16 +222,37 @@ export default function PreviewsPage() {
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
       );
+      if (options.successToast) {
+        toast.success("Previews refreshed.");
+      }
+      return true;
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to load previews");
+      if (!options.silent) {
+        toast.error(error.response?.data?.message || "Failed to load previews");
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (showFullLoading) setLoading(false);
+      setRefreshing(false);
+      loadingReportsRef.current = false;
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void loadReports();
-  }, []);
+    void loadReports({ showLoading: true });
+  }, [loadReports]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      void loadReports({ silent: true });
+    }, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [loadReports]);
+
+  const handleManualRefresh = async () => {
+    await loadReports({ successToast: true });
+  };
 
   const handleOpenPreview = (report: CombinedReport, resubmitMode = false) => {
     setSelectedReportId(report._id);
@@ -319,6 +351,23 @@ export default function PreviewsPage() {
         eyebrow="Review workspace"
         title="Report previews"
         description="Review new outputs, submit reports for approval, and manage already submitted preview packages from one responsive queue."
+        action={
+          <Button
+            variant="outlined"
+            startIcon={
+              refreshing ? (
+                <CircularProgress color="inherit" size={16} />
+              ) : (
+                <RefreshRounded />
+              )
+            }
+            onClick={() => void handleManualRefresh()}
+            disabled={loading || refreshing}
+            sx={{ whiteSpace: "nowrap" }}
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Button>
+        }
       />
 
       <Box
