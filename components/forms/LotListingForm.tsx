@@ -7,7 +7,6 @@ import { Check, LocateFixed, RotateCcw, Save, X } from "lucide-react";
 import API from "@/lib/api";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
-  formatBrowserCoordinates,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 
@@ -769,9 +768,6 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                       <LocateFixed className="h-4 w-4" />
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {formatBrowserCoordinates(latitude, longitude)}
-                  </p>
                   <p className="text-xs text-gray-500">{locationStatus}</p>
                 </div>
 

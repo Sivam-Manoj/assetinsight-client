@@ -17,7 +17,6 @@ import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
-  formatBrowserCoordinates,
 } from "@/lib/browserLocation";
 
 interface PreviewModalProps {
@@ -1103,9 +1102,6 @@ export default function PreviewModal({
                       <LocateFixed className="h-4 w-4" />
                     </button>
                   </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {formatBrowserCoordinates(previewData?.latitude, previewData?.longitude)}
-                  </p>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">

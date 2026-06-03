@@ -26,7 +26,6 @@ import { useAuthContext } from "@/context/AuthContext";
 import { SERVER_BASE } from "@/lib/config";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
-  formatBrowserCoordinates,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 
@@ -1652,9 +1651,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                       <LocateFixed className="h-4 w-4" />
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {formatBrowserCoordinates(latitude, longitude)}
-                  </p>
                   <p className="text-xs text-gray-500">{locationStatus}</p>
                 </div>
                 <div className="space-y-1">
