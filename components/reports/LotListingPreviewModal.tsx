@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, LocateFixed } from "lucide-react";
+import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getLotListingPreview,
@@ -613,28 +613,6 @@ export default function LotListingPreviewModal({
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     placeholder="e.g., CTR-2024-001"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
-                    Current Location
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={previewData?.location || CURRENT_BROWSER_LOCATION_LABEL}
-                      readOnly
-                      className="min-w-0 flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900"
-                    />
-                    <button
-                      type="button"
-                      onClick={requestCurrentLocation}
-                      className="inline-flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                      aria-label="Refresh current location"
-                      title="Refresh current location"
-                    >
-                      <LocateFixed className="h-4 w-4" />
-                    </button>
-                  </div>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">

@@ -20,7 +20,7 @@ import {
   type AssetFormData,
   type DraftImageData,
 } from "@/services/savedInputs";
-import { Check, LocateFixed, Save } from "lucide-react";
+import { Check, Save } from "lucide-react";
 import { toast } from "react-toastify";
 import { useAuthContext } from "@/context/AuthContext";
 import { SERVER_BASE } from "@/lib/config";
@@ -1631,27 +1631,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     onChange={(e) => setInspectionDate(e.target.value)}
                     className="w-full rounded-xl border border-gray-200/70 bg-white/80 px-3 py-2 text-sm text-gray-900 shadow-inner ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-rose-300"
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Current Location</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={location}
-                      readOnly
-                      className="min-w-0 flex-1 rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)]"
-                    />
-                    <button
-                      type="button"
-                      onClick={requestCurrentLocation}
-                      className="inline-flex h-[42px] w-[42px] flex-shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
-                      aria-label="Refresh current location"
-                      title="Refresh current location"
-                    >
-                      <LocateFixed className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500">{locationStatus}</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-gray-600">Contract No</label>
