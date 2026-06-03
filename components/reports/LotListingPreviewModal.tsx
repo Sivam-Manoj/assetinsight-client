@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
+import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getLotListingPreview,
@@ -227,12 +227,18 @@ export default function LotListingPreviewModal({
       setSubmitting(true);
 
       if (isResubmitMode) {
-        await updateLotListingPreview(reportId, { preview_data: previewData });
+        await updateLotListingPreview(reportId, {
+          preview_data: previewData,
+          regenerate_files_on_lot_number_change: false,
+        });
         await resubmitLotListing(reportId, { preview_data: previewData });
         setHasChanges(false);
         toast.success("Lot listing approved files are being regenerated.");
       } else {
-        await updateLotListingPreview(reportId, { preview_data: previewData });
+        await updateLotListingPreview(reportId, {
+          preview_data: previewData,
+          regenerate_files_on_lot_number_change: false,
+        });
         setHasChanges(false);
         await submitLotListingForApproval(reportId, { preview_data: previewData });
         toast.success("Lot listing approved files are being generated.");
@@ -674,8 +680,8 @@ export default function LotListingPreviewModal({
                   };
 
                   return (
-                    <div key={idx} className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur">
-                      <div className="flex items-center justify-between mb-3">
+                    <div key={idx} className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] shadow-[var(--app-shadow-card)] backdrop-blur">
+                      <div className="mb-3 flex items-center justify-between border-t-4 border-purple-500 bg-white px-4 py-4 shadow-sm">
                         <div className="text-sm font-semibold text-gray-900">
                           Lot #{getLotDisplayNumber(lot, idx)}
                         </div>
@@ -718,7 +724,7 @@ export default function LotListingPreviewModal({
                       )}
 
                       {/* Lot Fields */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
                         <div>
                           <label className="block text-xs text-gray-600 mb-1">Lot #</label>
                           <input
@@ -826,24 +832,19 @@ export default function LotListingPreviewModal({
           <div className="sticky bottom-0 z-10 mt-6 flex max-w-5xl mx-auto flex-wrap items-center justify-between gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-4 pb-1 backdrop-blur">
             <div className="flex items-center gap-2">
               {hasChanges && (
+                <span className="text-xs text-amber-600">Changes will be saved when files generate</span>
+              )}
+              {false && hasChanges && (
                 <span className="text-xs text-amber-600">⚠️ Unsaved changes</span>
               )}
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={handleSaveChanges}
-                disabled={saving || !hasChanges}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-              <button
                 onClick={handleSubmitForApproval}
-                disabled={submitting}
+                disabled={submitting || saving}
                 className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/30 transition-all"
               >
-                {submitting ? (
+                {submitting || saving ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />

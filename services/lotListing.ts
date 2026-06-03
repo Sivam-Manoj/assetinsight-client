@@ -131,9 +131,17 @@ export async function getLotListingSubmittedPreview(id: string): Promise<LotList
 // Update lot listing preview
 export async function updateLotListingPreview(
   id: string,
-  data: { preview_data?: any; lots?: LotListingLot[]; details?: LotListing["details"] }
-): Promise<LotListing> {
-  const response = await API.put<LotListing>(`/lot-listing/${id}/preview`, data);
+  data: {
+    preview_data?: any;
+    lots?: LotListingLot[];
+    details?: LotListing["details"];
+    regenerate_files_on_lot_number_change?: boolean;
+  }
+): Promise<{ message: string; data: LotListing; files_regeneration_queued?: boolean }> {
+  const response = await API.put<{ message: string; data: LotListing; files_regeneration_queued?: boolean }>(
+    `/lot-listing/${id}/preview`,
+    data
+  );
   return response.data;
 }
 

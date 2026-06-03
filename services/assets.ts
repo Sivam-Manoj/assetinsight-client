@@ -86,8 +86,8 @@ export const getPreviewData = async (reportId: string): Promise<PreviewDataRespo
 export const updatePreviewData = async (
   reportId: string,
   previewData: any
-): Promise<{ message: string; data: any }> => {
-  const { data } = await API.put<{ message: string; data: any }>(
+): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> => {
+  const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
     `/asset/${reportId}/preview`,
     { preview_data: previewData }
   );

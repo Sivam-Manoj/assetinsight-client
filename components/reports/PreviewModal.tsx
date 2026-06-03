@@ -434,6 +434,11 @@ export default function PreviewModal({
       setSaving(true);
       const saved = await updatePreviewData(reportId, previewData);
       if (saved?.data) setPreviewData(saved.data);
+      if (saved?.files_regeneration_queued) {
+        setHasChanges(false);
+        toast.success("Changes saved. Files are being regenerated with the updated lot numbers.");
+        return;
+      }
       let pdfRefreshed = false;
       try {
         const pdf = await refreshAssetSpecPdf(reportId);

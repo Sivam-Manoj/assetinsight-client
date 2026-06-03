@@ -104,8 +104,8 @@ export default function AuctioneerSpecsEditor({
     <div className={`rounded-lg border p-3 ${accentClasses}`}>
       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide">
-            Auctioneer Specs
+          <p className="text-xs font-black uppercase tracking-wide">
+            CONDITION REPORT
           </p>
           <p className="mt-0.5 text-[11px] text-gray-600">
             {categorySpec
