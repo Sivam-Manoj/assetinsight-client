@@ -174,28 +174,42 @@ export default function AuctioneerSpecsEditor({
           <div className="max-h-[360px] overflow-y-auto pr-1">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {visibleFields.map((fieldName) => (
-                <label key={fieldName} className="block">
-                  <span className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
+                <div key={fieldName} className="block">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
                     <span className="min-w-0 break-words">{fieldName}</span>
                     <button
                       type="button"
-                      onClick={() => onDelete(lotIndex, fieldName)}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onDelete(lotIndex, fieldName);
+                      }}
                       className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-red-200 bg-red-50 text-sm font-bold leading-none text-red-600 transition hover:bg-red-100"
                       aria-label={`Remove ${fieldName}`}
                     >
                       x
                     </button>
-                  </span>
+                  </div>
                   <input
                     type="text"
                     value={getValueForField(specRecord, fieldName)}
-                    onChange={(event) => onChange(lotIndex, fieldName, event.target.value)}
-                    onDoubleClick={() => openExpandedEditor(fieldName)}
-                    className={`w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                    readOnly
+                    onClick={() => openExpandedEditor(fieldName)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openExpandedEditor(fieldName);
+                      }
+                    }}
+                    className={`w-full cursor-pointer rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
                     placeholder="Value found in uploaded images"
-                    title="Double-click to open large editor"
+                    title="Click to open large editor"
                   />
-                </label>
+                </div>
               ))}
             </div>
           </div>
