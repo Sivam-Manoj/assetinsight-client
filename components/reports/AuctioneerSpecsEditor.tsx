@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 
 export interface AssetCategorySpec {
   parentCategory: string;
@@ -143,6 +144,87 @@ export default function AuctioneerSpecsEditor({
     closeExpandedEditor();
   };
 
+  const expandedEditorPortal =
+    expandedEditor && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auctioneer-spec-expanded-title"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeExpandedEditor();
+            }}
+          >
+            <div className="flex max-h-[86vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-5 py-4">
+                <div className="min-w-0">
+                  <p
+                    id="auctioneer-spec-expanded-title"
+                    className="text-sm font-black uppercase tracking-wide text-gray-950"
+                  >
+                    {expandedEditor.fieldName}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-gray-500">
+                    {[
+                      lotLabel ? `Lot ${lotLabel}` : "",
+                      lotTitle,
+                    ].filter(Boolean).join(" - ") || "Condition report field"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeExpandedEditor}
+                  className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full border border-gray-200 bg-white text-lg font-bold leading-none text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                  aria-label="Close editor"
+                >
+                  x
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 px-5 py-4">
+                <textarea
+                  value={expandedEditor.value}
+                  onChange={(event) =>
+                    setExpandedEditor((prev) =>
+                      prev ? { ...prev, value: event.target.value } : prev
+                    )
+                  }
+                  className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                  placeholder="Edit the full field value"
+                  autoFocus
+                />
+              </div>
+              <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={deleteExpandedField}
+                  className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                >
+                  Delete field
+                </button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={closeExpandedEditor}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveExpandedEditor}
+                    className={`rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 ${accentButtonClass}`}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <>
       <div className={`rounded-lg border p-3 ${accentClasses}`}>
@@ -221,82 +303,7 @@ export default function AuctioneerSpecsEditor({
         )}
       </div>
 
-      {expandedEditor && (
-        <div
-          className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="auctioneer-spec-expanded-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeExpandedEditor();
-          }}
-        >
-          <div className="flex max-h-[86vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
-            <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-5 py-4">
-              <div className="min-w-0">
-                <p
-                  id="auctioneer-spec-expanded-title"
-                  className="text-sm font-black uppercase tracking-wide text-gray-950"
-                >
-                  {expandedEditor.fieldName}
-                </p>
-                <p className="mt-1 truncate text-xs text-gray-500">
-                  {[
-                    lotLabel ? `Lot ${lotLabel}` : "",
-                    lotTitle,
-                  ].filter(Boolean).join(" - ") || "Condition report field"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeExpandedEditor}
-                className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full border border-gray-200 bg-white text-lg font-bold leading-none text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
-                aria-label="Close editor"
-              >
-                x
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 px-5 py-4">
-              <textarea
-                value={expandedEditor.value}
-                onChange={(event) =>
-                  setExpandedEditor((prev) =>
-                    prev ? { ...prev, value: event.target.value } : prev
-                  )
-                }
-                className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
-                placeholder="Edit the full field value"
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={deleteExpandedField}
-                className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
-              >
-                Delete field
-              </button>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={closeExpandedEditor}
-                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={saveExpandedEditor}
-                  className={`rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 ${accentButtonClass}`}
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {expandedEditorPortal}
     </>
   );
 }
