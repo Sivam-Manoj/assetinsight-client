@@ -13,6 +13,7 @@ type Props = {
   lotIndex: number;
   specsByCategory: Map<string, AssetCategorySpec>;
   onChange: (lotIndex: number, fieldName: string, value: string) => void;
+  onDelete: (lotIndex: number, fieldName: string) => void;
   accent?: "rose" | "purple";
 };
 
@@ -36,15 +37,21 @@ const getSpecRecord = (value: unknown): Record<string, string> => {
   if (Array.isArray(value)) {
     value.forEach((entry: any) => {
       const field = String(entry?.field ?? "").trim();
-      const text = String(entry?.value ?? "").trim();
-      if (field && isUsefulValue(text)) out[field] = text;
+      const rawText = String(entry?.value ?? "");
+      const text = rawText.trim();
+      if (field && (entry?.value === "" || (typeof entry?.value === "string" && !text) || isUsefulValue(rawText))) {
+        out[field] = rawText;
+      }
     });
     return out;
   }
   if (value && typeof value === "object") {
     Object.entries(value as Record<string, unknown>).forEach(([field, raw]) => {
-      const text = String(raw ?? "").trim();
-      if (field && isUsefulValue(text)) out[field] = text;
+      const rawText = String(raw ?? "");
+      const text = rawText.trim();
+      if (field && (raw === "" || (typeof raw === "string" && !text) || isUsefulValue(rawText))) {
+        out[field] = rawText;
+      }
     });
   }
   return out;
@@ -73,8 +80,13 @@ export default function AuctioneerSpecsEditor({
   lotIndex,
   specsByCategory,
   onChange,
+  onDelete,
   accent = "rose",
 }: Props) {
+  const [expandedEditor, setExpandedEditor] = React.useState<{
+    fieldName: string;
+    value: string;
+  } | null>(null);
   const categoryKey = normalizeKey(lot?.categories);
   const categorySpec = specsByCategory.get(categoryKey);
   const specRecord = getSpecRecord(lot?.condition_report_specs);
@@ -99,65 +111,167 @@ export default function AuctioneerSpecsEditor({
   const categoryChipText = categorySpec
     ? `${categorySpec.childCategory} - ${fields.length} fields`
     : "Category not matched";
+  const lotLabel = String(
+    lot?.lot_number || lot?.lot_id || (Number.isFinite(lotIndex) ? lotIndex + 1 : "")
+  ).trim();
+  const lotTitle = String(lot?.title || lot?.description || "").trim();
+  const accentButtonClass =
+    accent === "purple"
+      ? "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
+      : "bg-rose-600 hover:bg-rose-700 focus:ring-rose-500";
+
+  const openExpandedEditor = (fieldName: string) => {
+    setExpandedEditor({
+      fieldName,
+      value: getValueForField(specRecord, fieldName),
+    });
+  };
+
+  const closeExpandedEditor = () => {
+    setExpandedEditor(null);
+  };
+
+  const saveExpandedEditor = () => {
+    if (!expandedEditor) return;
+    onChange(lotIndex, expandedEditor.fieldName, expandedEditor.value);
+    closeExpandedEditor();
+  };
+
+  const deleteExpandedField = () => {
+    if (!expandedEditor) return;
+    onDelete(lotIndex, expandedEditor.fieldName);
+    closeExpandedEditor();
+  };
 
   return (
-    <div className={`rounded-lg border p-3 ${accentClasses}`}>
-      <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-black uppercase tracking-wide">
-            CONDITION REPORT
-          </p>
-          <p className="mt-0.5 text-[11px] text-gray-600">
-            {categorySpec
-              ? `Found values for ${categorySpec.childCategory}`
-              : lot?.categories
-                ? "No matching category field list found"
-              : "Select a category to show field names"}
-          </p>
+    <>
+      <div className={`rounded-lg border p-3 ${accentClasses}`}>
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide">
+              CONDITION REPORT
+            </p>
+            <p className="mt-0.5 text-[11px] text-gray-600">
+              {categorySpec
+                ? `Found values for ${categorySpec.childCategory}`
+                : lot?.categories
+                  ? "No matching category field list found"
+                : "Select a category to show field names"}
+            </p>
+          </div>
+          <span
+            className={`w-fit rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold ring-1 ${
+              categorySpec
+                ? "text-gray-800 ring-black/10"
+                : "text-amber-800 ring-amber-200"
+            }`}
+          >
+            {categoryChipText}
+          </span>
         </div>
-        <span
-          className={`w-fit rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold ring-1 ${
-            categorySpec
-              ? "text-gray-800 ring-black/10"
-              : "text-amber-800 ring-amber-200"
-          }`}
-        >
-          {categoryChipText}
-        </span>
+
+        {visibleFields.length > 0 ? (
+          <div className="max-h-[360px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {visibleFields.map((fieldName) => (
+                <label key={fieldName} className="block">
+                  <span className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
+                    <span className="min-w-0 break-words">{fieldName}</span>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(lotIndex, fieldName)}
+                      className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-red-200 bg-red-50 text-sm font-bold leading-none text-red-600 transition hover:bg-red-100"
+                      aria-label={`Remove ${fieldName}`}
+                    >
+                      x
+                    </button>
+                  </span>
+                  <input
+                    type="text"
+                    value={getValueForField(specRecord, fieldName)}
+                    onChange={(event) => onChange(lotIndex, fieldName, event.target.value)}
+                    onDoubleClick={() => openExpandedEditor(fieldName)}
+                    className={`w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                    placeholder="Value found in uploaded images"
+                    title="Double-click to open large editor"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-gray-300 bg-white/70 px-3 py-4 text-xs text-gray-600">
+            No spec values were found from the uploaded images yet.
+          </div>
+        )}
       </div>
 
-      {visibleFields.length > 0 ? (
-        <div className="max-h-[360px] overflow-y-auto pr-1">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {visibleFields.map((fieldName) => (
-              <label key={fieldName} className="block">
-                <span className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
-                  <span className="min-w-0 break-words">{fieldName}</span>
-                  <button
-                    type="button"
-                    onClick={() => onChange(lotIndex, fieldName, "")}
-                    className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-red-200 bg-red-50 text-sm font-bold leading-none text-red-600 transition hover:bg-red-100"
-                    aria-label={`Remove ${fieldName}`}
-                  >
-                    x
-                  </button>
-                </span>
-                <input
-                  type="text"
-                  value={getValueForField(specRecord, fieldName)}
-                  onChange={(event) => onChange(lotIndex, fieldName, event.target.value)}
-                  className={`w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
-                  placeholder="Value found in uploaded images"
-                />
-              </label>
-            ))}
+      {expandedEditor && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="auctioneer-spec-expanded-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeExpandedEditor();
+          }}
+        >
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p
+                id="auctioneer-spec-expanded-title"
+                className="text-base font-black uppercase tracking-wide text-gray-950"
+              >
+                {expandedEditor.fieldName}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {[
+                  lotLabel ? `Lot ${lotLabel}` : "",
+                  lotTitle,
+                ].filter(Boolean).join(" - ") || "Condition report field"}
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              <textarea
+                value={expandedEditor.value}
+                onChange={(event) =>
+                  setExpandedEditor((prev) =>
+                    prev ? { ...prev, value: event.target.value } : prev
+                  )
+                }
+                className={`min-h-[240px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                placeholder="Edit the full field value"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="button"
+                onClick={deleteExpandedField}
+                className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
+              >
+                Delete field
+              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={closeExpandedEditor}
+                  className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveExpandedEditor}
+                  className={`rounded-lg px-4 py-2 text-sm font-bold text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-offset-2 ${accentButtonClass}`}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      ) : (
-        <div className="rounded-md border border-dashed border-gray-300 bg-white/70 px-3 py-4 text-xs text-gray-600">
-          No spec values were found from the uploaded images yet.
-        </div>
       )}
-    </div>
+    </>
   );
 }

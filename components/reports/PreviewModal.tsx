@@ -673,19 +673,46 @@ export default function PreviewModal({
             .filter(Boolean)
         : [];
       const fieldKey = normalizeSpecKey(fieldName);
-      if (value.trim()) {
-        existingSpecs[fieldName] = value.trim();
-        lot.condition_report_specs_deleted = deletedSpecs.filter(
-          (field: string) => normalizeSpecKey(field) !== fieldKey
-        );
-      } else {
-        delete existingSpecs[fieldName];
-        if (!deletedSpecs.some((field: string) => normalizeSpecKey(field) === fieldKey)) {
-          deletedSpecs.push(fieldName);
-        }
-        lot.condition_report_specs_deleted = deletedSpecs;
+      existingSpecs[fieldName] = value;
+      lot.condition_report_specs_deleted = deletedSpecs.filter(
+        (field: string) => normalizeSpecKey(field) !== fieldKey
+      );
+      lot.condition_report_specs = existingSpecs;
+      newLots[index] = lot;
+      return { ...prev, lots: newLots };
+    });
+    setHasChanges(true);
+  };
+
+  const deleteLotSpec = (index: number, fieldName: string) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      const existingSpecs =
+        lot.condition_report_specs && typeof lot.condition_report_specs === "object" && !Array.isArray(lot.condition_report_specs)
+          ? { ...lot.condition_report_specs }
+          : Array.isArray(lot.condition_report_specs)
+            ? Object.fromEntries(
+                lot.condition_report_specs
+                  .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value || "").trim()])
+                  .filter((entry: string[]) => entry[0])
+              )
+            : {};
+      const deletedSpecs = Array.isArray(lot.condition_report_specs_deleted)
+        ? lot.condition_report_specs_deleted
+            .map((field: any) => String(field || "").trim())
+            .filter(Boolean)
+        : [];
+      const fieldKey = normalizeSpecKey(fieldName);
+      const existingKey = Object.keys(existingSpecs).find(
+        (field) => normalizeSpecKey(field) === fieldKey
+      );
+      if (existingKey) delete existingSpecs[existingKey];
+      if (!deletedSpecs.some((field: string) => normalizeSpecKey(field) === fieldKey)) {
+        deletedSpecs.push(fieldName);
       }
       lot.condition_report_specs = existingSpecs;
+      lot.condition_report_specs_deleted = deletedSpecs;
       newLots[index] = lot;
       return { ...prev, lots: newLots };
     });
@@ -1445,6 +1472,7 @@ export default function PreviewModal({
                                 lotIndex={idx}
                                 specsByCategory={specsByCategory}
                                 onChange={updateLotSpec}
+                                onDelete={deleteLotSpec}
                                 accent="rose"
                               />
                               <div>
@@ -1593,6 +1621,7 @@ export default function PreviewModal({
                                   lotIndex={idx}
                                   specsByCategory={specsByCategory}
                                   onChange={updateLotSpec}
+                                  onDelete={deleteLotSpec}
                                   accent="rose"
                                 />
                               </td>
