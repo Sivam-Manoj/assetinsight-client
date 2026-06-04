@@ -194,10 +194,8 @@ export default function AuctioneerSpecsEditor({
                       x
                     </button>
                   </div>
-                  <input
-                    type="text"
-                    value={getValueForField(specRecord, fieldName)}
-                    readOnly
+                  <button
+                    type="button"
                     onClick={() => openExpandedEditor(fieldName)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
@@ -205,10 +203,13 @@ export default function AuctioneerSpecsEditor({
                         openExpandedEditor(fieldName);
                       }
                     }}
-                    className={`w-full cursor-pointer rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
-                    placeholder="Value found in uploaded images"
+                    className={`min-h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-xs text-gray-900 outline-none transition hover:border-gray-400 hover:bg-gray-50 focus:border-transparent focus:ring-2 ${focusClass}`}
                     title="Click to open large editor"
-                  />
+                  >
+                    <span className="block truncate">
+                      {getValueForField(specRecord, fieldName) || "\u00a0"}
+                    </span>
+                  </button>
                 </div>
               ))}
             </div>
@@ -222,7 +223,7 @@ export default function AuctioneerSpecsEditor({
 
       {expandedEditor && (
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6"
+          className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="auctioneer-spec-expanded-title"
@@ -230,22 +231,32 @@ export default function AuctioneerSpecsEditor({
             if (event.target === event.currentTarget) closeExpandedEditor();
           }}
         >
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
-            <div className="border-b border-gray-200 px-5 py-4">
-              <p
-                id="auctioneer-spec-expanded-title"
-                className="text-base font-black uppercase tracking-wide text-gray-950"
+          <div className="flex max-h-[86vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-5 py-4">
+              <div className="min-w-0">
+                <p
+                  id="auctioneer-spec-expanded-title"
+                  className="text-sm font-black uppercase tracking-wide text-gray-950"
+                >
+                  {expandedEditor.fieldName}
+                </p>
+                <p className="mt-1 truncate text-xs text-gray-500">
+                  {[
+                    lotLabel ? `Lot ${lotLabel}` : "",
+                    lotTitle,
+                  ].filter(Boolean).join(" - ") || "Condition report field"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeExpandedEditor}
+                className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full border border-gray-200 bg-white text-lg font-bold leading-none text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Close editor"
               >
-                {expandedEditor.fieldName}
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                {[
-                  lotLabel ? `Lot ${lotLabel}` : "",
-                  lotTitle,
-                ].filter(Boolean).join(" - ") || "Condition report field"}
-              </p>
+                x
+              </button>
             </div>
-            <div className="px-5 py-4">
+            <div className="min-h-0 flex-1 px-5 py-4">
               <textarea
                 value={expandedEditor.value}
                 onChange={(event) =>
@@ -253,12 +264,12 @@ export default function AuctioneerSpecsEditor({
                     prev ? { ...prev, value: event.target.value } : prev
                   )
                 }
-                className={`min-h-[240px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
                 placeholder="Edit the full field value"
                 autoFocus
               />
             </div>
-            <div className="flex flex-col gap-2 border-t border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="button"
                 onClick={deleteExpandedField}
