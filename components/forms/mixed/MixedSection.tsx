@@ -2563,7 +2563,7 @@ export default function MixedSection({
                             0
                           )} images | Lot ${activeIdx + 1}: ${
                             lots[activeIdx]?.files.length ?? 0
-                          } main (first 50 analyzed by AI) | Extra: ${
+                          } main (first 50 analyzed by Software) | Extra: ${
                             lots[activeIdx]?.extraFiles.length ?? 0
                           } | Mode: ${
                             lots[activeIdx]?.mode === "single_lot"

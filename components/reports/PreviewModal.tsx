@@ -18,6 +18,7 @@ import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
 } from "@/lib/browserLocation";
+import { ReportsService } from "@/services/reports";
 
 interface PreviewModalProps {
   reportId: string;
@@ -643,11 +644,9 @@ export default function PreviewModal({
   };
 
   const updateLot = (index: number, field: string, value: any) => {
-    const nextValue =
-      field === "description" ? String(value || "").slice(0, 60) : value;
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      newLots[index] = { ...newLots[index], [field]: nextValue };
+      newLots[index] = { ...newLots[index], [field]: value };
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
@@ -766,7 +765,6 @@ export default function PreviewModal({
             : "min-h-[120px] rounded-lg resize-y"
         }`}
         placeholder={meta.placeholder}
-        maxLength={field === "description" ? 60 : undefined}
         rows={isDesktop ? 4 : 5}
         aria-label={`${meta.label} for lot ${getLotDisplayNumber(lot, idx)}`}
       />
@@ -945,6 +943,23 @@ export default function PreviewModal({
     }, 1200);
   };
 
+  const handleDownloadSpecPdf = async () => {
+    try {
+      const { blob, filename } = await ReportsService.downloadCr(reportId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename || `asset-cr-${reportId}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      toast.success(`Download started: ${anchor.download}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || error?.message || "Unable to download CR.");
+    }
+  };
+
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report">
       {status === "declined" && declineReason && (
@@ -986,15 +1001,14 @@ export default function PreviewModal({
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <a
-            href={specPdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => void handleDownloadSpecPdf()}
             className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
           >
             <Download className="h-4 w-4" />
             Download CR
-          </a>
+          </button>
         </div>
       )}
 
@@ -1059,6 +1073,28 @@ export default function PreviewModal({
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
                     placeholder="e.g., C-2024-001"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                    Bank
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateField("bank_photos_enabled", !previewData?.bank_photos_enabled)
+                    }
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                      previewData?.bank_photos_enabled
+                        ? "border-rose-400 bg-rose-50 text-rose-700"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                    aria-pressed={!!previewData?.bank_photos_enabled}
+                  >
+                    <span>Include all photos in CR</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                      {previewData?.bank_photos_enabled ? "On" : "Off"}
+                    </span>
+                  </button>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
@@ -1896,7 +1932,6 @@ export default function PreviewModal({
                       onChange={(event) => updateLot(lotIndex, field, event.target.value)}
                       className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-rose-500"
                       placeholder={meta.placeholder}
-                      maxLength={field === "description" ? 60 : undefined}
                     />
                   </div>
                 </div>

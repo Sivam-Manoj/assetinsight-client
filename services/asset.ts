@@ -32,6 +32,7 @@ export type AssetCreateDetails = {
   include_valuation_table?: boolean;
   valuation_methods?: Array<'FML' | 'TKV' | 'OLV' | 'FLV'>;
   include_damage_analysis?: boolean;
+  bank_photos_enabled?: boolean;
   // Cover page + Factors
   prepared_for?: string; // used in templated cover
   factors_age_condition?: string; // populates Age & Condition under Factors Affecting Value

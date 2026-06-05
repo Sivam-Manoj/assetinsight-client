@@ -19,6 +19,7 @@ import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
 } from "@/lib/browserLocation";
+import { ReportsService } from "@/services/reports";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -356,11 +357,9 @@ export default function LotListingPreviewModal({
   };
 
   const updateLot = (index: number, field: string, value: any) => {
-    const nextValue =
-      field === "description" ? String(value || "").slice(0, 60) : value;
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      newLots[index] = { ...newLots[index], [field]: nextValue };
+      newLots[index] = { ...newLots[index], [field]: value };
       return {
         ...prev,
         lots: newLots,
@@ -502,6 +501,23 @@ export default function LotListingPreviewModal({
     }, 1200);
   };
 
+  const handleDownloadSpecPdf = async () => {
+    try {
+      const { blob, filename } = await ReportsService.downloadCr(reportId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename || `lot-listing-cr-${reportId}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      toast.success(`Download started: ${anchor.download}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || error?.message || "Unable to download CR.");
+    }
+  };
+
   const renderConditionSelections = (lot: any, idx: number) => {
     const selections = lot?.condition_report_selections || {};
 
@@ -598,15 +614,14 @@ export default function LotListingPreviewModal({
             <Printer className="h-4 w-4" />
             Print
           </button>
-          <a
-            href={specPdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => void handleDownloadSpecPdf()}
             className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-500"
           >
             <Download className="h-4 w-4" />
             Download CR
-          </a>
+          </button>
         </div>
       )}
 
@@ -640,6 +655,28 @@ export default function LotListingPreviewModal({
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     placeholder="e.g., CTR-2024-001"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                    Bank
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateField("bank_photos_enabled", !previewData?.bank_photos_enabled)
+                    }
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                      previewData?.bank_photos_enabled
+                        ? "border-purple-400 bg-purple-50 text-purple-700"
+                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                    aria-pressed={!!previewData?.bank_photos_enabled}
+                  >
+                    <span>Include all photos in CR</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                      {previewData?.bank_photos_enabled ? "On" : "Off"}
+                    </span>
+                  </button>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
@@ -863,7 +900,6 @@ export default function LotListingPreviewModal({
                           <textarea
                             value={lot.description || ""}
                             onChange={(e) => updateLot(idx, "description", e.target.value)}
-                            maxLength={60}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-y min-h-[80px]"
                             placeholder="Description"
                             rows={3}

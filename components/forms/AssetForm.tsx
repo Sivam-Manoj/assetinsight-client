@@ -160,6 +160,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [factorsQuality, setFactorsQuality] = useState("");
   const [factorsAnalysis, setFactorsAnalysis] = useState("");
   const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(true);
+  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
 
   // Draft state
   const [hasDraft, setHasDraft] = useState(false);
@@ -351,6 +352,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         includeValuationTable,
         selectedValuationMethods,
         includeDamageAnalysis,
+        bankPhotosEnabled,
         preparedFor,
         factorsAgeCondition,
         factorsQuality,
@@ -476,6 +478,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (formData.selectedValuationMethods) setSelectedValuationMethods(formData.selectedValuationMethods);
     if (typeof formData.includeDamageAnalysis === "boolean")
       setIncludeDamageAnalysis(formData.includeDamageAnalysis);
+    if (typeof formData.bankPhotosEnabled === "boolean")
+      setBankPhotosEnabled(formData.bankPhotosEnabled);
     if (formData.preparedFor) setPreparedFor(formData.preparedFor);
     if (formData.factorsAgeCondition) setFactorsAgeCondition(formData.factorsAgeCondition);
     if (formData.factorsQuality) setFactorsQuality(formData.factorsQuality);
@@ -740,6 +744,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setCurrencyTouched(false);
       setCurrencyLoading(false);
       setIncludeDamageAnalysis(true);
+      setBankPhotosEnabled(false);
       currencyPromptedRef.current = false;
       setIncludeValuationTable(false);
       setSelectedValuationMethods(["FML"]);
@@ -829,6 +834,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         includeValuationTable,
         selectedValuationMethods,
         includeDamageAnalysis,
+        bankPhotosEnabled,
         groupingMode: grouping,
         combinedModes,
         preparedFor,
@@ -887,6 +893,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         setSelectedValuationMethods(fd.selectedValuationMethods as any);
       if (typeof fd.includeDamageAnalysis === "boolean")
         setIncludeDamageAnalysis(fd.includeDamageAnalysis);
+      if (typeof (fd as any).bankPhotosEnabled === "boolean")
+        setBankPhotosEnabled((fd as any).bankPhotosEnabled);
       if (Array.isArray(fd.combinedModes))
         setCombinedModes(fd.combinedModes as any);
       if (typeof fd.preparedFor === "string") setPreparedFor(fd.preparedFor);
@@ -1255,6 +1263,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           ? selectedValuationMethods
           : [],
         include_damage_analysis: includeDamageAnalysis,
+        bank_photos_enabled: bankPhotosEnabled,
         progress_id: jobId,
         ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
         ...(factorsAgeCondition.trim() && {
@@ -1641,6 +1650,24 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     placeholder="e.g., CN-2025-001"
                     className="w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(251,113,133,0.15)] transition-all placeholder:text-gray-400 hover:border-gray-400"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-600">Bank</label>
+                  <button
+                    type="button"
+                    onClick={() => setBankPhotosEnabled((value) => !value)}
+                    className={`flex w-full items-center justify-between rounded-lg border-2 px-3 py-2.5 text-sm font-semibold transition ${
+                      bankPhotosEnabled
+                        ? "border-rose-400 bg-rose-50 text-rose-700"
+                        : "border-gray-300/80 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                    aria-pressed={bankPhotosEnabled}
+                  >
+                    <span>Include all photos in CR</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                      {bankPhotosEnabled ? "On" : "Off"}
+                    </span>
+                  </button>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-gray-600">Language</label>

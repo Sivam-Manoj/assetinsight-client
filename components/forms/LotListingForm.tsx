@@ -62,6 +62,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [currencyTouched, setCurrencyTouched] = useState(false);
+  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         language,
         currency,
         selectedValuationMethods: LOT_LISTING_VALUATION_METHODS,
+        bankPhotosEnabled,
         lots: mixedLots.map((lot) => ({
           id: lot.id,
           coverIndex: lot.coverIndex,
@@ -188,7 +190,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     } catch (e) {
       console.warn("[LotListing Draft] Save failed:", e);
     }
-  }, [submitting, mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency]);
+  }, [submitting, mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency, bankPhotosEnabled]);
 
   // Restore draft from localStorage
   const restoreDraft = useCallback(async () => {
@@ -214,6 +216,9 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       }
       if (formData.language) setLanguage(formData.language);
       if (formData.currency) setCurrency(formData.currency);
+      if (typeof formData.bankPhotosEnabled === "boolean") {
+        setBankPhotosEnabled(formData.bankPhotosEnabled);
+      }
 
       // Reconstruct lots with files
       const restoredLots: MixedLot[] = [];
@@ -422,6 +427,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     setLocation(CURRENT_BROWSER_LOCATION_LABEL);
     setLanguage("en");
     setCurrency("CAD");
+    setBankPhotosEnabled(false);
     setCurrencyTouched(false);
     setError(null);
     setProgressPhase("idle");
@@ -528,6 +534,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         currency,
         valuation_methods: LOT_LISTING_VALUATION_METHODS,
         include_damage_analysis: true,
+        bank_photos_enabled: bankPhotosEnabled,
         progress_id: jobId,
         mixed_lots: mixedLots.map((l) => ({
           count: l.files.length,
@@ -788,6 +795,25 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                   {errors.contractNo && (
                     <p className="text-xs text-red-500">{errors.contractNo}</p>
                   )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-600">Bank</label>
+                  <button
+                    type="button"
+                    onClick={() => setBankPhotosEnabled((value) => !value)}
+                    className={`flex w-full items-center justify-between rounded-lg border-2 px-3 py-2.5 text-sm font-semibold transition ${
+                      bankPhotosEnabled
+                        ? "border-purple-400 bg-purple-50 text-purple-700"
+                        : "border-gray-300/80 bg-white text-gray-700 hover:border-gray-400"
+                    }`}
+                    aria-pressed={bankPhotosEnabled}
+                  >
+                    <span>Include all photos in CR</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                      {bankPhotosEnabled ? "On" : "Off"}
+                    </span>
+                  </button>
                 </div>
 
                 <div className="space-y-1">

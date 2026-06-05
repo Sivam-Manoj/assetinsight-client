@@ -102,7 +102,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
               />
               <div>
                 <span className="text-sm font-semibold text-gray-800">1. Direct Comparable Approach</span>
-                <p className="text-[10px] text-gray-500">AI finds comparable farmland sales and calculates adjustments</p>
+                <p className="text-[10px] text-gray-500">Software finds comparable farmland sales and calculates adjustments</p>
               </div>
             </label>
             <label className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-amber-200 bg-amber-50/50 cursor-pointer hover:bg-amber-100/50 transition-colors">
@@ -126,7 +126,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
               />
               <div>
                 <span className="text-sm font-semibold text-gray-800">3. Cost Approach</span>
-                <p className="text-[10px] text-gray-500">AI calculates land value, replacement cost, and depreciation automatically</p>
+                <p className="text-[10px] text-gray-500">Software calculates land value, replacement cost, and depreciation automatically</p>
               </div>
             </label>
           </div>
@@ -173,7 +173,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
             </div>
             <div className="mt-2 p-2 rounded-lg bg-emerald-100/50 border border-emerald-200">
               <p className="text-[10px] text-emerald-700">
-                <strong>AI will search for:</strong> Recent comparable farmland sales in the area, calculate adjustments for time, size, location, soil quality, and access, then provide a weighted average rate per cultivated acre.
+                <strong>Software will search for:</strong> Recent comparable farmland sales in the area, calculate adjustments for time, size, location, soil quality, and access, then provide a weighted average rate per cultivated acre.
               </p>
             </div>
           </div>
@@ -238,7 +238,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
             </div>
             <div className="mt-2 p-2 rounded-lg bg-amber-100/50 border border-amber-200">
               <p className="text-[10px] text-amber-700">
-                <strong>AI will calculate:</strong> Potential Gross Income, Effective Gross Income, Net Operating Income, and Indicated Value using the Income Capitalization formula.
+                <strong>Software will calculate:</strong> Potential Gross Income, Effective Gross Income, Net Operating Income, and Indicated Value using the Income Capitalization formula.
               </p>
             </div>
           </div>
@@ -249,11 +249,11 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
           <div className="border-2 border-blue-300 rounded-xl p-3 bg-gradient-to-br from-blue-50/80 to-white">
             <div className="flex items-center gap-2 mb-2">
               <Building2 className="h-4 w-4 text-blue-600" />
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Cost Approach (AI-Calculated)</span>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Cost Approach (Software-Calculated)</span>
             </div>
             <div className="p-2 rounded-lg bg-blue-100/50 border border-blue-200">
               <p className="text-[10px] text-blue-700">
-                <strong>AI will estimate:</strong> Land Value, Replacement Cost New, Physical Depreciation, Functional Obsolescence, External Obsolescence, and calculate Total Depreciation and Depreciated Cost of Improvements automatically based on property details and images.
+                <strong>Software will estimate:</strong> Land Value, Replacement Cost New, Physical Depreciation, Functional Obsolescence, External Obsolescence, and calculate Total Depreciation and Depreciated Cost of Improvements automatically based on property details and images.
               </p>
             </div>
           </div>

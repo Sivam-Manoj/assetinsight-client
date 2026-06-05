@@ -23,6 +23,8 @@ export type PdfReport = {
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   contract_no?: string;
+  url?: string;
+  crReportId?: string;
   valuationMethods?: Array<{ method: string; value: number }>;
 };
 
@@ -39,6 +41,23 @@ export const ReportsService = {
 
   async downloadReport(id: string): Promise<{ blob: Blob; filename?: string }> {
     const response = await API.get<Blob>(`/reports/${id}/download`, {
+      responseType: "blob" as const,
+    });
+    const disposition = (response.headers as any)["content-disposition"] as
+      | string
+      | undefined;
+    let filename: string | undefined;
+    if (disposition) {
+      const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, "").trim();
+      }
+    }
+    return { blob: response.data, filename };
+  },
+
+  async downloadCr(reportId: string): Promise<{ blob: Blob; filename?: string }> {
+    const response = await API.get<Blob>(`/reports/${reportId}/cr/download`, {
       responseType: "blob" as const,
     });
     const disposition = (response.headers as any)["content-disposition"] as

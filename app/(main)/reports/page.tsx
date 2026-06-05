@@ -408,12 +408,13 @@ export default function ReportsPage() {
         (asset as any).preview_data?.client_name ||
         "Asset Report";
 
-      const createPseudoReport = (url: string, fileType: string) =>
+      const createPseudoReport = (url: string, fileType: string, extra?: Partial<PdfReport>) =>
         ({
           _id: `${asset._id}-${fileType}`,
           filename: `${addressBase}.${fileType}`,
           fileType,
           url,
+          ...extra,
           address: addressBase,
           fairMarketValue,
           createdAt: asset.createdAt,
@@ -435,7 +436,12 @@ export default function ReportsPage() {
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
           specPdf: previewFiles.spec_pdf
-            ? createPseudoReport(previewFiles.spec_pdf, "pdf")
+            ? createPseudoReport(previewFiles.spec_pdf, "pdf", {
+                _id: `${asset._id}-cr`,
+                filename: `${addressBase}-CR.pdf`,
+                fileType: "spec_pdf",
+                crReportId: asset._id,
+              })
             : undefined,
           docx: previewFiles.docx
             ? createPseudoReport(previewFiles.docx, "docx")
@@ -537,12 +543,13 @@ export default function ReportsPage() {
         (listing as any).details?.contract_no ||
         (listing as any).preview_data?.contract_no ||
         "Lot Listing";
-      const createPseudoReport = (url: string, fileType: string) =>
+      const createPseudoReport = (url: string, fileType: string, extra?: Partial<PdfReport>) =>
         ({
           _id: `${listing._id}-${fileType}`,
           filename: `${addressBase}.${fileType}`,
           fileType,
           url,
+          ...extra,
           address: addressBase,
           fairMarketValue,
           createdAt: listing.createdAt,
@@ -564,7 +571,12 @@ export default function ReportsPage() {
         type: "LotListing",
         variants: {
           specPdf: previewFiles.spec_pdf
-            ? createPseudoReport(previewFiles.spec_pdf, "pdf")
+            ? createPseudoReport(previewFiles.spec_pdf, "pdf", {
+                _id: `${listing._id}-cr`,
+                filename: `${addressBase}-CR.pdf`,
+                fileType: "spec_pdf",
+                crReportId: listing._id,
+              })
             : undefined,
           xlsx: previewFiles.excel
             ? createPseudoReport(previewFiles.excel, "xlsx")
@@ -657,6 +669,20 @@ export default function ReportsPage() {
             break;
           }
         }
+      }
+
+      if (reportWithUrl?.crReportId) {
+        const { blob, filename } = await ReportsService.downloadCr(reportWithUrl.crReportId);
+        const objectUrl = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = filename || reportWithUrl.filename || `cr-${reportWithUrl.crReportId}.pdf`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+        toast.success(`Download started: ${anchor.download}`);
+        return;
       }
 
       if (reportWithUrl && (reportWithUrl as any).url) {
