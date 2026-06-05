@@ -17,6 +17,7 @@ export interface AssetReport {
   preview_files?: {
     pdf?: string;
     spec_pdf?: string;
+    cr_docx?: string;
     docx?: string;
     excel?: string;
     images?: string;
@@ -43,6 +44,7 @@ export interface PreviewDataResponse {
     preview_files?: {
       pdf?: string;
       spec_pdf?: string;
+      cr_docx?: string;
       docx?: string;
       excel?: string;
       images?: string;
@@ -98,11 +100,11 @@ export const refreshAssetSpecPdf = async (
   reportId: string
 ): Promise<{
   message: string;
-  data: { spec_pdf: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+  data: { spec_pdf: string; cr_docx?: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
 }> => {
   const { data } = await API.post<{
     message: string;
-    data: { spec_pdf: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+    data: { spec_pdf: string; cr_docx?: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
   }>(`/asset/${reportId}/preview/spec-pdf`, {});
   return data;
 };

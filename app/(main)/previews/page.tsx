@@ -646,18 +646,44 @@ export default function PreviewsPage() {
                       </Alert>
                     ) : null}
 
-                    {!jobActive && (report as any).preview_files?.docx ? (
+                    {!jobActive && ((report as any).preview_files?.spec_pdf || (report as any).preview_files?.cr_docx || (report as any).preview_files?.docx) ? (
                       <Stack direction="row" spacing={1}>
-                        <Button
-                          component="a"
-                          href={(report as any).preview_files.docx}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          size="small"
-                          startIcon={<SendRounded />}
-                        >
-                          Download DOCX
-                        </Button>
+                        {(report as any).preview_files?.spec_pdf ? (
+                          <Button
+                            component="a"
+                            href={(report as any).preview_files.spec_pdf}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            size="small"
+                            startIcon={<SendRounded />}
+                          >
+                            CR
+                          </Button>
+                        ) : null}
+                        {(report as any).preview_files?.cr_docx ? (
+                          <Button
+                            component="a"
+                            href={(report as any).preview_files.cr_docx}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            size="small"
+                            startIcon={<SendRounded />}
+                          >
+                            CR DOCX
+                          </Button>
+                        ) : null}
+                        {(report as any).preview_files?.docx ? (
+                          <Button
+                            component="a"
+                            href={(report as any).preview_files.docx}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            size="small"
+                            startIcon={<SendRounded />}
+                          >
+                            Download DOCX
+                          </Button>
+                        ) : null}
                       </Stack>
                     ) : null}
                   </Stack>

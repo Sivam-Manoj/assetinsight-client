@@ -38,6 +38,7 @@ export interface LotListingLot {
 
 export interface LotListingPreviewFiles {
   spec_pdf?: string;
+  cr_docx?: string;
   excel?: string;
   images?: string;
 }
@@ -160,11 +161,11 @@ export async function refreshLotListingSpecPdf(
   id: string
 ): Promise<{
   message: string;
-  data: { spec_pdf: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+  data: { spec_pdf: string; cr_docx?: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
 }> {
   const response = await API.post<{
     message: string;
-    data: { spec_pdf: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+    data: { spec_pdf: string; cr_docx?: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
   }>(`/lot-listing/${id}/preview/spec-pdf`, {});
   return response.data;
 }

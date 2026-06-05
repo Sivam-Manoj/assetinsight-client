@@ -42,6 +42,7 @@ type ReportGroup = {
   variants: {
     pdf?: PdfReport;
     specPdf?: PdfReport;
+    crDocx?: PdfReport;
     docx?: PdfReport;
     xlsx?: PdfReport;
     images?: PdfReport;
@@ -93,9 +94,10 @@ function statusTone(status?: string, isGeneratingFiles = false) {
   };
 }
 
-function actionLabel(variant: "pdf" | "specPdf" | "docx" | "xlsx" | "images") {
+function actionLabel(variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images") {
   if (variant === "pdf") return "Data";
   if (variant === "specPdf") return "CR";
+  if (variant === "crDocx") return "CR DOCX";
   if (variant === "docx") return "DOCX";
   if (variant === "xlsx") return "Excel";
   return "Images";
@@ -374,6 +376,7 @@ export default function ReportsPage() {
       ).toLowerCase();
       if (fileType === "pdf") group.variants.pdf = report;
       else if (fileType === "spec_pdf") group.variants.specPdf = report;
+      else if (fileType === "cr_docx") group.variants.crDocx = report;
       else if (fileType === "docx") group.variants.docx = report;
       else if (fileType === "xlsx") group.variants.xlsx = report;
       else if (fileType === "images" || fileType === "zip") group.variants.images = report;
@@ -443,6 +446,19 @@ export default function ReportsPage() {
                 crReportId: asset._id,
               })
             : undefined,
+          crDocx: previewFiles.cr_docx
+            ? createPseudoReport(previewFiles.cr_docx, "docx", {
+                _id: `${asset._id}-cr-docx`,
+                filename: `${addressBase}-CR.docx`,
+                fileType: "cr_docx",
+                crReportId: asset._id,
+              })
+            : createPseudoReport(`/api/reports/${asset._id}/cr-docx`, "docx", {
+                _id: `${asset._id}-cr-docx`,
+                filename: `${addressBase}-CR.docx`,
+                fileType: "cr_docx",
+                crReportId: asset._id,
+              }),
           docx: previewFiles.docx
             ? createPseudoReport(previewFiles.docx, "docx")
             : undefined,
@@ -578,6 +594,19 @@ export default function ReportsPage() {
                 crReportId: listing._id,
               })
             : undefined,
+          crDocx: previewFiles.cr_docx
+            ? createPseudoReport(previewFiles.cr_docx, "docx", {
+                _id: `${listing._id}-cr-docx`,
+                filename: `${addressBase}-CR.docx`,
+                fileType: "cr_docx",
+                crReportId: listing._id,
+              })
+            : createPseudoReport(`/api/reports/${listing._id}/cr-docx`, "docx", {
+                _id: `${listing._id}-cr-docx`,
+                filename: `${addressBase}-CR.docx`,
+                fileType: "cr_docx",
+                crReportId: listing._id,
+              }),
           xlsx: previewFiles.excel
             ? createPseudoReport(previewFiles.excel, "xlsx")
             : undefined,
@@ -672,11 +701,17 @@ export default function ReportsPage() {
       }
 
       if (reportWithUrl?.crReportId) {
-        const { blob, filename } = await ReportsService.downloadCr(reportWithUrl.crReportId);
+        const isCrDocx = reportWithUrl.fileType === "cr_docx";
+        const { blob, filename } = isCrDocx
+          ? await ReportsService.downloadCrDocx(reportWithUrl.crReportId)
+          : await ReportsService.downloadCr(reportWithUrl.crReportId);
         const objectUrl = window.URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = objectUrl;
-        anchor.download = filename || reportWithUrl.filename || `cr-${reportWithUrl.crReportId}.pdf`;
+        anchor.download =
+          filename ||
+          reportWithUrl.filename ||
+          `cr-${reportWithUrl.crReportId}.${isCrDocx ? "docx" : "pdf"}`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
@@ -883,7 +918,7 @@ export default function ReportsPage() {
                           {group.isGeneratingFiles ? (
                             <GeneratingFilesProgress />
                           ) : (
-                            (["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                            (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
                               const file = group.variants[variant];
                               if (!file) return null;
                               const disabled =
@@ -1004,7 +1039,7 @@ export default function ReportsPage() {
                                 {group.isGeneratingFiles ? (
                                   <GeneratingFilesProgress />
                                 ) : (
-                                  (["pdf", "specPdf", "docx", "xlsx", "images"] as const).map((variant) => {
+                                  (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
                                     const file = group.variants[variant];
                                     if (!file) return null;
                                     const disabled =

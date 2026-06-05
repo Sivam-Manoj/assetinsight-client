@@ -476,6 +476,7 @@ export default function PreviewModal({
           ...(prev || {}),
           ...(pdf.data?.preview_files || {}),
           spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
+          cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
         }));
         if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
         pdfRefreshed = true;
@@ -925,6 +926,7 @@ export default function PreviewModal({
 
   const workflowLocked = filesGenerating || filesRegenerating;
   const specPdfUrl = previewFiles?.spec_pdf;
+  const crDocxUrl = previewFiles?.cr_docx;
 
   const handlePrintSpecPdf = () => {
     if (!specPdfUrl) return;
@@ -957,6 +959,23 @@ export default function PreviewModal({
       toast.success(`Download started: ${anchor.download}`);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || error?.message || "Unable to download CR.");
+    }
+  };
+
+  const handleDownloadCrDocx = async () => {
+    try {
+      const { blob, filename } = await ReportsService.downloadCrDocx(reportId);
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename || `asset-cr-${reportId}.docx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 500);
+      toast.success(`Download started: ${anchor.download}`);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || error?.message || "Unable to download CR DOCX.");
     }
   };
 
@@ -1008,6 +1027,15 @@ export default function PreviewModal({
           >
             <Download className="h-4 w-4" />
             Download CR
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDownloadCrDocx()}
+            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            title={crDocxUrl ? "Download editable CR Word file" : "Generate and download editable CR Word file"}
+          >
+            <Download className="h-4 w-4" />
+            CR DOCX
           </button>
         </div>
       )}

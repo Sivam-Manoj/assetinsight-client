@@ -17,7 +17,7 @@ export type PdfReport = {
   createdAt: string; // ISO string
   report?: string; // underlying report id for grouping
   type?: string;
-  fileType?: 'pdf' | 'spec_pdf' | 'docx' | 'xlsx' | 'images';
+  fileType?: 'pdf' | 'spec_pdf' | 'cr_docx' | 'docx' | 'xlsx' | 'images';
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   approvalNote?: string;
   reviewedBy?: string | null;
@@ -58,6 +58,23 @@ export const ReportsService = {
 
   async downloadCr(reportId: string): Promise<{ blob: Blob; filename?: string }> {
     const response = await API.get<Blob>(`/reports/${reportId}/cr/download`, {
+      responseType: "blob" as const,
+    });
+    const disposition = (response.headers as any)["content-disposition"] as
+      | string
+      | undefined;
+    let filename: string | undefined;
+    if (disposition) {
+      const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, "").trim();
+      }
+    }
+    return { blob: response.data, filename };
+  },
+
+  async downloadCrDocx(reportId: string): Promise<{ blob: Blob; filename?: string }> {
+    const response = await API.get<Blob>(`/reports/${reportId}/cr-docx`, {
       responseType: "blob" as const,
     });
     const disposition = (response.headers as any)["content-disposition"] as
