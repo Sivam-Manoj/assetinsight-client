@@ -332,8 +332,16 @@ export default function ReportsPage() {
       lotListingReports.map((report) => report._id)
     );
 
+    const getReportRefId = (report: any): string | undefined => {
+      const raw = report?.report;
+      if (!raw) return undefined;
+      if (typeof raw === "string") return raw;
+      if (typeof raw === "object" && raw?._id) return String(raw._id);
+      return String(raw);
+    };
+
     for (const report of reports) {
-      const reportRef = (report as any).report as string | undefined;
+      const reportRef = getReportRefId(report);
       if (
         reportRef &&
         (assetReportIds.has(reportRef) ||
@@ -493,8 +501,14 @@ export default function ReportsPage() {
     for (const listing of lotListingReports) {
       const previewFiles =
         listing.status === "approved"
-          ? (listing as any).files || (listing as any).preview_files || {}
-          : (listing as any).preview_files || (listing as any).files || {};
+          ? {
+              ...((listing as any).files || {}),
+              ...((listing as any).preview_files || {}),
+            }
+          : {
+              ...((listing as any).files || {}),
+              ...((listing as any).preview_files || {}),
+            };
       const currency = String(
         (listing as any)?.details?.currency ||
           (listing as any)?.preview_data?.currency ||
