@@ -1,5 +1,6 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
+import { uploadReportFilesDirectToR2, type DirectUploadFile } from "./directUpload";
 
 export type AssetGroupingMode =
   | "single_lot"
@@ -95,17 +96,43 @@ export const AssetService = {
     videos?: File[] | undefined,
     options?: CreateOptions
   ): Promise<AssetCreateResponse> {
-    const fd = new FormData();
-    fd.append("details", JSON.stringify(details));
     const filesToSend =
       details.grouping_mode === "catalogue" ||
       details.grouping_mode === "combined" ||
       details.grouping_mode === "mixed"
         ? images
         : images.slice(0, 10);
+    const videoFiles = Array.isArray(videos) ? videos : [];
+
+    try {
+      const directFiles: DirectUploadFile[] = [
+        ...filesToSend.map((file, imageIndex) => ({
+          file,
+          fieldname: "images" as const,
+          imageIndex,
+          role: "main" as const,
+        })),
+        ...videoFiles.map((file, imageIndex) => ({
+          file,
+          fieldname: "videos" as const,
+          imageIndex,
+          role: "video" as const,
+        })),
+      ];
+      return await uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details,
+        files: directFiles,
+        onUploadProgress: options?.onUploadProgress,
+      });
+    } catch (error) {
+      console.warn("[AssetService] Direct R2 upload failed; falling back to multipart upload:", error);
+    }
+
+    const fd = new FormData();
+    fd.append("details", JSON.stringify(details));
     filesToSend.forEach((file) => fd.append("images", file));
     // Append videos (if any) under a separate field; backend will include them in the zip, not AI
-    const videoFiles = Array.isArray(videos) ? videos : [];
     videoFiles.forEach((file) => fd.append("videos", file));
 
     const { data } = await API.post<AssetCreateResponse>("/asset", fd, {

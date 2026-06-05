@@ -9,6 +9,7 @@ import {
   CURRENT_BROWSER_LOCATION_LABEL,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
+import { uploadReportFilesDirectToR2, type DirectUploadFile } from "@/services/directUpload";
 
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
@@ -513,11 +514,6 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
           : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       jobIdRef.current = jobId;
 
-      const formData = new FormData();
-      filesToSend.forEach((file) => {
-        formData.append("images", file);
-      });
-
       const details = {
         contract_no: contractNo.trim(),
         sales_date: salesDate,
@@ -540,22 +536,67 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
           mode: l.mode!,
         })),
       };
-      formData.append("details", JSON.stringify(details));
 
-      const response = await API.post("/lot-listing", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent: any) => {
-          const pct = progressEvent.total
-            ? Math.max(0, Math.min(1, progressEvent.loaded / progressEvent.total))
-            : 0;
-          const weighted = pct * PROG_WEIGHTS.client_upload * 100;
-          setProgressPhase("upload");
-          setProgressPercent((prev) => (weighted > prev ? weighted : prev));
-          setUploadStats((prev) =>
-            prev ? { ...prev, uploadedBytes: Math.floor(pct * prev.totalSize) } : null
-          );
-        },
-      });
+      let response: any;
+      try {
+        const directFiles: DirectUploadFile[] = [];
+        mixedLots.forEach((lot, lotIndex) => {
+          lot.files.forEach((file, imageIndex) => {
+            directFiles.push({
+              file,
+              fieldname: "images",
+              lotIndex,
+              imageIndex,
+              role: "main",
+            });
+          });
+          (lot.extraFiles || []).forEach((file, imageIndex) => {
+            directFiles.push({
+              file,
+              fieldname: "images",
+              lotIndex,
+              imageIndex,
+              role: "extra",
+            });
+          });
+        });
+        const data = await uploadReportFilesDirectToR2({
+          endpoint: "/lot-listing",
+          details,
+          files: directFiles,
+          onUploadProgress: (fraction) => {
+            const pct = Math.max(0, Math.min(1, fraction));
+            const weighted = pct * PROG_WEIGHTS.client_upload * 100;
+            setProgressPhase("upload");
+            setProgressPercent((prev) => (weighted > prev ? weighted : prev));
+            setUploadStats((prev) =>
+              prev ? { ...prev, uploadedBytes: Math.floor(pct * prev.totalSize) } : null
+            );
+          },
+        });
+        response = { data };
+      } catch (directError) {
+        console.warn("[LotListingForm] Direct R2 upload failed; falling back to multipart upload:", directError);
+        const formData = new FormData();
+        filesToSend.forEach((file) => {
+          formData.append("images", file);
+        });
+        formData.append("details", JSON.stringify(details));
+        response = await API.post("/lot-listing", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+          onUploadProgress: (progressEvent: any) => {
+            const pct = progressEvent.total
+              ? Math.max(0, Math.min(1, progressEvent.loaded / progressEvent.total))
+              : 0;
+            const weighted = pct * PROG_WEIGHTS.client_upload * 100;
+            setProgressPhase("upload");
+            setProgressPercent((prev) => (weighted > prev ? weighted : prev));
+            setUploadStats((prev) =>
+              prev ? { ...prev, uploadedBytes: Math.floor(pct * prev.totalSize) } : null
+            );
+          },
+        });
+      }
 
       const msg =
         response?.data?.message ||
