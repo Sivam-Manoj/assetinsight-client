@@ -629,10 +629,10 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
   }
 
   return (
-    <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
-      <div className="relative flex min-h-full flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="flex items-start justify-between gap-3 rounded-2xl border border-purple-100 bg-white/80 p-4 shadow-sm">
-          <div>
+    <form className="flex min-h-full min-w-0 flex-col overflow-x-hidden" onSubmit={onSubmit}>
+      <div className="relative flex min-h-full min-w-0 flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-purple-100 bg-white/80 p-4 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-gray-950">Lot Listing</h2>
             <p className="mt-1 text-sm text-gray-600">
               Build an auction-ready lot listing with photos, values, Excel, and image downloads.
@@ -747,25 +747,25 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
             {/* Restore Draft Banner */}
             {hasDraft && mixedLots.length === 0 && (
               <div className="mb-4 rounded-xl border border-purple-200 bg-purple-50/80 p-3 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
                     <RotateCcw className="h-4 w-4 text-purple-600" />
                     <span className="text-sm text-purple-800">
                       You have a saved draft with images
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                     <button
                       type="button"
                       onClick={handleRestoreDraft}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition shadow-sm"
+                      className="inline-flex min-h-9 items-center justify-center rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700"
                     >
                       Restore Draft
                     </button>
                     <button
                       type="button"
                       onClick={clearDraft}
-                      className="px-3 py-1.5 text-xs font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded-lg transition"
+                      className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium text-purple-600 transition hover:bg-purple-100 hover:text-purple-800"
                     >
                       Discard
                     </button>
@@ -853,7 +853,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
             </section>
 
             {/* Lots Section with Camera */}
-            <section className="mt-4 space-y-3 pb-6 sm:pb-8">
+            <section className="mt-4 min-w-0 space-y-3 pb-8 sm:pb-8">
               <h3 className="text-sm font-medium text-gray-900">
                 Lots & Images
               </h3>
@@ -865,13 +865,13 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
             </section>
 
             {/* Action Buttons */}
-            <div className="sticky bottom-0 z-10 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
-              <div className="flex flex-col gap-3 rounded-2xl border border-gray-200/80 bg-white/95 p-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="sticky bottom-0 z-10 -mx-1 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:mx-0">
+              <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200/80 bg-white/95 p-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+              <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={handleSaveDraft}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 active:translate-y-0.5"
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 active:translate-y-0.5 sm:gap-2 sm:px-4"
                 >
                   <Save className="h-4 w-4" />
                   Save
@@ -879,7 +879,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                 <button
                   type="button"
                   onClick={() => clearForm()}
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5"
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5 sm:px-4"
                 >
                   Clear
                 </button>
@@ -887,7 +887,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
                   <button
                     type="button"
                     onClick={onCancel}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5"
+                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5 sm:gap-2 sm:px-4"
                   >
                     <X className="h-4 w-4" />
                     Cancel

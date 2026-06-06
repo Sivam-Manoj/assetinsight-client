@@ -1546,26 +1546,26 @@ export default function MixedSection({
   const totalImages = lots.reduce((s, l) => s + l.files.length, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4 overflow-x-hidden">
       {/* Toolbar */}
-      <div className="grid grid-cols-2 grid-flow-dense gap-2 sm:flex sm:flex-wrap sm:items-center">
+      <div className="grid min-w-0 grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-center">
         <button
           type="button"
-          className="w-full sm:w-auto inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-gray-900 to-black px-3 py-2 text-sm font-semibold text-white shadow"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gray-900 to-black px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
           onClick={createLot}
         >
           <Plus className="h-4 w-4" /> New Lot
         </button>
         <button
           type="button"
-          className="w-full sm:w-auto inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-3 py-2 text-sm font-semibold text-white shadow"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
           onClick={openCamera}
         >
           <Camera className="h-4 w-4" /> Open Camera
         </button>
         <button
           type="button"
-          className="w-full sm:w-auto inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-gray-800 border border-gray-200 shadow"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow sm:w-auto sm:justify-start"
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload className="h-4 w-4" /> Manual Upload
@@ -1580,7 +1580,7 @@ export default function MixedSection({
         />
         <button
           type="button"
-          className="w-full sm:w-auto inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-sm font-semibold text-white shadow"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
           onClick={() => extraFileInputRef.current?.click()}
         >
           <Upload className="h-4 w-4" /> Upload Extra
@@ -1595,7 +1595,7 @@ export default function MixedSection({
         />
         <button
           type="button"
-          className="w-full sm:w-auto inline-flex items-center gap-2 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
           onClick={() => videoUploadInputRef.current?.click()}
         >
           <Upload className="h-4 w-4" /> Upload Video
@@ -1608,7 +1608,7 @@ export default function MixedSection({
           className="sr-only"
           onChange={(e) => onManualUploadVideo(e.target.files)}
         />
-        <div className="text-xs text-gray-600 flex flex-col sm:flex-row sm:gap-3">
+        <div className="col-span-full flex w-full flex-col gap-0.5 rounded-xl border border-gray-200 bg-white/75 px-3 py-2 text-xs text-gray-600 shadow-sm sm:w-auto sm:flex-row sm:gap-3 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
           <span>Total: {totalImages} image(s)</span>
           {totalImages > 0 && (
             <>
@@ -1626,7 +1626,7 @@ export default function MixedSection({
         {actionButtons && (
           <>
             <div className="hidden sm:block w-px h-6 bg-gray-300" />
-            {actionButtons}
+            <div className="col-span-full w-full sm:w-auto">{actionButtons}</div>
           </>
         )}
       </div>
@@ -1634,23 +1634,23 @@ export default function MixedSection({
       {/* Lots selector */}
       {lots.length > 0 && (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 overflow-x-auto">
+          <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]">
             {lots.map((lot, i) => (
               <button
                 key={lot.id}
                 type="button"
                 onClick={() => setActiveIdx(i)}
-                className={`rounded-xl border px-3 py-2 text-xs shadow min-w-[120px] text-left ${
+                className={`min-w-[120px] max-w-[170px] shrink-0 rounded-xl border px-3 py-2 text-left text-xs shadow ${
                   i === activeIdx
                     ? "border-rose-300 bg-rose-50"
                     : "border-gray-200 bg-white"
                 }`}
               >
-                <div className="font-semibold">Lot {i + 1}</div>
-                <div className="text-[11px] text-gray-600">
+                <div className="truncate font-semibold">Lot {i + 1}</div>
+                <div className="truncate text-[11px] text-gray-600">
                   {lot.mode ? lot.mode.replace("_", " ") : "Select mode"}
                 </div>
-                <div className="text-[11px] text-gray-600">
+                <div className="truncate text-[11px] text-gray-600">
                   Main: {lot.files.length} | Extra:{" "}
                   {lot.extraFiles?.length || 0} | Video:{" "}
                   {lot.videoFiles?.length || 0}
@@ -1661,16 +1661,16 @@ export default function MixedSection({
 
           {/* Active lot panel */}
           {activeIdx >= 0 && lots[activeIdx] && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow">
-              <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm font-semibold text-gray-900">
                   Lot {activeIdx + 1}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
                   <button
                     type="button"
                     onClick={() => downloadLotZip(activeIdx)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-gray-50"
+                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-gray-50"
                     title="Download this lot as ZIP"
                   >
                     <Download className="h-4 w-4" /> Download ZIP
@@ -1678,7 +1678,7 @@ export default function MixedSection({
                   <button
                     type="button"
                     onClick={() => removeLot(activeIdx)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50"
                   >
                     <Trash2 className="h-4 w-4" /> Remove Lot
                   </button>
@@ -1731,7 +1731,7 @@ export default function MixedSection({
               </div>
 
               {/* Images grid (main images for processing) */}
-              <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
                 {lots[activeIdx].files.map((f, i) => {
                   const url = URL.createObjectURL(f);
                   const isCover = lots[activeIdx].coverIndex === i;
@@ -1747,7 +1747,7 @@ export default function MixedSection({
                       <img
                         src={url}
                         alt={f.name}
-                        className="h-28 w-full object-cover"
+                        className="h-32 w-full object-cover sm:h-28"
                         onLoad={() => URL.revokeObjectURL(url)}
                       />
                       {/* File size badge */}
@@ -1764,25 +1764,28 @@ export default function MixedSection({
                           {annCount} box{annCount > 1 ? "es" : ""}
                         </div>
                       )}
-                      <div className="absolute inset-x-0 bottom-1 flex justify-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                      <div className="absolute inset-x-1 bottom-1 grid grid-cols-3 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                         <button
                           type="button"
-                          className="rounded bg-white/90 px-2 py-0.5 text-[10px] shadow"
+                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] shadow"
                           onClick={() => setCover(activeIdx, i)}
+                          title="Set Cover"
                         >
                           Set Cover
                         </button>
                         <button
                           type="button"
-                          className="rounded bg-white/90 px-2 py-0.5 text-[10px] shadow"
+                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] shadow"
                           onClick={() => openEditor(activeIdx, i)}
+                          title="Edit"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          className="rounded bg-white/90 px-2 py-0.5 text-[10px] shadow text-red-600"
+                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] text-red-600 shadow"
                           onClick={() => removeImage(activeIdx, i)}
+                          title="Remove"
                         >
                           Remove
                         </button>
@@ -1802,7 +1805,7 @@ export default function MixedSection({
                     </div>
                     <div className="h-px flex-1 bg-gray-200" />
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  <div className="mt-2 grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
                     {lots[activeIdx].extraFiles.map((f, i) => {
                       const url = URL.createObjectURL(f);
                       return (
@@ -1814,7 +1817,7 @@ export default function MixedSection({
                           <img
                             src={url}
                             alt={f.name}
-                            className="h-28 w-full object-cover"
+                            className="h-32 w-full object-cover sm:h-28"
                             onLoad={() => URL.revokeObjectURL(url)}
                           />
                           <div className="absolute left-1 top-1 rounded bg-blue-600/80 px-1.5 py-0.5 text-[10px] text-white shadow">
@@ -1824,11 +1827,12 @@ export default function MixedSection({
                           <div className="absolute right-1 bottom-10 rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white shadow">
                             {formatFileSize(f.size)}
                           </div>
-                          <div className="absolute inset-x-0 bottom-1 flex justify-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
+                          <div className="absolute inset-x-1 bottom-1 grid grid-cols-1 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                             <button
                               type="button"
-                              className="rounded bg-white/90 px-2 py-0.5 text-[10px] shadow text-red-600"
+                              className="truncate rounded bg-white/95 px-1 py-1 text-[9px] text-red-600 shadow"
                               onClick={() => removeExtraImage(activeIdx, i)}
+                              title="Remove"
                             >
                               Remove
                             </button>
