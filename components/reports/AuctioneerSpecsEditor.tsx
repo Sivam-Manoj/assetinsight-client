@@ -14,6 +14,7 @@ type Props = {
   lotIndex: number;
   specsByCategory: Map<string, AssetCategorySpec>;
   onChange: (lotIndex: number, fieldName: string, value: string) => void;
+  onAdd?: (lotIndex: number, fieldName: string, value: string) => void;
   onDelete: (lotIndex: number, fieldName: string) => void;
   accent?: "rose" | "purple";
 };
@@ -81,12 +82,16 @@ export default function AuctioneerSpecsEditor({
   lotIndex,
   specsByCategory,
   onChange,
+  onAdd,
   onDelete,
   accent = "rose",
 }: Props) {
   const [expandedEditor, setExpandedEditor] = React.useState<{
     fieldName: string;
+    draftFieldName?: string;
     value: string;
+    isNew?: boolean;
+    error?: string;
   } | null>(null);
   const categoryKey = normalizeKey(lot?.categories);
   const categorySpec = specsByCategory.get(categoryKey);
@@ -128,12 +133,45 @@ export default function AuctioneerSpecsEditor({
     });
   };
 
+  const openAddFieldEditor = () => {
+    setExpandedEditor({
+      fieldName: "",
+      draftFieldName: "",
+      value: "",
+      isNew: true,
+    });
+  };
+
   const closeExpandedEditor = () => {
     setExpandedEditor(null);
   };
 
   const saveExpandedEditor = () => {
     if (!expandedEditor) return;
+    if (expandedEditor.isNew) {
+      const fieldName = String(expandedEditor.draftFieldName || "").trim();
+      const value = String(expandedEditor.value || "").trim();
+      if (!fieldName || !value) {
+        setExpandedEditor((prev) =>
+          prev ? { ...prev, error: "Field name and value are required." } : prev
+        );
+        return;
+      }
+      const existingField = visibleFields.find(
+        (field) => normalizeKey(field) === normalizeKey(fieldName)
+      );
+      if (existingField) {
+        setExpandedEditor({
+          fieldName: existingField,
+          value: getValueForField(specRecord, existingField),
+          error: "This field already exists. Edit the existing value.",
+        });
+        return;
+      }
+      (onAdd || onChange)(lotIndex, fieldName, expandedEditor.value);
+      closeExpandedEditor();
+      return;
+    }
     onChange(lotIndex, expandedEditor.fieldName, expandedEditor.value);
     closeExpandedEditor();
   };
@@ -163,7 +201,7 @@ export default function AuctioneerSpecsEditor({
                     id="auctioneer-spec-expanded-title"
                     className="text-sm font-black uppercase tracking-wide text-gray-950"
                   >
-                    {expandedEditor.fieldName}
+                    {expandedEditor.isNew ? "ADD CONDITION REPORT FIELD" : expandedEditor.fieldName}
                   </p>
                   <p className="mt-1 truncate text-xs text-gray-500">
                     {[
@@ -182,25 +220,48 @@ export default function AuctioneerSpecsEditor({
                 </button>
               </div>
               <div className="min-h-0 flex-1 px-5 py-4">
+                {expandedEditor.isNew && (
+                  <div className="mb-3">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-600">
+                      Field name
+                    </label>
+                    <input
+                      value={expandedEditor.draftFieldName || ""}
+                      onChange={(event) =>
+                        setExpandedEditor((prev) =>
+                          prev ? { ...prev, draftFieldName: event.target.value, error: undefined } : prev
+                        )
+                      }
+                      className={`w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                      placeholder="Example: Engine Hours"
+                      autoFocus
+                    />
+                  </div>
+                )}
                 <textarea
                   value={expandedEditor.value}
                   onChange={(event) =>
                     setExpandedEditor((prev) =>
-                      prev ? { ...prev, value: event.target.value } : prev
+                      prev ? { ...prev, value: event.target.value, error: undefined } : prev
                     )
                   }
                   className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
                   placeholder="Edit the full field value"
-                  autoFocus
+                  autoFocus={!expandedEditor.isNew}
                 />
+                {expandedEditor.error && (
+                  <p className="mt-2 text-xs font-semibold text-red-600">
+                    {expandedEditor.error}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
-                  onClick={deleteExpandedField}
+                  onClick={expandedEditor.isNew ? closeExpandedEditor : deleteExpandedField}
                   className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
                 >
-                  Delete field
+                  {expandedEditor.isNew ? "Cancel add" : "Delete field"}
                 </button>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button
@@ -250,6 +311,16 @@ export default function AuctioneerSpecsEditor({
           >
             {categoryChipText}
           </span>
+        </div>
+
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={openAddFieldEditor}
+            className="rounded-lg border border-dashed border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
+          >
+            + Add field
+          </button>
         </div>
 
         {visibleFields.length > 0 ? (

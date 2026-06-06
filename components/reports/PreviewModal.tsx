@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer } from "lucide-react";
+import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getPreviewData, 
@@ -11,6 +11,7 @@ import {
   resubmitReport,
   getAssetCategorySpecs,
   refreshAssetSpecPdf,
+  uploadPreviewLotImages,
   type AssetCategorySpec,
 } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
@@ -294,6 +295,7 @@ export default function PreviewModal({
   const [groupingMode, setGroupingMode] = useState<string | undefined>(undefined);
   const [imageCount, setImageCount] = useState<number | undefined>(undefined);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadingLotKey, setUploadingLotKey] = useState<string | null>(null);
   const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -717,6 +719,137 @@ export default function PreviewModal({
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
+  };
+
+  const addLotSpec = (index: number, fieldName: string, value: string) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      const existingSpecs =
+        lot.condition_report_specs && typeof lot.condition_report_specs === "object" && !Array.isArray(lot.condition_report_specs)
+          ? { ...lot.condition_report_specs }
+          : Array.isArray(lot.condition_report_specs)
+            ? Object.fromEntries(
+                lot.condition_report_specs
+                  .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value || "").trim()])
+                  .filter((entry: string[]) => entry[0])
+              )
+            : {};
+      const field = String(fieldName || "").trim();
+      const fieldKey = normalizeSpecKey(field);
+      const existingKey = Object.keys(existingSpecs).find(
+        (candidate) => normalizeSpecKey(candidate) === fieldKey
+      );
+      existingSpecs[existingKey || field] = value;
+      const deletedSpecs = Array.isArray(lot.condition_report_specs_deleted)
+        ? lot.condition_report_specs_deleted
+            .map((item: any) => String(item || "").trim())
+            .filter(Boolean)
+        : [];
+      const customOrder = Array.isArray(lot.condition_report_specs_custom_order)
+        ? lot.condition_report_specs_custom_order
+            .map((item: any) => String(item || "").trim())
+            .filter(Boolean)
+        : [];
+      if (!customOrder.some((item: string) => normalizeSpecKey(item) === fieldKey)) {
+        customOrder.push(existingKey || field);
+      }
+      lot.condition_report_specs = existingSpecs;
+      lot.condition_report_specs_deleted = deletedSpecs.filter(
+        (item: string) => normalizeSpecKey(item) !== fieldKey
+      );
+      lot.condition_report_specs_custom_order = customOrder;
+      newLots[index] = lot;
+      return { ...prev, lots: newLots };
+    });
+    setHasChanges(true);
+  };
+
+  const deleteLotImage = (lotIndex: number, globalImageIndex: number) => {
+    if (!window.confirm("Remove this image from this lot and regenerated files?")) return;
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[lotIndex] || {}) };
+      const removeIndex = (values: any) =>
+        Array.isArray(values)
+          ? values.filter((value) => Number(value) !== globalImageIndex)
+          : values;
+      lot.image_indexes = removeIndex(lot.image_indexes);
+      lot.extra_image_indexes = removeIndex(lot.extra_image_indexes);
+      if (Number(lot.image_index) === globalImageIndex) delete lot.image_index;
+      if (Number(lot.cover_index) === globalImageIndex) delete lot.cover_index;
+      const imageUrl = imageUrls[globalImageIndex];
+      if (imageUrl) {
+        lot.image_urls = Array.isArray(lot.image_urls)
+          ? lot.image_urls.filter((url: string) => url !== imageUrl)
+          : lot.image_urls;
+        lot.extra_image_urls = Array.isArray(lot.extra_image_urls)
+          ? lot.extra_image_urls.filter((url: string) => url !== imageUrl)
+          : lot.extra_image_urls;
+        if (lot.image_url === imageUrl) delete lot.image_url;
+      }
+      newLots[lotIndex] = lot;
+      const stillReferenced = newLots.some((candidate: any) => {
+        const refs = [
+          ...(Array.isArray(candidate?.image_indexes) ? candidate.image_indexes : []),
+          ...(Array.isArray(candidate?.extra_image_indexes) ? candidate.extra_image_indexes : []),
+          ...(typeof candidate?.image_index === "number" ? [candidate.image_index] : []),
+        ];
+        return refs.some((value) => Number(value) === globalImageIndex);
+      });
+      const deleted = Array.isArray(prev?.deleted_image_indexes)
+        ? prev.deleted_image_indexes.map((value: any) => Number(value)).filter((value: number) => Number.isInteger(value))
+        : [];
+      const nextDeleted = stillReferenced || deleted.includes(globalImageIndex)
+        ? deleted
+        : [...deleted, globalImageIndex];
+      return { ...prev, lots: newLots, deleted_image_indexes: nextDeleted };
+    });
+    setHasChanges(true);
+  };
+
+  const getLotUploadKey = (lot: any, index: number) =>
+    String(lot?.lot_id || lot?.id || lot?.lot_number || index);
+
+  const getLotPhotoEntries = (lot: any) => {
+    const indexes = [
+      ...(Array.isArray(lot?.image_indexes) ? lot.image_indexes : (typeof lot?.image_index === "number" ? [lot.image_index] : [])),
+      ...(Array.isArray(lot?.extra_image_indexes) ? lot.extra_image_indexes : []),
+    ]
+      .map((value) => Number(value))
+      .filter((value, index, arr) => Number.isInteger(value) && value >= 0 && arr.indexOf(value) === index);
+    return indexes.flatMap((globalIndex) => {
+      const url = imageUrls[globalIndex];
+      return url ? [{ globalIndex, url }] : [];
+    });
+  };
+
+  const handleUploadLotImages = async (lot: any, index: number, fileList: FileList | null) => {
+    const files = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
+    if (!files.length) return;
+    const lotKey = getLotUploadKey(lot, index);
+    setUploadingLotKey(lotKey);
+    try {
+      const response = await uploadPreviewLotImages(reportId, lotKey, files, previewData);
+      if (response.data?.preview_data) {
+        setPreviewData(response.data.preview_data);
+      }
+      if (Array.isArray(response.data?.imageUrls)) {
+        setImageUrls(response.data.imageUrls);
+        setImageCount(response.data.imageUrls.length);
+      }
+      if (response.data?.preview_files) {
+        setPreviewFiles(response.data.preview_files);
+      }
+      setFilesGenerating(Boolean(response.data?.files_generating));
+      setFilesRegenerating(Boolean(response.data?.files_regenerating));
+      setHasChanges(false);
+      toast.success(response.files_regeneration_queued ? "Images uploaded. Files are regenerating." : "Images uploaded.");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Failed to upload images.");
+    } finally {
+      setUploadingLotKey(null);
+    }
   };
 
   const specsByCategory = React.useMemo(
@@ -1450,28 +1583,63 @@ export default function PreviewModal({
                             </div>
                             {/* Lot Images */}
                             {(() => {
-                              const lotImageIndexes: number[] = Array.isArray(lot.image_indexes) ? lot.image_indexes : (typeof lot.image_index === 'number' ? [lot.image_index] : []);
-                              const lotImages = lotImageIndexes.map(i => imageUrls[i]).filter(Boolean);
-                              if (lotImages.length === 0) return null;
+                              const lotImages = getLotPhotoEntries(lot);
+                              const lotUploadKey = getLotUploadKey(lot, idx);
+                              const uploadInputId = `asset-preview-upload-${idx}-mobile`;
                               const openLotGallery = (startIdx: number) => {
-                                setGalleryLotImages({ urls: lotImages, currentIdx: startIdx });
+                                setGalleryLotImages({ urls: lotImages.map((entry) => entry.url), currentIdx: startIdx });
                               };
                               return (
                                 <div className="mb-3">
-                                  <label className="flex items-center gap-2 text-xs text-gray-600 mb-1.5">
-                                    <Image className="h-3.5 w-3.5" />
-                                    Photos ({lotImages.length})
-                                  </label>
+                                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                                    <label className="flex items-center gap-2 text-xs text-gray-600">
+                                      <Image className="h-3.5 w-3.5" />
+                                      Photos ({lotImages.length})
+                                    </label>
+                                    <input
+                                      id={uploadInputId}
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(event) => {
+                                        handleUploadLotImages(lot, idx, event.target.files);
+                                        event.currentTarget.value = "";
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={uploadingLotKey === lotUploadKey}
+                                      onClick={() => document.getElementById(uploadInputId)?.click()}
+                                      className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                    >
+                                      <Upload className="h-3 w-3" />
+                                      {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
+                                    </button>
+                                  </div>
+                                  {lotImages.length > 0 && (
                                   <div className="relative">
                                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                                      {lotImages.slice(0, 20).map((url, imgIdx) => (
+                                      {lotImages.slice(0, 20).map(({ url, globalIndex }, imgIdx) => (
                                         <div
                                           key={imgIdx}
-                                          className="flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
+                                          className="group relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
                                           onClick={() => openLotGallery(imgIdx)}
                                         >
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={url} alt={`Photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
+                                          <button
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              deleteLotImage(idx, globalIndex);
+                                            }}
+                                            className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-red-600 text-xs font-black text-white opacity-95 shadow"
+                                            aria-label={`Remove photo ${imgIdx + 1}`}
+                                          >
+                                            x
+                                          </button>
                                         </div>
                                       ))}
                                       {lotImages.length > 20 && (
@@ -1484,6 +1652,7 @@ export default function PreviewModal({
                                       )}
                                     </div>
                                   </div>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -1536,6 +1705,7 @@ export default function PreviewModal({
                                 lotIndex={idx}
                                 specsByCategory={specsByCategory}
                                 onChange={updateLotSpec}
+                                onAdd={addLotSpec}
                                 onDelete={deleteLotSpec}
                                 accent="rose"
                               />
@@ -1581,10 +1751,11 @@ export default function PreviewModal({
                         </thead>
                         <tbody>
                           {group.items.map(({ lot, idx }, i) => {
-                            const lotImageIndexes: number[] = Array.isArray(lot.image_indexes) ? lot.image_indexes : (typeof lot.image_index === 'number' ? [lot.image_index] : []);
-                            const lotImages = lotImageIndexes.map(imgIdx => imageUrls[imgIdx]).filter(Boolean);
+                            const lotImages = getLotPhotoEntries(lot);
+                            const lotUploadKey = getLotUploadKey(lot, idx);
+                            const uploadInputId = `asset-preview-upload-${idx}-desktop`;
                             const openLotGallery = (startIdx: number) => {
-                              setGalleryLotImages({ urls: lotImages, currentIdx: startIdx });
+                              setGalleryLotImages({ urls: lotImages.map((entry) => entry.url), currentIdx: startIdx });
                             };
                             return (
                             <React.Fragment key={idx}>
@@ -1600,17 +1771,40 @@ export default function PreviewModal({
                                 />
                               </td>
                               <td className="px-3 py-2 align-top min-w-[180px]">
+                                <input
+                                  id={uploadInputId}
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  className="hidden"
+                                  onChange={(event) => {
+                                    handleUploadLotImages(lot, idx, event.target.files);
+                                    event.currentTarget.value = "";
+                                  }}
+                                />
                                 {lotImages.length > 0 ? (
                                   <div className="space-y-1">
                                     <div className="flex gap-1.5 flex-wrap">
-                                      {lotImages.slice(0, 6).map((url, imgI) => (
+                                      {lotImages.slice(0, 6).map(({ url, globalIndex }, imgI) => (
                                         <div
                                           key={imgI}
-                                          className="w-14 h-14 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex-shrink-0"
+                                          className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex-shrink-0"
                                           onClick={() => openLotGallery(imgI)}
                                         >
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={url} alt={`Photo ${imgI + 1}`} className="w-full h-full object-cover" />
+                                          <button
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              deleteLotImage(idx, globalIndex);
+                                            }}
+                                            className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-black text-white shadow"
+                                            aria-label={`Remove photo ${imgI + 1}`}
+                                          >
+                                            x
+                                          </button>
                                         </div>
                                       ))}
                                       {lotImages.length > 6 && (
@@ -1622,10 +1816,29 @@ export default function PreviewModal({
                                         </div>
                                       )}
                                     </div>
-                                    <span className="text-[10px] text-gray-500">{lotImages.length} photo{lotImages.length !== 1 ? 's' : ''}</span>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[10px] text-gray-500">{lotImages.length} photo{lotImages.length !== 1 ? 's' : ''}</span>
+                                      <button
+                                        type="button"
+                                        disabled={uploadingLotKey === lotUploadKey}
+                                        onClick={() => document.getElementById(uploadInputId)?.click()}
+                                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2 py-1 text-[10px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                      >
+                                        <Upload className="h-3 w-3" />
+                                        {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload"}
+                                      </button>
+                                    </div>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-400">—</span>
+                                  <button
+                                    type="button"
+                                    disabled={uploadingLotKey === lotUploadKey}
+                                    onClick={() => document.getElementById(uploadInputId)?.click()}
+                                    className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                  >
+                                    <Upload className="h-3.5 w-3.5" />
+                                    {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
+                                  </button>
                                 )}
                               </td>
                               <td className="px-3 py-2 align-top">
@@ -1685,6 +1898,7 @@ export default function PreviewModal({
                                   lotIndex={idx}
                                   specsByCategory={specsByCategory}
                                   onChange={updateLotSpec}
+                                  onAdd={addLotSpec}
                                   onDelete={deleteLotSpec}
                                   accent="rose"
                                 />

@@ -96,6 +96,46 @@ export const updatePreviewData = async (
   return data;
 };
 
+export const uploadPreviewLotImages = async (
+  reportId: string,
+  lotKey: string | number,
+  files: File[],
+  previewData?: any,
+  onProgress?: (progress: number) => void
+): Promise<{
+  message: string;
+  data: {
+    preview_data: any;
+    preview_files?: AssetReport["preview_files"];
+    imageUrls?: string[];
+    image_count?: number;
+    added?: Array<{ index: number; url: string; name: string }>;
+    lotIndex?: number;
+    files_generating?: boolean;
+    files_regenerating?: boolean;
+  };
+  files_regeneration_queued?: boolean;
+}> => {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("images", file));
+  if (previewData) {
+    formData.append("preview_data", JSON.stringify(previewData));
+  }
+
+  const { data } = await API.post(
+    `/asset/${reportId}/preview/lots/${encodeURIComponent(String(lotKey))}/images`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: (event) => {
+        if (!onProgress || !event.total) return;
+        onProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+      },
+    }
+  );
+  return data;
+};
+
 export const refreshAssetSpecPdf = async (
   reportId: string
 ): Promise<{
