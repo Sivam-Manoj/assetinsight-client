@@ -102,6 +102,25 @@ const cleanDisplayValueForField = (fieldName: string, value: string) => {
   return value.replace(/^(?:vin|sn|s\/n|serial(?:\s*(?:number|no\.?|#))?)\s*[:#-]\s*/i, "").trim();
 };
 
+const isOperationalDamageAnalysisFallback = (value: unknown) => {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return Boolean(
+    text &&
+      [
+        /\bsoftware analysis failed\b/i,
+        /\bsoftware did not return details\b/i,
+        /\bai analysis failed\b/i,
+        /\bopenai.+failed\b/i,
+        /\breview and edit before approval\b/i,
+      ].some((pattern) => pattern.test(text))
+  );
+};
+
+const sanitizeDamageAnalysisText = (value: unknown) => {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text && !isOperationalDamageAnalysisFallback(text) ? text : "";
+};
+
 export default function AuctioneerSpecsEditor({
   lot,
   lotIndex,
@@ -160,6 +179,7 @@ export default function AuctioneerSpecsEditor({
     accent === "purple"
       ? "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
       : "bg-rose-600 hover:bg-rose-700 focus:ring-rose-500";
+  const safeDamageAnalysis = sanitizeDamageAnalysisText(damageAnalysis);
 
   const openExpandedEditor = (fieldName: string) => {
     setExpandedEditor({
@@ -181,7 +201,7 @@ export default function AuctioneerSpecsEditor({
     setExpandedEditor(null);
   };
 
-  const openDamageEditor = (value = damageAnalysis || "", notice?: string) => {
+  const openDamageEditor = (value = safeDamageAnalysis, notice?: string) => {
     setExpandedEditor({
       fieldName: "Damage Analysis",
       value,
@@ -425,7 +445,7 @@ export default function AuctioneerSpecsEditor({
               title="Click to open large damage editor"
             >
               <span className="block whitespace-pre-wrap break-words">
-                {String(damageAnalysis || "").trim() || "No manual damage notes yet."}
+                {safeDamageAnalysis || "No manual damage notes yet."}
               </span>
             </button>
           </div>
