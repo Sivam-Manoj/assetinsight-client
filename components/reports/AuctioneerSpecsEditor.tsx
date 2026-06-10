@@ -62,22 +62,44 @@ const getSpecRecord = (value: unknown): Record<string, string> => {
   return out;
 };
 
+const fieldAliases = (fieldName: string) => {
+  const aliases = [fieldName];
+  if (/^serial\s*number$/i.test(fieldName)) aliases.push("VIN", "SN", "S/N", "Serial No");
+  if (/^vin$/i.test(fieldName)) aliases.push("Serial Number", "SN", "S/N");
+  if (/^has\s*key$/i.test(fieldName)) aliases.push("Has Keys", "Keys", "Key");
+  if (/^running\s*condition$/i.test(fieldName)) aliases.push("Condition", "Working Condition");
+  if (/^ownership\s*type$/i.test(fieldName)) aliases.push("Legal", "Title Status");
+  return aliases.map(normalizeKey);
+};
+
 const getValueForField = (record: Record<string, string>, fieldName: string) => {
   if (record[fieldName] !== undefined) return record[fieldName];
-  const fieldKey = normalizeKey(fieldName);
-  const matchingKey = Object.keys(record).find((key) => normalizeKey(key) === fieldKey);
+  const aliases = fieldAliases(fieldName);
+  const matchingKey = Object.keys(record).find((key) => aliases.includes(normalizeKey(key)));
   return matchingKey ? record[matchingKey] : "Not Found";
 };
 
 const hasValueForField = (record: Record<string, string>, fieldName: string) => {
   if (record[fieldName] !== undefined) return true;
-  const fieldKey = normalizeKey(fieldName);
-  return Object.keys(record).some((key) => normalizeKey(key) === fieldKey);
+  const aliases = fieldAliases(fieldName);
+  return Object.keys(record).some((key) => aliases.includes(normalizeKey(key)));
 };
 
 const isDamageField = (fieldName: string) => {
   const key = normalizeKey(fieldName);
   return key === "damage" || key === "damages" || key === "damageanalysis";
+};
+
+const priorityFields = ["Serial Number", "Has Key", "Running Condition", "Ownership Type"];
+
+const isSerialField = (fieldName: string) => {
+  const key = normalizeKey(fieldName);
+  return key === "serialnumber" || key === "vin" || key === "sn" || key === "serialno" || key === "sno";
+};
+
+const cleanDisplayValueForField = (fieldName: string, value: string) => {
+  if (!isSerialField(fieldName)) return value;
+  return value.replace(/^(?:vin|sn|s\/n|serial(?:\s*(?:number|no\.?|#))?)\s*[:#-]\s*/i, "").trim();
 };
 
 export default function AuctioneerSpecsEditor({
@@ -105,12 +127,17 @@ export default function AuctioneerSpecsEditor({
   const categorySpec = specsByCategory.get(categoryKey);
   const specRecord = getSpecRecord(lot?.condition_report_specs);
   const fields = categorySpec?.fields?.filter((field) => !isDamageField(field)) || [];
+  const orderedFields = [...priorityFields, ...fields].filter((field, index, allFields) => {
+    const key = normalizeKey(field);
+    return key && allFields.findIndex((candidate) => normalizeKey(candidate) === key) === index;
+  });
   const extraFields = Object.keys(specRecord).filter((field) => {
     if (isDamageField(field)) return false;
-    return !fields.some((knownField) => normalizeKey(knownField) === normalizeKey(field));
+    const key = normalizeKey(field);
+    return !orderedFields.some((knownField) => fieldAliases(knownField).includes(key));
   });
   const visibleFields = [
-    ...fields.filter((field) => hasValueForField(specRecord, field)),
+    ...orderedFields.filter((field) => hasValueForField(specRecord, field)),
     ...extraFields,
   ];
   const accentClasses =
@@ -137,7 +164,7 @@ export default function AuctioneerSpecsEditor({
   const openExpandedEditor = (fieldName: string) => {
     setExpandedEditor({
       fieldName,
-      value: getValueForField(specRecord, fieldName),
+      value: cleanDisplayValueForField(fieldName, getValueForField(specRecord, fieldName)),
     });
   };
 
@@ -441,7 +468,7 @@ export default function AuctioneerSpecsEditor({
                     title="Click to open large editor"
                   >
                     <span className="block truncate">
-                      {getValueForField(specRecord, fieldName) || "\u00a0"}
+                      {cleanDisplayValueForField(fieldName, getValueForField(specRecord, fieldName)) || "\u00a0"}
                     </span>
                   </button>
                 </div>
