@@ -952,6 +952,7 @@ export default function PreviewModal({
 
   // Group lots by mixed_group_index and determine sub-mode label
   const lotsArray: any[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
+  const includeDamageAnalysis = previewData?.include_damage_analysis !== false;
   const groupMap = new Map<number, { idx: number; lot: any }[]>();
   for (let i = 0; i < lotsArray.length; i++) {
     const lot = lotsArray[i];
@@ -1707,6 +1708,11 @@ export default function PreviewModal({
                                 onChange={updateLotSpec}
                                 onAdd={addLotSpec}
                                 onDelete={deleteLotSpec}
+                                includeDamageAnalysis={includeDamageAnalysis}
+                                damageAnalysis={lot.damage_analysis}
+                                onDamageAnalysisChange={(lotIndex, value) =>
+                                  updateLot(lotIndex, "damage_analysis", value)
+                                }
                                 accent="rose"
                               />
                               <div>
@@ -1900,6 +1906,11 @@ export default function PreviewModal({
                                   onChange={updateLotSpec}
                                   onAdd={addLotSpec}
                                   onDelete={deleteLotSpec}
+                                  includeDamageAnalysis={includeDamageAnalysis}
+                                  damageAnalysis={lot.damage_analysis}
+                                  onDamageAnalysisChange={(lotIndex, value) =>
+                                    updateLot(lotIndex, "damage_analysis", value)
+                                  }
                                   accent="rose"
                                 />
                               </td>

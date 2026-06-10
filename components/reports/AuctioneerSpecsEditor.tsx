@@ -16,6 +16,9 @@ type Props = {
   onChange: (lotIndex: number, fieldName: string, value: string) => void;
   onAdd?: (lotIndex: number, fieldName: string, value: string) => void;
   onDelete: (lotIndex: number, fieldName: string) => void;
+  includeDamageAnalysis?: boolean;
+  damageAnalysis?: string | null;
+  onDamageAnalysisChange?: (lotIndex: number, value: string) => void;
   accent?: "rose" | "purple";
 };
 
@@ -84,6 +87,9 @@ export default function AuctioneerSpecsEditor({
   onChange,
   onAdd,
   onDelete,
+  includeDamageAnalysis = false,
+  damageAnalysis,
+  onDamageAnalysisChange,
   accent = "rose",
 }: Props) {
   const [expandedEditor, setExpandedEditor] = React.useState<{
@@ -91,7 +97,9 @@ export default function AuctioneerSpecsEditor({
     draftFieldName?: string;
     value: string;
     isNew?: boolean;
+    isDamage?: boolean;
     error?: string;
+    notice?: string;
   } | null>(null);
   const categoryKey = normalizeKey(lot?.categories);
   const categorySpec = specsByCategory.get(categoryKey);
@@ -146,14 +154,41 @@ export default function AuctioneerSpecsEditor({
     setExpandedEditor(null);
   };
 
+  const openDamageEditor = (value = damageAnalysis || "", notice?: string) => {
+    setExpandedEditor({
+      fieldName: "Damage Analysis",
+      value,
+      isDamage: true,
+      notice,
+    });
+  };
+
   const saveExpandedEditor = () => {
     if (!expandedEditor) return;
+    if (expandedEditor.isDamage) {
+      onDamageAnalysisChange?.(lotIndex, expandedEditor.value);
+      closeExpandedEditor();
+      return;
+    }
     if (expandedEditor.isNew) {
       const fieldName = String(expandedEditor.draftFieldName || "").trim();
       const value = String(expandedEditor.value || "").trim();
-      if (!fieldName || !value) {
+      if (!fieldName) {
         setExpandedEditor((prev) =>
-          prev ? { ...prev, error: "Field name and value are required." } : prev
+          prev ? { ...prev, error: "Field name is required." } : prev
+        );
+        return;
+      }
+      if (isDamageField(fieldName) && onDamageAnalysisChange) {
+        openDamageEditor(
+          expandedEditor.value,
+          "Damage notes are saved in the Damage Analysis section."
+        );
+        return;
+      }
+      if (!value) {
+        setExpandedEditor((prev) =>
+          prev ? { ...prev, error: "Field value is required." } : prev
         );
         return;
       }
@@ -178,6 +213,11 @@ export default function AuctioneerSpecsEditor({
 
   const deleteExpandedField = () => {
     if (!expandedEditor) return;
+    if (expandedEditor.isDamage) {
+      onDamageAnalysisChange?.(lotIndex, "");
+      closeExpandedEditor();
+      return;
+    }
     onDelete(lotIndex, expandedEditor.fieldName);
     closeExpandedEditor();
   };
@@ -229,7 +269,7 @@ export default function AuctioneerSpecsEditor({
                       value={expandedEditor.draftFieldName || ""}
                       onChange={(event) =>
                         setExpandedEditor((prev) =>
-                          prev ? { ...prev, draftFieldName: event.target.value, error: undefined } : prev
+                          prev ? { ...prev, draftFieldName: event.target.value, error: undefined, notice: undefined } : prev
                         )
                       }
                       className={`w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
@@ -242,7 +282,7 @@ export default function AuctioneerSpecsEditor({
                   value={expandedEditor.value}
                   onChange={(event) =>
                     setExpandedEditor((prev) =>
-                      prev ? { ...prev, value: event.target.value, error: undefined } : prev
+                      prev ? { ...prev, value: event.target.value, error: undefined, notice: undefined } : prev
                     )
                   }
                   className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
@@ -254,6 +294,11 @@ export default function AuctioneerSpecsEditor({
                     {expandedEditor.error}
                   </p>
                 )}
+                {expandedEditor.notice && (
+                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                    {expandedEditor.notice}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <button
@@ -261,7 +306,11 @@ export default function AuctioneerSpecsEditor({
                   onClick={expandedEditor.isNew ? closeExpandedEditor : deleteExpandedField}
                   className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
                 >
-                  {expandedEditor.isNew ? "Cancel add" : "Delete field"}
+                  {expandedEditor.isNew
+                    ? "Cancel add"
+                    : expandedEditor.isDamage
+                      ? "Clear damage"
+                      : "Delete field"}
                 </button>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <button
@@ -322,6 +371,38 @@ export default function AuctioneerSpecsEditor({
             + Add field
           </button>
         </div>
+
+        {includeDamageAnalysis && onDamageAnalysisChange && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-white p-3 text-gray-900">
+            <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-red-700">
+                  Damage Analysis
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-gray-600">
+                  Manual damage notes for the CR damage section.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openDamageEditor()}
+                className="w-fit rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100"
+              >
+                Edit damage
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => openDamageEditor()}
+              className={`min-h-10 w-full rounded-md border border-red-100 bg-red-50/60 px-2.5 py-2 text-left text-xs text-gray-900 outline-none transition hover:border-red-200 hover:bg-red-50 focus:border-transparent focus:ring-2 ${focusClass}`}
+              title="Click to open large damage editor"
+            >
+              <span className="block whitespace-pre-wrap break-words">
+                {String(damageAnalysis || "").trim() || "No manual damage notes yet."}
+              </span>
+            </button>
+          </div>
+        )}
 
         {visibleFields.length > 0 ? (
           <div className="max-h-[360px] overflow-y-auto pr-1">

@@ -1130,6 +1130,11 @@ export default function LotListingPreviewModal({
                             onChange={updateLotSpec}
                             onAdd={addLotSpec}
                             onDelete={deleteLotSpec}
+                            includeDamageAnalysis={includeDamageAnalysis}
+                            damageAnalysis={lot.damage_analysis}
+                            onDamageAnalysisChange={(lotIndex, value) =>
+                              updateLot(lotIndex, "damage_analysis", value)
+                            }
                             accent="purple"
                           />
                         </div>
