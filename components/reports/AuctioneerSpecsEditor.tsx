@@ -30,11 +30,24 @@ const normalizeKey = (value: unknown) =>
 
 const isUsefulValue = (value: unknown) => {
   const text = String(value ?? "").trim();
+  if (normalizeVisiblePresenceValue(text)) return true;
   return (
     !!text &&
-    !/^(n\/a|na|none|null|unknown|not visible|not found|tbd|no|false|not available|not applicable)$/i.test(text) &&
+    !/^(n\/a|na|none|null|unknown|not found|tbd|false|not available|not applicable)$/i.test(text) &&
     !/title clearance clarification fee|applied to your invoice|over and above the purchase price|applicable taxes|following the close of the sale/i.test(text)
   );
+};
+
+const normalizeVisiblePresenceValue = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (/\b(?:not|no)\s+visible\b|\bvisible\s*[:=-]?\s*(?:no|false)\b/i.test(text)) {
+    return "No";
+  }
+  if (/\bvisible\b/i.test(text)) {
+    return "Yes";
+  }
+  return "";
 };
 
 const getSpecRecord = (value: unknown): Record<string, string> => {
@@ -98,6 +111,8 @@ const isSerialField = (fieldName: string) => {
 };
 
 const cleanDisplayValueForField = (fieldName: string, value: string) => {
+  const visibleValue = normalizeVisiblePresenceValue(value);
+  if (visibleValue) return visibleValue;
   if (!isSerialField(fieldName)) return value;
   return value.replace(/^(?:vin|sn|s\/n|serial(?:\s*(?:number|no\.?|#))?)\s*[:#-]\s*/i, "").trim();
 };
