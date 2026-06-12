@@ -50,12 +50,12 @@ const conditionSelectionGroups: Array<{
 }> = [
   {
     key: "condition",
-    label: "Condition",
+    label: "Running Condition",
     options: [
-      "Unknown Working Condition",
       "Starts and Runs",
-      "Untested",
-      "Non-Operational",
+      "Does not Start or Run",
+      "Starts and Runs with Boost",
+      "Unverified Running Condition",
       "N/A",
     ],
   },
@@ -71,19 +71,64 @@ const conditionSelectionGroups: Array<{
   },
 ];
 
-const normalizeConditionSelection = (value: any) =>
-  String(value || "")
+const normalizeConditionSelection = (value: any) => {
+  const normalized = String(value || "")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase()
     .replace(/^na$/, "n/a")
     .replace(/^not applicable$/, "n/a");
+  if (
+    normalized === "unknown working condition" ||
+    normalized === "untested" ||
+    normalized === "unverified working condition"
+  ) {
+    return "unverified running condition";
+  }
+  if (normalized === "non-operational" || normalized === "non operational") {
+    return "does not start or run";
+  }
+  return normalized;
+};
 
 const normalizeSpecKey = (value: unknown) =>
   String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
+
+const specsToRecord = (value: any): Record<string, string> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? { ...value }
+    : Array.isArray(value)
+      ? Object.fromEntries(
+          value
+            .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value ?? "")])
+            .filter((entry: string[]) => entry[0])
+        )
+      : {};
+
+const applyRunningConditionSelectionToSpecs = (lot: any, value: string) => {
+  const specs = specsToRecord(lot.condition_report_specs);
+  const fieldKey = normalizeSpecKey("Running Condition");
+  const existingKey = Object.keys(specs).find((field) => normalizeSpecKey(field) === fieldKey);
+  if (normalizeConditionSelection(value) === "n/a") {
+    if (existingKey) delete specs[existingKey];
+  } else {
+    specs[existingKey || "Running Condition"] = value;
+  }
+  const deletedSpecs = Array.isArray(lot.condition_report_specs_deleted)
+    ? lot.condition_report_specs_deleted
+        .map((field: any) => String(field || "").trim())
+        .filter(Boolean)
+        .filter((field: string) => normalizeSpecKey(field) !== fieldKey)
+    : [];
+  return {
+    ...lot,
+    condition_report_specs: specs,
+    condition_report_specs_deleted: deletedSpecs,
+  };
+};
 
 const getLotDisplayNumber = (lot: any, index: number) => {
   const candidates = [lot?.lot_number, lot?.lot_id, lot?.lot, lot?.id];
@@ -917,7 +962,8 @@ export default function PreviewModal({
         ...(lot.condition_report_selections || {}),
         [key]: value,
       };
-      newLots[index] = lot;
+      newLots[index] =
+        key === "condition" ? applyRunningConditionSelectionToSpecs(lot, value) : lot;
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);

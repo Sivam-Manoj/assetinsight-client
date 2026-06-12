@@ -203,7 +203,7 @@ export default function AuctioneerSpecsEditor({
 
   const openDamageEditor = (value = safeDamageAnalysis, notice?: string) => {
     setExpandedEditor({
-      fieldName: "Damage Analysis",
+      fieldName: "Damages",
       value,
       isDamage: true,
       notice,
@@ -229,7 +229,7 @@ export default function AuctioneerSpecsEditor({
       if (isDamageField(fieldName) && onDamageAnalysisChange) {
         openDamageEditor(
           expandedEditor.value,
-          "Damage notes are saved in the Damage Analysis section."
+          "Damage notes are saved in the Damages section."
         );
         return;
       }
@@ -424,10 +424,10 @@ export default function AuctioneerSpecsEditor({
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-red-700">
-                  Damage Analysis
+                  Damages
                 </p>
                 <p className="mt-0.5 text-[11px] font-medium text-gray-600">
-                  Manual damage notes for the CR damage section.
+                  Manual damage notes for the CR damages section.
                 </p>
               </div>
               <button
