@@ -60,6 +60,10 @@ const conditionSelectionGroups: Array<{
   },
 ];
 
+const runningConditionGroup = conditionSelectionGroups.find(
+  (group) => group.key === "condition"
+)!;
+
 const normalizeConditionSelection = (value: any) => {
   const normalized = String(value || "")
     .trim()
@@ -117,6 +121,27 @@ const applyRunningConditionSelectionToSpecs = (lot: any, value: string) => {
     condition_report_specs: specs,
     condition_report_specs_deleted: deletedSpecs,
   };
+};
+
+const getSharedRunningConditionSelection = (lots: any[] | undefined | null) => {
+  if (!Array.isArray(lots) || lots.length === 0) return "";
+  const first = normalizeConditionSelection(
+    lots[0]?.condition_report_selections?.condition
+  );
+  if (
+    !first ||
+    !runningConditionGroup.options.some(
+      (option) => normalizeConditionSelection(option) === first
+    )
+  ) {
+    return "";
+  }
+  const allSame = lots.every(
+    (lot) =>
+      normalizeConditionSelection(lot?.condition_report_selections?.condition) ===
+      first
+  );
+  return allSame ? first : "";
 };
 
 const getLotDisplayNumber = (lot: any, index: number) => {
@@ -649,6 +674,29 @@ export default function LotListingPreviewModal({
     setHasChanges(true);
   };
 
+  const applyRunningConditionToAllLots = (value: string) => {
+    setPreviewData((prev: any) => {
+      const lots = Array.isArray(prev?.lots) ? prev.lots : [];
+      const newLots = lots.map((rawLot: any) => {
+        const lot = {
+          ...(rawLot || {}),
+          condition_report_selections: {
+            ...(rawLot?.condition_report_selections || {}),
+            condition: value,
+          },
+        };
+        return applyRunningConditionSelectionToSpecs(lot, value);
+      });
+      return {
+        ...prev,
+        lots: newLots,
+        total_value: calculateTotalValue(newLots),
+      };
+    });
+    setHasChanges(true);
+    toast.success(`Running Condition applied to all lots: ${value}`);
+  };
+
   const deleteLot = (index: number) => {
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
@@ -779,6 +827,50 @@ export default function LotListingPreviewModal({
                   })}
                 </div>
               </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBulkRunningConditionControl = () => {
+    const lots = Array.isArray(previewData?.lots) ? previewData.lots : [];
+    if (lots.length < 2) return null;
+    const sharedSelection = getSharedRunningConditionSelection(lots);
+
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-amber-950">
+              Set Running Condition for all lots
+            </h4>
+            <p className="text-xs text-amber-800">
+              Optional shortcut for large listings. Individual lots can still be changed after this.
+            </p>
+          </div>
+          <span className="self-start rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+            {lots.length} lots
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {runningConditionGroup.options.map((option) => {
+            const selected =
+              sharedSelection === normalizeConditionSelection(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => applyRunningConditionToAllLots(option)}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                  selected
+                    ? "border-amber-500 bg-white text-amber-950 shadow-sm"
+                    : "border-amber-200 bg-white/80 text-amber-900 hover:border-amber-400 hover:bg-white"
+                }`}
+              >
+                {option}
+              </button>
             );
           })}
         </div>
@@ -952,6 +1044,8 @@ export default function LotListingPreviewModal({
                 </div>
               </div>
             </div>
+
+            {renderBulkRunningConditionControl()}
           </div>
 
           {/* Lot-Specific Photo Gallery Modal */}
