@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import {
   CalendarMonthRounded,
+  AssignmentTurnedInRounded,
   ChevronLeftRounded,
   ChevronRightRounded,
   CloseRounded,
@@ -45,6 +46,7 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardRounded },
   { label: "My Reports", href: "/reports", icon: DescriptionRounded },
   { label: "Previews", href: "/previews", icon: VisibilityRounded },
+  { label: "Approvals", href: "/approvals", icon: AssignmentTurnedInRounded },
 ];
 
 const secondaryNavItems = [
@@ -55,6 +57,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/reports": "My Reports",
   "/previews": "Previews",
+  "/approvals": "Assigned Approvals",
   "/settings": "Settings",
 };
 

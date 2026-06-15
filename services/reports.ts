@@ -28,6 +28,14 @@ export type PdfReport = {
   valuationMethods?: Array<{ method: string; value: number }>;
 };
 
+export type AssignedApproval = PdfReport & {
+  reportType: "Asset" | "RealEstate" | "Salvage";
+  user?: { _id?: string; email?: string; username?: string };
+  isAssetReport?: boolean;
+  isRealEstateReport?: boolean;
+  preview_files?: Record<string, string>;
+};
+
 export const ReportsService = {
   async getReportStats(): Promise<ReportStats> {
     const { data } = await API.get<ReportStats>("/reports/stats");
@@ -92,6 +100,28 @@ export const ReportsService = {
 
   async deleteReport(id: string): Promise<{ message: string }> {
     const { data } = await API.delete<{ message: string }>(`/reports/${id}`);
+    return data;
+  },
+
+  async getAssignedApprovals(): Promise<{ items: AssignedApproval[]; total: number }> {
+    const { data } = await API.get<{ items: AssignedApproval[]; total: number }>(
+      "/reports/assigned-approvals"
+    );
+    return data;
+  },
+
+  async approveAssignedApproval(id: string): Promise<{ message: string }> {
+    const { data } = await API.post<{ message: string }>(
+      `/reports/assigned-approvals/${id}/approve`
+    );
+    return data;
+  },
+
+  async rejectAssignedApproval(id: string, note: string): Promise<{ message: string }> {
+    const { data } = await API.post<{ message: string }>(
+      `/reports/assigned-approvals/${id}/reject`,
+      { note }
+    );
     return data;
   },
 };
