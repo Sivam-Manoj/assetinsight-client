@@ -286,16 +286,16 @@ export default function ImageAnnotator({
       <div className="relative w-screen h-[100dvh] overflow-hidden bg-gray-900/80 flex flex-col pb-[env(safe-area-inset-bottom)]">
         {/* Header */}
         <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 text-white">
-          <div className="text-sm font-semibold">Annotate Image</div>
+          <div className="text-sm font-semibold">Focus / Crop Area</div>
           <div className="flex items-center gap-2">
             {activeId && (
               <button
                 type="button"
                 onClick={deleteActive}
                 className="inline-flex items-center rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/15"
-                title="Delete selected box"
+                title="Delete selected focus area"
               >
-                Delete Box
+                Delete Area
               </button>
             )}
             <button
@@ -325,7 +325,7 @@ export default function ImageAnnotator({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
           >
-            <img ref={imgRef} src={imageUrl} alt="Annotate" className="w-full h-full object-contain block" />
+            <img ref={imgRef} src={imageUrl} alt="Focus area editor" className="w-full h-full object-contain block" />
             {/* Overlay layer */}
             <div className="absolute inset-0">
               {boxes.map((b) => (

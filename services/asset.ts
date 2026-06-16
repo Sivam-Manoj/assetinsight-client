@@ -49,9 +49,17 @@ export type AssetCreateDetails = {
   combined_modes?: Array<"single_lot" | "per_item" | "per_photo">;
   // Mixed mode: describe each lot's mode and image counts (flattened in order)
   mixed_lots?: Array<{
-    count: number; // number of images in this lot (max 20)
+    count: number; // number of main images in this lot
+    extra_count?: number; // report-only images in this lot
     cover_index?: number; // 0-based within the lot
     mode: "single_lot" | "per_item" | "per_photo";
+  }>;
+  focus_boxes?: Array<{
+    imageIndex: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
   }>;
 };
 

@@ -1,4 +1,5 @@
 import API from "@/lib/api";
+import type { SubmittedPreviewDataResponse } from "@/services/assets";
 
 export type ReportStats = {
   totalReports: number;
@@ -121,6 +122,35 @@ export const ReportsService = {
     const { data } = await API.post<{ message: string }>(
       `/reports/assigned-approvals/${id}/reject`,
       { note }
+    );
+    return data;
+  },
+
+  async getAssignedAssetPreview(id: string): Promise<SubmittedPreviewDataResponse> {
+    const { data } = await API.get<SubmittedPreviewDataResponse>(
+      `/reports/assigned-approvals/${id}/asset-preview`
+    );
+    return data;
+  },
+
+  async updateAssignedAssetPreview(
+    id: string,
+    previewData: any
+  ): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> {
+    const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
+      `/reports/assigned-approvals/${id}/asset-preview`,
+      { preview_data: previewData }
+    );
+    return data;
+  },
+
+  async resubmitAssignedAssetPreview(
+    id: string,
+    previewData?: any
+  ): Promise<{ message: string; data: any }> {
+    const { data } = await API.post<{ message: string; data: any }>(
+      `/reports/assigned-approvals/${id}/resubmit`,
+      previewData ? { preview_data: previewData } : {}
     );
     return data;
   },

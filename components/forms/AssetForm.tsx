@@ -58,6 +58,10 @@ const isoDate = (d: Date) => {
 const DRAFT_KEY = "cv_asset_draft";
 const DRAFT_IMAGES_KEY = "cv_asset_draft_images";
 const DEVICE_ID_KEY = "cv_device_id";
+const MAX_ASSET_LOT_PHOTOS = 200;
+
+const getAssetFileKey = (file: File) =>
+  `${file.name}|${file.size}|${(file as any).lastModified || 0}`;
 
 // Get or create device ID for same-device detection
 const getDeviceId = (): string => {
@@ -127,6 +131,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       videoFiles?: File[];
       coverIndex: number;
       mode?: "single_lot" | "per_item" | "per_photo";
+      annotations?: Record<string, Array<{ id: string; x: number; y: number; w: number; h: number }>>;
     }[]
   >([]);
   const [error, setError] = useState<string | null>(null);
@@ -1160,8 +1165,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       filesToSend = images;
       extraDetails = { combined_modes: combinedModes };
     } else if (grouping === "mixed") {
-      // Mixed: multiple lots with per-lot mode, each lot 1-30 images (+ optional 0-100 extra), cannot be empty
-      const total = mixedLots.reduce((s, l) => s + l.files.length, 0);
+      // Mixed: multiple lots with per-lot mode; main and report-only images share the 200-photo lot cap.
+      const total = mixedLots.reduce(
+        (s, l) => s + l.files.length + (l.extraFiles || []).length,
+        0
+      );
       if (total === 0) {
         const msg = "Please add at least one image (Mixed).";
         setError(msg);
@@ -1169,10 +1177,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         return;
       }
       const perLotOk = mixedLots.every(
-        (l) => l.files.length > 0 && l.files.length <= 30 && !!l.mode
+        (l) =>
+          l.files.length > 0 &&
+          l.files.length + (l.extraFiles || []).length <= MAX_ASSET_LOT_PHOTOS &&
+          !!l.mode
       );
       if (!perLotOk) {
-        const msg = "Each lot must have 1-30 images and a selected mode.";
+        const msg = `Each lot must have at least 1 main image, a selected mode, and no more than ${MAX_ASSET_LOT_PHOTOS} total photos including report-only photos.`;
         setError(msg);
         toast.error(msg);
         return;
@@ -1182,6 +1193,31 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         ...(l.extraFiles || []),
       ]);
       videosToSend = mixedLots.flatMap((l) => l.videoFiles || []);
+      const focusBoxes: NonNullable<AssetCreateDetails["focus_boxes"]> = [];
+      let globalImageIndex = 0;
+      for (const lot of mixedLots) {
+        for (const file of lot.files) {
+          const boxes = lot.annotations?.[getAssetFileKey(file)] || [];
+          boxes.forEach((box) => {
+            if (
+              Number.isFinite(box?.x) &&
+              Number.isFinite(box?.y) &&
+              Number.isFinite(box?.w) &&
+              Number.isFinite(box?.h)
+            ) {
+              focusBoxes.push({
+                imageIndex: globalImageIndex,
+                x: box.x,
+                y: box.y,
+                w: box.w,
+                h: box.h,
+              });
+            }
+          });
+          globalImageIndex += 1;
+        }
+        globalImageIndex += (lot.extraFiles || []).length;
+      }
       extraDetails = {
         mixed_lots: mixedLots.map((l) => ({
           count: l.files.length,
@@ -1192,6 +1228,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           ),
           mode: l.mode!,
         })),
+        ...(focusBoxes.length ? { focus_boxes: focusBoxes } : {}),
       } as Partial<AssetCreateDetails>;
     } else {
       if (images.length === 0) {
@@ -1995,9 +2032,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               <MixedSection
                 value={mixedLots}
                 onChange={setMixedLots}
-                maxImagesPerLot={50}
-                maxExtraImagesPerLot={100}
-                maxTotalImages={500}
+                maxImagesPerLot={MAX_ASSET_LOT_PHOTOS}
+                maxExtraImagesPerLot={MAX_ASSET_LOT_PHOTOS}
+                maxTotalImages={MAX_ASSET_LOT_PHOTOS}
                 downloadPrefix={(contractNo || "asset").replace(
                   /[^a-zA-Z0-9_-]/g,
                   "-"

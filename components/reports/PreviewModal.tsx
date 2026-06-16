@@ -27,6 +27,15 @@ interface PreviewModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   isResubmitMode?: boolean; // If true, this is for editing/resubmitting an already submitted report
+  loadPreviewDataOverride?: (reportId: string) => Promise<any>;
+  updatePreviewDataOverride?: (
+    reportId: string,
+    previewData: any
+  ) => Promise<{ message: string; data: any; files_regeneration_queued?: boolean }>;
+  resubmitReportOverride?: (
+    reportId: string,
+    previewData?: any
+  ) => Promise<{ message: string; data: any }>;
 }
 
 type FocusableFormElement =
@@ -35,7 +44,13 @@ type FocusableFormElement =
   | HTMLSelectElement;
 
 type ConditionSelectionKey = "condition" | "completeness" | "legal";
-type ExpandableLotTextField = "description" | "details";
+type ExpandableLotTextField =
+  | "lot_number"
+  | "title"
+  | "categories"
+  | "description"
+  | "details"
+  | "estimated_value";
 
 type ExpandedLotTextEditor = {
   lotIndex: number;
@@ -351,6 +366,9 @@ export default function PreviewModal({
   onClose,
   onSuccess,
   isResubmitMode = false,
+  loadPreviewDataOverride,
+  updatePreviewDataOverride,
+  resubmitReportOverride,
 }: PreviewModalProps) {
   // Single-page layout (tabs removed)
   const [loading, setLoading] = useState(true);
@@ -479,7 +497,11 @@ export default function PreviewModal({
       setFilesRegenerating(false);
       // Use different endpoint based on mode
       const [response, categorySpecResponse] = await Promise.all([
-        isResubmitMode ? getSubmittedPreviewData(reportId) : getPreviewData(reportId),
+        loadPreviewDataOverride
+          ? loadPreviewDataOverride(reportId)
+          : isResubmitMode
+            ? getSubmittedPreviewData(reportId)
+            : getPreviewData(reportId),
         getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
       ]);
       setCategorySpecs(categorySpecResponse.specs || []);
@@ -534,8 +556,14 @@ export default function PreviewModal({
 
     try {
       setSaving(true);
-      const saved = await updatePreviewData(reportId, previewData);
+      const savePreview = updatePreviewDataOverride || updatePreviewData;
+      const saved = await savePreview(reportId, previewData);
       if (saved?.data) setPreviewData(saved.data);
+      if (updatePreviewDataOverride) {
+        setHasChanges(false);
+        toast.success("Changes saved. Use Save & Resubmit to regenerate report files.");
+        return;
+      }
       if (saved?.files_regeneration_queued) {
         setHasChanges(false);
         toast.success("Changes saved. Files are being regenerated with the updated report data.");
@@ -586,7 +614,8 @@ export default function PreviewModal({
       
       if (isResubmitMode) {
         // For resubmit mode: save changes and resubmit in one call
-        await resubmitReport(reportId, hasChanges ? previewData : undefined);
+        const submitUpdatedReport = resubmitReportOverride || resubmitReport;
+        await submitUpdatedReport(reportId, hasChanges ? previewData : undefined);
         toast.success("Report resubmitted! Files are being regenerated.");
       } else {
         if (hasChanges) {
@@ -937,6 +966,18 @@ export default function PreviewModal({
   );
 
   const lotTextFieldMeta: Record<ExpandableLotTextField, { label: string; placeholder: string }> = {
+    lot_number: {
+      label: "Lot #",
+      placeholder: "Lot number",
+    },
+    title: {
+      label: "Title",
+      placeholder: "Asset title",
+    },
+    categories: {
+      label: "Category",
+      placeholder: "Auctioneer Import category",
+    },
     description: {
       label: "Description",
       placeholder: "Short description",
@@ -945,7 +986,34 @@ export default function PreviewModal({
       label: "Specs",
       placeholder: "Specs / notes / attributes",
     },
+    estimated_value: {
+      label: "Estimated Value",
+      placeholder: "e.g., $25,000",
+    },
   };
+
+  const openLotFieldEditor = (
+    lotIndex: number,
+    field: ExpandableLotTextField,
+    variant: "mobile" | "desktop"
+  ) => {
+    setExpandedLotTextEditor({ lotIndex, field, variant });
+  };
+
+  const renderFieldEditorButton = (
+    lotIndex: number,
+    field: ExpandableLotTextField,
+    variant: "mobile" | "desktop"
+  ) => (
+    <button
+      type="button"
+      onClick={() => openLotFieldEditor(lotIndex, field, variant)}
+      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-rose-300 hover:text-rose-700"
+      aria-label={`Open ${lotTextFieldMeta[field].label} editor`}
+    >
+      Edit
+    </button>
+  );
 
   const renderExpandableLotTextarea = (
     lot: any,
@@ -965,7 +1033,7 @@ export default function PreviewModal({
         onClick={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
         className={`w-full cursor-text border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-900 transition-all placeholder:text-gray-400 hover:border-rose-300 focus:border-transparent focus:ring-2 focus:ring-rose-500 ${
           isDesktop
-            ? "min-h-[104px] min-w-[230px] rounded-md resize-none"
+            ? "min-h-[104px] min-w-0 rounded-md resize-none"
             : "min-h-[120px] rounded-lg resize-y"
         }`}
         placeholder={meta.placeholder}
@@ -1020,6 +1088,44 @@ export default function PreviewModal({
       return { ...prev, lots };
     });
     setHasChanges(true);
+  };
+
+  const addLot = () => {
+    setPreviewData((prev: any) => {
+      const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
+      const usedNumbers = new Set(
+        lots
+          .map((lot: any) => Number.parseInt(String(lot?.lot_number || ""), 10))
+          .filter((value: number) => Number.isFinite(value) && value > 0)
+      );
+      let nextLotNumber = lots.length + 1;
+      while (usedNumbers.has(nextLotNumber)) nextLotNumber += 1;
+      const previousLot = lots[lots.length - 1] || {};
+      lots.push({
+        lot_id: `lot-${Date.now()}`,
+        lot_number: String(nextLotNumber),
+        title: "",
+        categories: "",
+        description: "",
+        details: "",
+        estimated_value: "",
+        image_indexes: [],
+        image_urls: [],
+        extra_image_indexes: [],
+        extra_image_urls: [],
+        mixed_group_index: Number(previousLot?.mixed_group_index) || 1,
+        sub_mode: previousLot?.sub_mode || "single_lot",
+        condition_report_specs: {},
+        condition_report_selections: {
+          condition: "N/A",
+          completeness: "N/A",
+          legal: "N/A",
+        },
+      });
+      return { ...(prev || {}), lots };
+    });
+    setHasChanges(true);
+    toast.success("New lot added. Fill in the details before resubmitting.");
   };
 
   const updateLotItem = (
@@ -1248,7 +1354,7 @@ export default function PreviewModal({
   };
 
   return (
-    <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report">
+    <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report" fullscreen>
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -1320,7 +1426,7 @@ export default function PreviewModal({
             ))}
           </datalist>
           {/* Report Details */}
-          <div className="space-y-6 max-w-5xl mx-auto pb-28">
+          <div className="space-y-6 max-w-none pb-28">
             {/* Basic Information Section */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -1694,8 +1800,17 @@ export default function PreviewModal({
           )}
 
           {/* Assets/Lots */}
-          <div className="mt-6 space-y-4 max-w-5xl mx-auto">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900">Assets / Lots</h3>
+          <div className="mt-6 space-y-4 max-w-none">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">Assets / Lots</h3>
+              <button
+                type="button"
+                onClick={addLot}
+                className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
+              >
+                Add Lot
+              </button>
+            </div>
             {groupedLots.length ? (
               <>
                 {/* Mobile: card list grouped by sub-mode */}
@@ -1795,7 +1910,10 @@ export default function PreviewModal({
                             })()}
                             <div className="space-y-2">
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Lot #</label>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <label className="block text-xs text-gray-600">Lot #</label>
+                                  {renderFieldEditorButton(idx, "lot_number", "mobile")}
+                                </div>
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-mobile`)}
@@ -1806,7 +1924,10 @@ export default function PreviewModal({
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Title</label>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <label className="block text-xs text-gray-600">Title</label>
+                                  {renderFieldEditorButton(idx, "title", "mobile")}
+                                </div>
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-title-mobile`)}
@@ -1817,7 +1938,10 @@ export default function PreviewModal({
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Category</label>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <label className="block text-xs text-gray-600">Category</label>
+                                  {renderFieldEditorButton(idx, "categories", "mobile")}
+                                </div>
                                 <input
                                   type="text"
                                   list="asset-auctioneer-categories"
@@ -1852,7 +1976,10 @@ export default function PreviewModal({
                                 accent="rose"
                               />
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Value</label>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <label className="block text-xs text-gray-600">Value</label>
+                                  {renderFieldEditorButton(idx, "estimated_value", "mobile")}
+                                </div>
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-mobile`)}
@@ -1873,22 +2000,22 @@ export default function PreviewModal({
                 {/* Desktop: table per group */}
                 <div className="hidden md:block space-y-6">
                   {groupedLots.map((group) => (
-                    <div key={group.gid} className="overflow-x-auto">
+                    <div key={group.gid} className="overflow-hidden">
                       <div className="mb-2 text-sm font-semibold text-gray-900">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
-                      <table className="min-w-[1500px] text-sm border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full table-fixed text-sm border border-gray-200 rounded-lg overflow-hidden">
                         <thead className="bg-gray-50 text-gray-700">
                           <tr>
-                            <th className="px-3 py-2 text-left">Lot #</th>
-                            <th className="px-3 py-2 text-left min-w-[180px]">Photos</th>
-                            <th className="px-3 py-2 text-left min-w-[170px]">Title</th>
-                            <th className="px-3 py-2 text-left min-w-[190px]">Category</th>
-                            <th className="px-3 py-2 text-left min-w-[260px]">Description</th>
-                            <th className="px-3 py-2 text-left min-w-[240px]">Specs</th>
-                            <th className="px-3 py-2 text-left min-w-[280px]">Selections</th>
-                            <th className="px-3 py-2 text-left min-w-[110px]">Value</th>
-                            <th className="px-3 py-2 text-left">Actions</th>
+                            <th className="w-[7%] px-2 py-2 text-left">Lot #</th>
+                            <th className="w-[13%] px-2 py-2 text-left">Photos</th>
+                            <th className="w-[12%] px-2 py-2 text-left">Title</th>
+                            <th className="w-[13%] px-2 py-2 text-left">Category</th>
+                            <th className="w-[16%] px-2 py-2 text-left">Description</th>
+                            <th className="w-[15%] px-2 py-2 text-left">Specs</th>
+                            <th className="w-[13%] px-2 py-2 text-left">Selections</th>
+                            <th className="w-[7%] px-2 py-2 text-left">Value</th>
+                            <th className="w-[4%] px-2 py-2 text-left">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1902,17 +2029,18 @@ export default function PreviewModal({
                             return (
                             <React.Fragment key={idx}>
                             <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                              <td className="px-3 py-2 text-gray-800 font-medium align-top">
+                              <td className="px-2 py-2 text-gray-800 font-medium align-top">
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-desktop`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className="w-24 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold"
+                                  className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold"
                                   placeholder={String(idx + 1)}
                                 />
+                                <div className="mt-1">{renderFieldEditorButton(idx, "lot_number", "desktop")}</div>
                               </td>
-                              <td className="px-3 py-2 align-top min-w-[180px]">
+                              <td className="px-2 py-2 align-top">
                                 <input
                                   id={uploadInputId}
                                   type="file"
@@ -1983,7 +2111,7 @@ export default function PreviewModal({
                                   </button>
                                 )}
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-title-desktop`)}
@@ -1992,8 +2120,9 @@ export default function PreviewModal({
                                   className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
                                   placeholder="Title"
                                 />
+                                <div className="mt-1">{renderFieldEditorButton(idx, "title", "desktop")}</div>
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 <input
                                   type="text"
                                   list="asset-auctioneer-categories"
@@ -2003,17 +2132,18 @@ export default function PreviewModal({
                                   className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
                                   placeholder="Category"
                                 />
+                                <div className="mt-1">{renderFieldEditorButton(idx, "categories", "desktop")}</div>
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 {renderExpandableLotTextarea(lot, idx, "description", "desktop")}
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
                               </td>
-                              <td className="px-3 py-2 align-top min-w-[260px]">
+                              <td className="px-2 py-2 align-top">
                                 {renderConditionSelections(lot, idx, "desktop")}
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-desktop`)}
@@ -2022,8 +2152,9 @@ export default function PreviewModal({
                                   className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
+                                <div className="mt-1">{renderFieldEditorButton(idx, "estimated_value", "desktop")}</div>
                               </td>
-                              <td className="px-3 py-2 align-top">
+                              <td className="px-2 py-2 align-top">
                                 <button
                                   onClick={() => deleteLot(idx)}
                                   aria-label={`Delete lot ${idx + 1}`}
@@ -2069,7 +2200,7 @@ export default function PreviewModal({
           </div>
 
           {/* Valuation */}
-          <div className="mt-6 space-y-4 max-w-5xl mx-auto">
+          <div className="mt-6 space-y-4 max-w-none">
             <h3 className="text-base sm:text-lg font-bold text-gray-900">Valuation</h3>
             <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
               <input
@@ -2216,7 +2347,7 @@ export default function PreviewModal({
           </div>
 
           {/* Summary */}
-          <div className="mt-6 space-y-6 max-w-5xl mx-auto">
+          <div className="mt-6 space-y-6 max-w-none">
             <div className="rounded-xl border border-[var(--app-border)] bg-[linear-gradient(135deg,rgba(225,29,72,0.10),rgba(37,99,235,0.06))] p-6 shadow-[var(--app-shadow-card)]">
               <h3 className="text-lg font-bold text-gray-900 mb-4">
                 Report Summary

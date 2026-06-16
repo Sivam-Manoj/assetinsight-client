@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   Box,
@@ -20,7 +21,11 @@ import {
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import { ReportsService, type AssignedApproval } from "@/services/reports";
+import PreviewModal from "@/components/reports/PreviewModal";
+import Loading from "@/components/common/Loading";
+import { useAuthContext } from "@/context/AuthContext";
 
 function formatDate(value?: string) {
   if (!value) return "";
@@ -33,15 +38,19 @@ function reportTitle(item: AssignedApproval) {
 }
 
 export default function AssignedApprovalsPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuthContext();
   const [items, setItems] = useState<AssignedApproval[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [rejectTarget, setRejectTarget] = useState<AssignedApproval | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<AssignedApproval | null>(null);
   const [rejectNote, setRejectNote] = useState("");
 
   const pendingCount = useMemo(() => items.length, [items.length]);
+  const canViewApprovals = Boolean(user?.isReportApprover);
 
   async function load() {
     setLoading(true);
@@ -57,8 +66,24 @@ export default function AssignedApprovalsPage() {
   }
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!canViewApprovals) {
+      router.replace("/dashboard");
+      return;
+    }
     void load();
-  }, []);
+  }, [authLoading, canViewApprovals, router]);
+
+  if (authLoading || !canViewApprovals) {
+    return (
+      <Loading
+        message={authLoading ? "Checking your account..." : "Redirecting to dashboard..."}
+        height={120}
+        width={120}
+        className="min-h-[50vh]"
+      />
+    );
+  }
 
   async function approve(item: AssignedApproval) {
     setBusyId(item._id);
@@ -162,6 +187,16 @@ export default function AssignedApprovalsPage() {
                     </Typography>
                   </Box>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
+                    {item.isAssetReport ? (
+                      <Button
+                        variant="outlined"
+                        startIcon={<EditRoundedIcon />}
+                        disabled={busyId === item._id}
+                        onClick={() => setReviewTarget(item)}
+                      >
+                        Review / Edit
+                      </Button>
+                    ) : null}
                     <Button
                       variant="contained"
                       color="success"
@@ -216,6 +251,21 @@ export default function AssignedApprovalsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+      {reviewTarget ? (
+        <PreviewModal
+          reportId={reviewTarget._id}
+          isOpen={Boolean(reviewTarget)}
+          onClose={() => setReviewTarget(null)}
+          onSuccess={() => {
+            setReviewTarget(null);
+            void load();
+          }}
+          isResubmitMode
+          loadPreviewDataOverride={ReportsService.getAssignedAssetPreview}
+          updatePreviewDataOverride={ReportsService.updateAssignedAssetPreview}
+          resubmitReportOverride={ReportsService.resubmitAssignedAssetPreview}
+        />
+      ) : null}
     </Box>
   );
 }

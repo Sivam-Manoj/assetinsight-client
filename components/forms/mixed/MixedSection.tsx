@@ -317,6 +317,29 @@ export default function MixedSection({
     });
   }
 
+  const getLotPhotoCount = (lot: MixedLot) =>
+    lot.files.length + (lot.extraFiles || []).length;
+
+  function limitIncomingForLot(
+    lot: MixedLot,
+    incoming: File[],
+    isExtra: boolean
+  ) {
+    const remainingByLot = Math.max(0, maxTotalImages - getLotPhotoCount(lot));
+    const remainingByBucket = Math.max(
+      0,
+      (isExtra ? maxExtraImagesPerLot : maxImagesPerLot) -
+        (isExtra ? (lot.extraFiles || []).length : lot.files.length)
+    );
+    const allowed = Math.min(incoming.length, remainingByLot, remainingByBucket);
+    if (allowed < incoming.length) {
+      toast.warn(
+        `This lot can accept ${allowed} more photo(s). Maximum ${maxTotalImages} total photos per lot.`
+      );
+    }
+    return incoming.slice(0, allowed);
+  }
+
   function addFilesToLot(idx: number, incoming: File[]) {
     setLots((prev) => {
       const out = [...prev];
@@ -326,9 +349,9 @@ export default function MixedSection({
         toast.warn("Select a mode for this lot first.");
         return prev;
       }
-      // No limits enforced - accept all incoming files
-      // Note: First 50 images per lot will be analyzed by AI
-      out[idx] = { ...lot, files: [...lot.files, ...incoming] };
+      const accepted = limitIncomingForLot(lot, incoming, false);
+      if (!accepted.length) return prev;
+      out[idx] = { ...lot, files: [...lot.files, ...accepted] };
       return out;
     });
   }
@@ -347,9 +370,11 @@ export default function MixedSection({
 
       if (isExtra) {
         const current = out[idx];
+        const accepted = limitIncomingForLot(current, incoming, true);
+        if (!accepted.length) return prev;
         out[idx] = {
           ...current,
-          extraFiles: [...current.extraFiles, ...incoming],
+          extraFiles: [...current.extraFiles, ...accepted],
         };
         // Trigger auto-save callback
         setTimeout(() => onImageCapture?.(), 0);
@@ -366,10 +391,10 @@ export default function MixedSection({
         toast.warn("Select a mode for this lot first.");
         return prev;
       }
-      // No limits enforced - accept all incoming files
-      // Note: First 50 images per lot will be analyzed by AI
       const current = out[idx];
-      out[idx] = { ...current, files: [...current.files, ...incoming] };
+      const accepted = limitIncomingForLot(current, incoming, false);
+      if (!accepted.length) return prev;
+      out[idx] = { ...current, files: [...current.files, ...accepted] };
       // Trigger auto-save callback
       setTimeout(() => onImageCapture?.(), 0);
       return out;
@@ -1403,21 +1428,13 @@ export default function MixedSection({
     const lot = lots[idx];
     if (!lot) return;
 
-    if (isExtra) {
-      // Check extra images limit
-      if (lot.extraFiles.length >= maxExtraImagesPerLot) {
-        toast.warn(`Extra images limit reached (${maxExtraImagesPerLot}/lot).`);
-        return;
-      }
-    } else {
-      // Check main images limit
-      const totalSoFar = lots.reduce((s, l) => s + l.files.length, 0);
-      if (lot.files.length >= maxImagesPerLot || totalSoFar >= maxTotalImages) {
-        toast.warn(
-          `Limit reached (caps: ${maxImagesPerLot}/lot, ${maxTotalImages} total).`
-        );
-        return;
-      }
+    const lotPhotoCount = getLotPhotoCount(lot);
+    const bucketFull = isExtra
+      ? lot.extraFiles.length >= maxExtraImagesPerLot
+      : lot.files.length >= maxImagesPerLot;
+    if (lotPhotoCount >= maxTotalImages || bucketFull) {
+      toast.warn(`This lot is at the ${maxTotalImages} photo limit.`);
+      return;
     }
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -1761,7 +1778,7 @@ export default function MixedSection({
                       )}
                       {annCount > 0 && (
                         <div className="absolute right-1 top-1 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] text-white shadow">
-                          {annCount} box{annCount > 1 ? "es" : ""}
+                          {annCount} focus
                         </div>
                       )}
                       <div className="absolute inset-x-1 bottom-1 grid grid-cols-3 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
@@ -1777,9 +1794,9 @@ export default function MixedSection({
                           type="button"
                           className="truncate rounded bg-white/95 px-1 py-1 text-[9px] shadow"
                           onClick={() => openEditor(activeIdx, i)}
-                          title="Edit"
+                          title="Focus / crop"
                         >
-                          Edit
+                          Focus
                         </button>
                         <button
                           type="button"

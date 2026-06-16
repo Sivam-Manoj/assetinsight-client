@@ -16,11 +16,13 @@ export default function BottomDrawer({
   title,
   onClose,
   children,
+  fullscreen = false,
 }: {
   open: boolean;
   title?: string;
   onClose: () => void;
   children: React.ReactNode;
+  fullscreen?: boolean;
 }) {
   const theme = useTheme();
   const desktop = useMediaQuery(theme.breakpoints.up("md"));
@@ -35,17 +37,19 @@ export default function BottomDrawer({
       slotProps={{
         paper: {
           sx: {
-            width: desktop ? "min(960px, 92vw)" : "100%",
+            width: desktop ? (fullscreen ? "100vw" : "min(960px, 92vw)") : "100%",
             height: desktop ? "100%" : mobileSheetHeight,
             maxHeight: desktop ? "100dvh" : mobileSheetHeight,
             minHeight: desktop ? "100%" : "min(720px, 100dvh)",
             borderTopLeftRadius: desktop ? 0 : 18,
             borderTopRightRadius: desktop ? 0 : 18,
-            borderLeft: desktop ? "1px solid var(--app-border)" : undefined,
+            borderLeft: desktop && !fullscreen ? "1px solid var(--app-border)" : undefined,
             borderTop: desktop ? undefined : "1px solid var(--app-border)",
             bgcolor: "var(--app-panel)",
             backgroundImage:
-              "radial-gradient(circle at top left, rgba(225,29,72,0.1), transparent 24%), radial-gradient(circle at bottom right, rgba(37,99,235,0.1), transparent 24%), linear-gradient(180deg, color-mix(in srgb, var(--app-panel) 96%, transparent) 0%, color-mix(in srgb, var(--app-panel-alt) 90%, transparent) 100%)",
+              fullscreen
+                ? "linear-gradient(180deg, color-mix(in srgb, var(--app-panel) 98%, transparent) 0%, color-mix(in srgb, var(--app-panel-alt) 94%, transparent) 100%)"
+                : "radial-gradient(circle at top left, rgba(225,29,72,0.1), transparent 24%), radial-gradient(circle at bottom right, rgba(37,99,235,0.1), transparent 24%), linear-gradient(180deg, color-mix(in srgb, var(--app-panel) 96%, transparent) 0%, color-mix(in srgb, var(--app-panel-alt) 90%, transparent) 100%)",
             boxShadow: "var(--app-shadow-modal)",
             overflow: "hidden",
             display: "flex",

@@ -46,7 +46,12 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: DashboardRounded },
   { label: "My Reports", href: "/reports", icon: DescriptionRounded },
   { label: "Previews", href: "/previews", icon: VisibilityRounded },
-  { label: "Approvals", href: "/approvals", icon: AssignmentTurnedInRounded },
+  {
+    label: "Approvals",
+    href: "/approvals",
+    icon: AssignmentTurnedInRounded,
+    requiresReportApprover: true,
+  },
 ];
 
 const secondaryNavItems = [
@@ -305,6 +310,9 @@ export default function Navbar({
     "Workspace";
   const userLabel = user?.username || user?.email || "Account";
   const initial = userLabel.charAt(0).toUpperCase();
+  const visibleNavItems = navItems.filter(
+    (item) => !item.requiresReportApprover || user?.isReportApprover
+  );
 
   useEffect(() => {
     setMobileOpen(false);
@@ -427,7 +435,7 @@ export default function Navbar({
           Navigation
         </Typography>
         <Stack spacing={isCollapsed ? 0.75 : 1} sx={{ mt: isCollapsed ? 0 : 1 }}>
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLinkItem
               key={item.href}
               collapsed={isCollapsed}
