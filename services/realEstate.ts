@@ -208,6 +208,14 @@ export const RealEstateService = {
     return data;
   },
 
+  async resubmitReport(reportId: string, previewData?: any): Promise<{ message: string; data: any }> {
+    const { data } = await API.post<{ message: string; data: any }>(
+      `/real-estate/${reportId}/resubmit`,
+      previewData ? { preview_data: previewData } : {}
+    );
+    return data;
+  },
+
   /** Delete a real estate report */
   async deleteReport(reportId: string): Promise<{ message: string; data: { reportId: string } }> {
     const { data } = await API.delete<{ message: string; data: { reportId: string } }>(

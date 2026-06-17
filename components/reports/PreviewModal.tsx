@@ -36,6 +36,23 @@ interface PreviewModalProps {
     reportId: string,
     previewData?: any
   ) => Promise<{ message: string; data: any }>;
+  uploadPreviewLotImagesOverride?: (
+    reportId: string,
+    lotKey: string | number,
+    files: File[],
+    previewData?: any,
+    onProgress?: (progress: number) => void
+  ) => Promise<any>;
+  refreshAssetSpecPdfOverride?: (reportId: string) => Promise<{
+    message: string;
+    data: {
+      spec_pdf: string;
+      cr_docx?: string;
+      preview_files?: Record<string, string>;
+      preview_data?: any;
+    };
+  }>;
+  isAssignedApprovalMode?: boolean;
 }
 
 type FocusableFormElement =
@@ -369,6 +386,9 @@ export default function PreviewModal({
   loadPreviewDataOverride,
   updatePreviewDataOverride,
   resubmitReportOverride,
+  uploadPreviewLotImagesOverride,
+  refreshAssetSpecPdfOverride,
+  isAssignedApprovalMode = false,
 }: PreviewModalProps) {
   // Single-page layout (tabs removed)
   const [loading, setLoading] = useState(true);
@@ -559,32 +579,36 @@ export default function PreviewModal({
       const savePreview = updatePreviewDataOverride || updatePreviewData;
       const saved = await savePreview(reportId, previewData);
       if (saved?.data) setPreviewData(saved.data);
-      if (updatePreviewDataOverride) {
-        setHasChanges(false);
-        toast.success("Changes saved. Use Save & Resubmit to regenerate report files.");
-        return;
-      }
       if (saved?.files_regeneration_queued) {
         setHasChanges(false);
         toast.success("Changes saved. Files are being regenerated with the updated report data.");
         return;
       }
       let pdfRefreshed = false;
+      const refreshSpecPdf = refreshAssetSpecPdfOverride || (!updatePreviewDataOverride ? refreshAssetSpecPdf : null);
       try {
-        const pdf = await refreshAssetSpecPdf(reportId);
-        setPreviewFiles((prev: any) => ({
-          ...(prev || {}),
-          ...(pdf.data?.preview_files || {}),
-          spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
-          cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
-        }));
-        if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
-        pdfRefreshed = true;
+        if (refreshSpecPdf) {
+          const pdf = await refreshSpecPdf(reportId);
+          setPreviewFiles((prev: any) => ({
+            ...(prev || {}),
+            ...(pdf.data?.preview_files || {}),
+            spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
+            cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
+          }));
+          if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
+          pdfRefreshed = true;
+        }
       } catch (pdfError: any) {
         toast.error(pdfError.response?.data?.message || "Changes saved, but CR could not be refreshed.");
       }
       setHasChanges(false);
-      toast.success(pdfRefreshed ? "Changes saved and CR refreshed." : "Changes saved successfully.");
+      toast.success(
+        pdfRefreshed
+          ? "Changes saved and CR refreshed."
+          : isAssignedApprovalMode
+            ? "Changes saved. Submit to regenerate and approve the report."
+            : "Changes saved successfully."
+      );
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
@@ -616,7 +640,11 @@ export default function PreviewModal({
         // For resubmit mode: save changes and resubmit in one call
         const submitUpdatedReport = resubmitReportOverride || resubmitReport;
         await submitUpdatedReport(reportId, hasChanges ? previewData : undefined);
-        toast.success("Report resubmitted! Files are being regenerated.");
+        toast.success(
+          isAssignedApprovalMode
+            ? "Files are regenerating. The report will approve after generation succeeds."
+            : "Report resubmitted! Files are being regenerated."
+        );
       } else {
         if (hasChanges) {
           await updatePreviewData(reportId, previewData);
@@ -929,7 +957,8 @@ export default function PreviewModal({
     const lotKey = getLotUploadKey(lot, index);
     setUploadingLotKey(lotKey);
     try {
-      const response = await uploadPreviewLotImages(reportId, lotKey, files, previewData);
+      const uploadLotImages = uploadPreviewLotImagesOverride || uploadPreviewLotImages;
+      const response = await uploadLotImages(reportId, lotKey, files, previewData);
       if (response.data?.preview_data) {
         setPreviewData(response.data.preview_data);
       }
@@ -2487,7 +2516,13 @@ export default function PreviewModal({
               <button
                 onClick={handleSubmitForApproval}
                 disabled={(!isResubmitMode && hasChanges) || submitting || loading || workflowLocked}
-                aria-label={isResubmitMode ? "Resubmit report" : "Submit for approval"}
+                aria-label={
+                  isAssignedApprovalMode
+                    ? "Submit and approve after regeneration"
+                    : isResubmitMode
+                      ? "Resubmit report"
+                      : "Submit for approval"
+                }
                 className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg transition-all hover:shadow-xl text-sm sm:text-base ${
                   isResubmitMode 
                     ? "bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-500/30"
@@ -2497,17 +2532,21 @@ export default function PreviewModal({
                 {isResubmitMode ? <RefreshCw className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 <span className="hidden sm:inline">
                   {submitting 
-                    ? (isResubmitMode ? "Resubmitting..." : "Submitting...") 
+                    ? (isAssignedApprovalMode ? "Submitting..." : isResubmitMode ? "Resubmitting..." : "Submitting...") 
                     : workflowLocked
                     ? (filesRegenerating ? "Regenerating Files..." : "Already Submitted")
-                    : (isResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
+                    : isAssignedApprovalMode
+                      ? "Submit & Approve"
+                      : (isResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
                 </span>
                 <span className="sm:hidden">
                   {submitting 
-                    ? (isResubmitMode ? "Resubmit..." : "Submit...") 
+                    ? (isAssignedApprovalMode ? "Submit..." : isResubmitMode ? "Resubmit..." : "Submit...") 
                     : workflowLocked
                     ? (filesRegenerating ? "Generating..." : "Submitted")
-                    : (isResubmitMode ? "Resubmit" : "Submit")}
+                    : isAssignedApprovalMode
+                      ? "Approve"
+                      : (isResubmitMode ? "Resubmit" : "Submit")}
                 </span>
               </button>
             </div>

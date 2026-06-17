@@ -128,7 +128,14 @@ export const ReportsService = {
 
   async getAssignedAssetPreview(id: string): Promise<SubmittedPreviewDataResponse> {
     const { data } = await API.get<SubmittedPreviewDataResponse>(
-      `/reports/assigned-approvals/${id}/asset-preview`
+      `/reports/assigned-approvals/${id}/preview`
+    );
+    return data;
+  },
+
+  async getAssignedPreview(id: string): Promise<SubmittedPreviewDataResponse> {
+    const { data } = await API.get<SubmittedPreviewDataResponse>(
+      `/reports/assigned-approvals/${id}/preview`
     );
     return data;
   },
@@ -138,7 +145,18 @@ export const ReportsService = {
     previewData: any
   ): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> {
     const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
-      `/reports/assigned-approvals/${id}/asset-preview`,
+      `/reports/assigned-approvals/${id}/preview`,
+      { preview_data: previewData }
+    );
+    return data;
+  },
+
+  async updateAssignedPreview(
+    id: string,
+    previewData: any
+  ): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> {
+    const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
+      `/reports/assigned-approvals/${id}/preview`,
       { preview_data: previewData }
     );
     return data;
@@ -149,9 +167,81 @@ export const ReportsService = {
     previewData?: any
   ): Promise<{ message: string; data: any }> {
     const { data } = await API.post<{ message: string; data: any }>(
-      `/reports/assigned-approvals/${id}/resubmit`,
+      `/reports/assigned-approvals/${id}/preview/resubmit`,
       previewData ? { preview_data: previewData } : {}
     );
+    return data;
+  },
+
+  async resubmitAssignedPreview(
+    id: string,
+    previewData?: any
+  ): Promise<{ message: string; data: any }> {
+    const { data } = await API.post<{ message: string; data: any }>(
+      `/reports/assigned-approvals/${id}/preview/resubmit`,
+      previewData ? { preview_data: previewData } : {}
+    );
+    return data;
+  },
+
+  async uploadAssignedPreviewLotImages(
+    id: string,
+    lotKey: string | number,
+    files: File[],
+    previewData?: any,
+    onProgress?: (progress: number) => void
+  ): Promise<{
+    message: string;
+    data: {
+      preview_data: any;
+      preview_files?: Record<string, string>;
+      imageUrls?: string[];
+      image_count?: number;
+      added?: Array<{ index: number; url: string; name: string }>;
+      lotIndex?: number;
+      files_generating?: boolean;
+      files_regenerating?: boolean;
+    };
+    files_regeneration_queued?: boolean;
+  }> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("images", file));
+    if (previewData) {
+      formData.append("preview_data", JSON.stringify(previewData));
+    }
+
+    const { data } = await API.post(
+      `/reports/assigned-approvals/${id}/preview/lots/${encodeURIComponent(String(lotKey))}/images`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (event) => {
+          if (!onProgress || !event.total) return;
+          onProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        },
+      }
+    );
+    return data;
+  },
+
+  async refreshAssignedPreviewSpecPdf(id: string): Promise<{
+    message: string;
+    data: {
+      spec_pdf: string;
+      cr_docx?: string;
+      preview_files?: Record<string, string>;
+      preview_data?: any;
+    };
+  }> {
+    const { data } = await API.post<{
+      message: string;
+      data: {
+        spec_pdf: string;
+        cr_docx?: string;
+        preview_files?: Record<string, string>;
+        preview_data?: any;
+      };
+    }>(`/reports/assigned-approvals/${id}/preview/spec-pdf`, {});
     return data;
   },
 };

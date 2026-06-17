@@ -24,6 +24,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import { ReportsService, type AssignedApproval } from "@/services/reports";
 import PreviewModal from "@/components/reports/PreviewModal";
+import RealEstatePreviewModal from "@/components/reports/RealEstatePreviewModal";
 import Loading from "@/components/common/Loading";
 import { useAuthContext } from "@/context/AuthContext";
 
@@ -187,7 +188,7 @@ export default function AssignedApprovalsPage() {
                     </Typography>
                   </Box>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
-                    {item.isAssetReport ? (
+                    {item.isAssetReport || item.isRealEstateReport ? (
                       <Button
                         variant="outlined"
                         startIcon={<EditRoundedIcon />}
@@ -251,7 +252,7 @@ export default function AssignedApprovalsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-      {reviewTarget ? (
+      {reviewTarget?.isAssetReport ? (
         <PreviewModal
           reportId={reviewTarget._id}
           isOpen={Boolean(reviewTarget)}
@@ -261,9 +262,28 @@ export default function AssignedApprovalsPage() {
             void load();
           }}
           isResubmitMode
-          loadPreviewDataOverride={ReportsService.getAssignedAssetPreview}
-          updatePreviewDataOverride={ReportsService.updateAssignedAssetPreview}
-          resubmitReportOverride={ReportsService.resubmitAssignedAssetPreview}
+          isAssignedApprovalMode
+          loadPreviewDataOverride={ReportsService.getAssignedPreview}
+          updatePreviewDataOverride={ReportsService.updateAssignedPreview}
+          resubmitReportOverride={ReportsService.resubmitAssignedPreview}
+          uploadPreviewLotImagesOverride={ReportsService.uploadAssignedPreviewLotImages}
+          refreshAssetSpecPdfOverride={ReportsService.refreshAssignedPreviewSpecPdf}
+        />
+      ) : null}
+      {reviewTarget?.isRealEstateReport ? (
+        <RealEstatePreviewModal
+          reportId={reviewTarget._id}
+          isOpen={Boolean(reviewTarget)}
+          onClose={() => setReviewTarget(null)}
+          onSuccess={() => {
+            setReviewTarget(null);
+            void load();
+          }}
+          isResubmitMode
+          isAssignedApprovalMode
+          loadPreviewDataOverride={ReportsService.getAssignedPreview}
+          updatePreviewDataOverride={ReportsService.updateAssignedPreview}
+          resubmitReportOverride={ReportsService.resubmitAssignedPreview}
         />
       ) : null}
     </Box>

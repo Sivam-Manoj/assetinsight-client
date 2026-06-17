@@ -11,6 +11,17 @@ interface RealEstatePreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  isResubmitMode?: boolean;
+  loadPreviewDataOverride?: (reportId: string) => Promise<any>;
+  updatePreviewDataOverride?: (
+    reportId: string,
+    previewData: any
+  ) => Promise<{ message: string; data: any; files_regeneration_queued?: boolean }>;
+  resubmitReportOverride?: (
+    reportId: string,
+    previewData?: any
+  ) => Promise<{ message: string; data: any }>;
+  isAssignedApprovalMode?: boolean;
 }
 
 export default function RealEstatePreviewModal({
@@ -18,6 +29,11 @@ export default function RealEstatePreviewModal({
   isOpen,
   onClose,
   onSuccess,
+  isResubmitMode = false,
+  loadPreviewDataOverride,
+  updatePreviewDataOverride,
+  resubmitReportOverride,
+  isAssignedApprovalMode = false,
 }: RealEstatePreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,6 +47,8 @@ export default function RealEstatePreviewModal({
   const [imageCount, setImageCount] = useState<number>(0);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [filesGenerating, setFilesGenerating] = useState(false);
+  const [filesRegenerating, setFilesRegenerating] = useState(false);
 
   useEffect(() => {
     if (isOpen && reportId) {
@@ -41,9 +59,13 @@ export default function RealEstatePreviewModal({
   const loadPreviewData = async () => {
     try {
       setLoading(true);
-      const response = await RealEstateService.getPreviewData(reportId);
+      const response = loadPreviewDataOverride
+        ? await loadPreviewDataOverride(reportId)
+        : await RealEstateService.getPreviewData(reportId);
       setStatus(response.data.status);
       setDeclineReason(response.data.decline_reason || "");
+      setFilesGenerating(Boolean(response.data.files_generating));
+      setFilesRegenerating(Boolean(response.data.files_regenerating));
       setPreviewData(response.data.preview_data || {});
       setPropertyType(response.data.property_type || "residential");
       setLanguage(response.data.language || "en");
@@ -60,9 +82,14 @@ export default function RealEstatePreviewModal({
   const handleSaveChanges = async () => {
     try {
       setSaving(true);
-      await RealEstateService.updatePreviewData(reportId, previewData);
+      const savePreview = updatePreviewDataOverride || RealEstateService.updatePreviewData;
+      await savePreview(reportId, previewData);
       setHasChanges(false);
-      toast.success("Changes saved successfully!");
+      toast.success(
+        isAssignedApprovalMode
+          ? "Changes saved. Submit to regenerate and approve the report."
+          : "Changes saved successfully!"
+      );
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
@@ -76,15 +103,30 @@ export default function RealEstatePreviewModal({
       return;
     }
 
-    if (hasChanges) {
+    if (filesGenerating || filesRegenerating) {
+      toast.info("This report is already generating files.");
+      return;
+    }
+
+    if (hasChanges && !isAssignedApprovalMode) {
       toast.warning("Please save your changes before submitting");
       return;
     }
 
     try {
       setSubmitting(true);
-      await RealEstateService.submitForApproval(reportId);
-      toast.success("Report submitted for approval successfully!");
+      if (isResubmitMode || resubmitReportOverride) {
+        const submitUpdatedReport = resubmitReportOverride || RealEstateService.resubmitReport;
+        await submitUpdatedReport(reportId, hasChanges || isAssignedApprovalMode ? previewData : undefined);
+        toast.success(
+          isAssignedApprovalMode
+            ? "Files are regenerating. The report will approve after generation succeeds."
+            : "Report resubmitted successfully! Files are being regenerated."
+        );
+      } else {
+        await RealEstateService.submitForApproval(reportId);
+        toast.success("Report submitted for approval successfully!");
+      }
       if (onSuccess) onSuccess();
       onClose();
     } catch (error: any) {
@@ -629,7 +671,7 @@ export default function RealEstatePreviewModal({
           <div className="sticky bottom-0 z-10 mt-8 flex flex-col items-center justify-end gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-6 pb-1 backdrop-blur sm:flex-row">
             <button
               onClick={handleSaveChanges}
-              disabled={saving || !hasChanges}
+              disabled={saving || !hasChanges || filesGenerating || filesRegenerating}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-all disabled:opacity-50"
             >
               <Save className="h-5 w-5" />
@@ -637,11 +679,17 @@ export default function RealEstatePreviewModal({
             </button>
             <button
               onClick={handleSubmitForApproval}
-              disabled={submitting || hasChanges}
+              disabled={submitting || filesGenerating || filesRegenerating || (!isAssignedApprovalMode && hasChanges)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 font-semibold shadow-lg shadow-emerald-500/30 transition-all disabled:opacity-50"
             >
               <Send className="h-5 w-5" />
-              {submitting ? "Submitting..." : "Submit for Approval"}
+              {submitting
+                ? "Submitting..."
+                : filesRegenerating
+                  ? "Regenerating Files..."
+                  : isAssignedApprovalMode
+                    ? "Submit & Approve"
+                    : "Submit for Approval"}
             </button>
           </div>
         </>
