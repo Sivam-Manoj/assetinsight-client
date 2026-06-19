@@ -86,6 +86,10 @@ export interface LotListing {
   preview_files?: LotListingPreviewFiles;
   files?: LotListingPreviewFiles;
   decline_reason?: string;
+  release_status?: "pending_release" | "released";
+  release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+  released_at?: string | null;
+  downloadable?: boolean;
   createdAt: string;
   updatedAt: string;
 }

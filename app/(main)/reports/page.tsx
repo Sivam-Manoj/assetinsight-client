@@ -37,6 +37,9 @@ type ReportGroup = {
   createdAt: string;
   contract_no?: string;
   approvalStatus?: "pending" | "approved" | "rejected";
+  release_status?: "pending_release" | "released";
+  released_at?: string | null;
+  downloadable?: boolean;
   isGeneratingFiles?: boolean;
   type?: string;
   variants: {
@@ -73,12 +76,19 @@ function isFileGenerationActive(report: any) {
   );
 }
 
-function statusTone(status?: string, isGeneratingFiles = false) {
+function statusTone(status?: string, isGeneratingFiles = false, releaseStatus?: string) {
   if (isGeneratingFiles) {
     return {
       bg: "rgba(37,99,235,0.12)",
       color: "#2563eb",
       label: "Generating files",
+    };
+  }
+  if (status === "approved" && releaseStatus === "pending_release") {
+    return {
+      bg: "rgba(217,119,6,0.12)",
+      color: "#d97706",
+      label: "Awaiting release",
     };
   }
   if (status === "approved") {
@@ -364,6 +374,9 @@ export default function ReportsPage() {
           createdAt: report.createdAt,
           contract_no: (report as any).contract_no,
           approvalStatus: report.approvalStatus,
+          release_status: (report as any).release_status,
+          released_at: (report as any).released_at,
+          downloadable: (report as any).downloadable !== false,
           isGeneratingFiles: false,
           type: (report as any).type,
           variants: {},
@@ -422,8 +435,12 @@ export default function ReportsPage() {
           fairMarketValue,
           createdAt: asset.createdAt,
           approvalStatus: asset.status === "approved" ? "approved" : "pending",
+          release_status: (asset as any).release_status,
+          released_at: (asset as any).released_at,
+          downloadable: (asset as any).downloadable !== false,
         }) as PdfReport;
       const isGenerating = isFileGenerationActive(asset);
+      const isDownloadable = (asset as any).downloadable !== false;
 
       map.set(asset._id, {
         key: asset._id,
@@ -434,6 +451,9 @@ export default function ReportsPage() {
         contract_no:
           (asset as any).contract_no || (asset as any).preview_data?.contract_no,
         approvalStatus: asset.status === "approved" ? "approved" : "pending",
+        release_status: (asset as any).release_status,
+        released_at: (asset as any).released_at,
+        downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         type: "Asset",
         variants: {
@@ -453,12 +473,12 @@ export default function ReportsPage() {
                 fileType: "cr_docx",
                 crReportId: asset._id,
               })
-            : createPseudoReport(`/api/reports/${asset._id}/cr-docx`, "docx", {
+            : isDownloadable ? createPseudoReport(`/api/reports/${asset._id}/cr-docx`, "docx", {
                 _id: `${asset._id}-cr-docx`,
                 filename: `${addressBase}-CR.docx`,
                 fileType: "cr_docx",
                 crReportId: asset._id,
-              }),
+              }) : undefined,
           docx: previewFiles.docx
             ? createPseudoReport(previewFiles.docx, "docx")
             : undefined,
@@ -493,8 +513,12 @@ export default function ReportsPage() {
           fairMarketValue,
           createdAt: report.createdAt,
           approvalStatus: report.status === "approved" ? "approved" : "pending",
+          release_status: (report as any).release_status,
+          released_at: (report as any).released_at,
+          downloadable: (report as any).downloadable !== false,
         }) as PdfReport;
       const isGenerating = isFileGenerationActive(report);
+      const isDownloadable = (report as any).downloadable !== false;
 
       map.set(report._id, {
         key: report._id,
@@ -503,6 +527,9 @@ export default function ReportsPage() {
         fairMarketValue,
         createdAt: report.createdAt,
         approvalStatus: report.status === "approved" ? "approved" : "pending",
+        release_status: (report as any).release_status,
+        released_at: (report as any).released_at,
+        downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         type: "RealEstate",
         variants: {
@@ -570,8 +597,12 @@ export default function ReportsPage() {
           fairMarketValue,
           createdAt: listing.createdAt,
           approvalStatus: listing.status === "approved" ? "approved" : "pending",
+          release_status: (listing as any).release_status,
+          released_at: (listing as any).released_at,
+          downloadable: (listing as any).downloadable !== false,
         }) as PdfReport;
       const isGenerating = isFileGenerationActive(listing);
+      const isDownloadable = (listing as any).downloadable !== false;
 
       map.set(listing._id, {
         key: listing._id,
@@ -583,6 +614,9 @@ export default function ReportsPage() {
           (listing as any).details?.contract_no ||
           (listing as any).preview_data?.contract_no,
         approvalStatus: listing.status === "approved" ? "approved" : "pending",
+        release_status: (listing as any).release_status,
+        released_at: (listing as any).released_at,
+        downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         type: "LotListing",
         variants: {
@@ -601,12 +635,12 @@ export default function ReportsPage() {
                 fileType: "cr_docx",
                 crReportId: listing._id,
               })
-            : createPseudoReport(`/api/reports/${listing._id}/cr-docx`, "docx", {
+            : isDownloadable ? createPseudoReport(`/api/reports/${listing._id}/cr-docx`, "docx", {
                 _id: `${listing._id}-cr-docx`,
                 filename: `${addressBase}-CR.docx`,
                 fileType: "cr_docx",
                 crReportId: listing._id,
-              }),
+              }) : undefined,
           xlsx: previewFiles.excel
             ? createPseudoReport(previewFiles.excel, "xlsx")
             : undefined,
@@ -700,6 +734,10 @@ export default function ReportsPage() {
         }
       }
 
+      if ((reportWithUrl as any)?.downloadable === false) {
+        throw new Error("This report is awaiting release. Downloads will be available after release.");
+      }
+
       if (reportWithUrl?.crReportId) {
         const isCrDocx = reportWithUrl.fileType === "cr_docx";
         const { blob, filename } = isCrDocx
@@ -735,7 +773,6 @@ export default function ReportsPage() {
       }
 
       if (!reportWithUrl) throw new Error("Report not found");
-
       const { blob, filename } = await ReportsService.downloadReport(reportId);
       const objectUrl = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -873,7 +910,8 @@ export default function ReportsPage() {
             <>
               <Stack spacing={1.5} sx={{ display: { xs: "flex", md: "none" } }}>
                 {paginatedGroups.map((group) => {
-                  const status = statusTone(group.approvalStatus, group.isGeneratingFiles);
+                  const status = statusTone(group.approvalStatus, group.isGeneratingFiles, group.release_status);
+                  const downloadable = group.downloadable !== false;
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} · ${group.contract_no}`
                     : group.address || typeLabel(group.type);
@@ -917,12 +955,17 @@ export default function ReportsPage() {
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
                           {group.isGeneratingFiles ? (
                             <GeneratingFilesProgress />
+                          ) : !downloadable ? (
+                            <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
+                              Files available after release
+                            </Typography>
                           ) : (
                             (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
                               const file = group.variants[variant];
                               if (!file) return null;
                               const disabled =
                                 downloadingId === file._id ||
+                                !downloadable ||
                                 (!!file.approvalStatus && file.approvalStatus !== "approved");
                               return (
                                 <Button
@@ -981,7 +1024,8 @@ export default function ReportsPage() {
                     </Box>
                     <Box component="tbody">
                       {paginatedGroups.map((group) => {
-                        const status = statusTone(group.approvalStatus, group.isGeneratingFiles);
+                        const status = statusTone(group.approvalStatus, group.isGeneratingFiles, group.release_status);
+                        const downloadable = group.downloadable !== false;
                         const title = group.contract_no
                           ? `${typeLabel(group.type)} · ${group.contract_no}`
                           : group.address || typeLabel(group.type);
@@ -1038,12 +1082,17 @@ export default function ReportsPage() {
                               >
                                 {group.isGeneratingFiles ? (
                                   <GeneratingFilesProgress />
+                                ) : !downloadable ? (
+                                  <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
+                                    Files available after release
+                                  </Typography>
                                 ) : (
                                   (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
                                     const file = group.variants[variant];
                                     if (!file) return null;
                                     const disabled =
                                       downloadingId === file._id ||
+                                      !downloadable ||
                                       (!!file.approvalStatus &&
                                         file.approvalStatus !== "approved");
                                     return (

@@ -52,6 +52,12 @@ const navItems = [
     icon: AssignmentTurnedInRounded,
     requiresReportApprover: true,
   },
+  {
+    label: "Releases",
+    href: "/releases",
+    icon: AssignmentTurnedInRounded,
+    requiresReleaseManager: true,
+  },
 ];
 
 const secondaryNavItems = [
@@ -63,6 +69,7 @@ const pageTitles: Record<string, string> = {
   "/reports": "My Reports",
   "/previews": "Previews",
   "/approvals": "Assigned Approvals",
+  "/releases": "Assigned Releases",
   "/settings": "Settings",
 };
 
@@ -311,7 +318,9 @@ export default function Navbar({
   const userLabel = user?.username || user?.email || "Account";
   const initial = userLabel.charAt(0).toUpperCase();
   const visibleNavItems = navItems.filter(
-    (item) => !item.requiresReportApprover || user?.isReportApprover
+    (item) =>
+      (!("requiresReportApprover" in item) || !item.requiresReportApprover || user?.isReportApprover) &&
+      (!("requiresReleaseManager" in item) || !item.requiresReleaseManager || user?.isReleaseManager)
   );
 
   useEffect(() => {

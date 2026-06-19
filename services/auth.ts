@@ -46,6 +46,7 @@ export type AuthUser = {
   companyAddress?: string;
   isVerified?: boolean;
   isReportApprover?: boolean;
+  isReleaseManager?: boolean;
   authProvider?: string;
   createdAt?: string;
   updatedAt?: string;

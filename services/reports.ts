@@ -27,6 +27,10 @@ export type PdfReport = {
   url?: string;
   crReportId?: string;
   valuationMethods?: Array<{ method: string; value: number }>;
+  release_status?: "pending_release" | "released";
+  release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+  released_at?: string | null;
+  downloadable?: boolean;
 };
 
 export type AssignedApproval = PdfReport & {
@@ -35,6 +39,16 @@ export type AssignedApproval = PdfReport & {
   isAssetReport?: boolean;
   isRealEstateReport?: boolean;
   preview_files?: Record<string, string>;
+};
+
+export type AssignedRelease = PdfReport & {
+  reportType: "Asset" | "RealEstate" | "LotListing" | "Salvage";
+  user?: { _id?: string; email?: string; username?: string };
+  isAssetReport?: boolean;
+  isRealEstateReport?: boolean;
+  isLotListing?: boolean;
+  preview_files?: Record<string, string>;
+  files?: Record<string, string>;
 };
 
 export const ReportsService = {
@@ -242,6 +256,20 @@ export const ReportsService = {
         preview_data?: any;
       };
     }>(`/reports/assigned-approvals/${id}/preview/spec-pdf`, {});
+    return data;
+  },
+
+  async getAssignedReleases(): Promise<{ items: AssignedRelease[]; total: number }> {
+    const { data } = await API.get<{ items: AssignedRelease[]; total: number }>(
+      "/reports/assigned-releases"
+    );
+    return data;
+  },
+
+  async releaseAssignedReport(id: string): Promise<{ message: string }> {
+    const { data } = await API.post<{ message: string }>(
+      `/reports/assigned-releases/${id}/release`
+    );
     return data;
   },
 };

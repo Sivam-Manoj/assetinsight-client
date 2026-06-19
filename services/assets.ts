@@ -26,6 +26,10 @@ export interface AssetReport {
   approval_requested_at?: string;
   approval_processed_at?: string;
   decline_reason?: string;
+  release_status?: "pending_release" | "released";
+  release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+  released_at?: string | null;
+  downloadable?: boolean;
   lots: any[];
   client_name?: string;
   contract_no?: string;
@@ -53,6 +57,10 @@ export interface PreviewDataResponse {
     image_count?: number;
     imageUrls?: string[];
     decline_reason?: string;
+    release_status?: "pending_release" | "released";
+    release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+    released_at?: string | null;
+    downloadable?: boolean;
     reportId: string;
   };
 }

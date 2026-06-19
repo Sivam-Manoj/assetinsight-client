@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import AndroidApkDownloadButton from "./AndroidApkDownloadButton";
 
 const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -50,6 +51,7 @@ export default function CallToAction() {
               >
                 Sign in
               </Link>
+              <AndroidApkDownloadButton variant="glass" />
             </div>
           </div>
         </div>

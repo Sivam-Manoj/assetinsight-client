@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle2, FileCheck2 } from "lucide-react";
 import { deliveryStats, heroHighlights, industryTiles } from "../data/constants";
+import AndroidApkDownloadButton from "./AndroidApkDownloadButton";
 import { reveal } from "./motion";
 
 export default function HeroSection() {
@@ -54,6 +55,7 @@ export default function HeroSection() {
               >
                 Sign in
               </Link>
+              <AndroidApkDownloadButton variant="glass" />
             </div>
 
             <div className="mt-9 grid gap-3 text-sm font-bold text-white sm:grid-cols-3">

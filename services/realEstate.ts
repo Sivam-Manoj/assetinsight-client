@@ -115,6 +115,10 @@ export interface RealEstateReport {
   approval_requested_at?: string;
   approval_processed_at?: string;
   decline_reason?: string;
+  release_status?: "pending_release" | "released";
+  release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+  released_at?: string | null;
+  downloadable?: boolean;
   property_details?: any;
   report_dates?: any;
   valuation?: any;
@@ -134,6 +138,10 @@ export interface RealEstatePreviewDataResponse {
     imageUrls?: string[];
     extraImageUrls?: string[];
     decline_reason?: string;
+    release_status?: "pending_release" | "released";
+    release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
+    released_at?: string | null;
+    downloadable?: boolean;
     reportId: string;
   };
 }
