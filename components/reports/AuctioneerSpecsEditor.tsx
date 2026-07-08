@@ -89,13 +89,7 @@ const getValueForField = (record: Record<string, string>, fieldName: string) => 
   if (record[fieldName] !== undefined) return record[fieldName];
   const aliases = fieldAliases(fieldName);
   const matchingKey = Object.keys(record).find((key) => aliases.includes(normalizeKey(key)));
-  return matchingKey ? record[matchingKey] : "Not Found";
-};
-
-const hasValueForField = (record: Record<string, string>, fieldName: string) => {
-  if (record[fieldName] !== undefined) return true;
-  const aliases = fieldAliases(fieldName);
-  return Object.keys(record).some((key) => aliases.includes(normalizeKey(key)));
+  return matchingKey ? record[matchingKey] : "";
 };
 
 const isDamageField = (fieldName: string) => {
@@ -165,13 +159,24 @@ export default function AuctioneerSpecsEditor({
     const key = normalizeKey(field);
     return key && allFields.findIndex((candidate) => normalizeKey(candidate) === key) === index;
   });
+  const deletedSpecKeys = new Set(
+    (Array.isArray(lot?.condition_report_specs_deleted)
+      ? lot.condition_report_specs_deleted
+      : []
+    )
+      .map((field: unknown) => normalizeKey(field))
+      .filter(Boolean)
+  );
   const extraFields = Object.keys(specRecord).filter((field) => {
     if (isDamageField(field)) return false;
     const key = normalizeKey(field);
-    return !orderedFields.some((knownField) => fieldAliases(knownField).includes(key));
+    return (
+      !deletedSpecKeys.has(key) &&
+      !orderedFields.some((knownField) => fieldAliases(knownField).includes(key))
+    );
   });
   const visibleFields = [
-    ...orderedFields.filter((field) => hasValueForField(specRecord, field)),
+    ...orderedFields.filter((field) => !deletedSpecKeys.has(normalizeKey(field))),
     ...extraFields,
   ];
   const accentClasses =
@@ -407,7 +412,7 @@ export default function AuctioneerSpecsEditor({
             </p>
             <p className="mt-0.5 text-[11px] text-gray-600">
               {categorySpec
-                ? `Found values for ${categorySpec.childCategory}`
+                ? `Category fields for ${categorySpec.childCategory}`
                 : lot?.categories
                   ? "No matching category field list found"
                 : "Select a category to show field names"}
@@ -512,7 +517,7 @@ export default function AuctioneerSpecsEditor({
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-gray-300 bg-white/70 px-3 py-4 text-xs text-gray-600">
-            No spec values were found from the uploaded images yet.
+            No category fields are available yet.
           </div>
         )}
       </div>
