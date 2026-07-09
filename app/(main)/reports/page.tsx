@@ -113,6 +113,33 @@ function actionLabel(variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "
   return "Images";
 }
 
+function hasReportFileUrls(report: any) {
+  const keys = ["pdf", "spec_pdf", "cr_docx", "docx", "excel", "xlsx", "images", "zip"];
+  const sources = [report?.preview_files, report?.files];
+  return sources.some((source) => {
+    if (!source || typeof source !== "object") return false;
+    return keys.some((key) => {
+      const value = source[key];
+      return typeof value === "string" && value.trim().length > 0;
+    });
+  });
+}
+
+function isFileGenerationBlocking(report: any) {
+  return isFileGenerationActive(report) && !hasReportFileUrls(report);
+}
+
+function hasGroupDownloadVariants(group: ReportGroup) {
+  return Object.values(group.variants).some((variant) => {
+    if (!variant) return false;
+    const url = (variant as any).url;
+    if (typeof url === "string" && url.trim()) {
+      return !url.startsWith("/api/reports/");
+    }
+    return !variant.crReportId;
+  });
+}
+
 function actionButtonSx(kind: "download" | "delete") {
   if (kind === "delete") {
     return {
@@ -439,7 +466,7 @@ export default function ReportsPage() {
           released_at: (asset as any).released_at,
           downloadable: (asset as any).downloadable !== false,
         }) as PdfReport;
-      const isGenerating = isFileGenerationActive(asset);
+      const isGenerating = isFileGenerationBlocking(asset);
       const isDownloadable = (asset as any).downloadable !== false;
 
       map.set(asset._id, {
@@ -517,7 +544,7 @@ export default function ReportsPage() {
           released_at: (report as any).released_at,
           downloadable: (report as any).downloadable !== false,
         }) as PdfReport;
-      const isGenerating = isFileGenerationActive(report);
+      const isGenerating = isFileGenerationBlocking(report);
       const isDownloadable = (report as any).downloadable !== false;
 
       map.set(report._id, {
@@ -601,7 +628,7 @@ export default function ReportsPage() {
           released_at: (listing as any).released_at,
           downloadable: (listing as any).downloadable !== false,
         }) as PdfReport;
-      const isGenerating = isFileGenerationActive(listing);
+      const isGenerating = isFileGenerationBlocking(listing);
       const isDownloadable = (listing as any).downloadable !== false;
 
       map.set(listing._id, {
@@ -910,7 +937,9 @@ export default function ReportsPage() {
             <>
               <Stack spacing={1.5} sx={{ display: { xs: "flex", md: "none" } }}>
                 {paginatedGroups.map((group) => {
-                  const status = statusTone(group.approvalStatus, group.isGeneratingFiles, group.release_status);
+                  const hasDownloads = hasGroupDownloadVariants(group);
+                  const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
+                  const status = statusTone(group.approvalStatus, showGeneratingOnly, group.release_status);
                   const downloadable = group.downloadable !== false;
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} · ${group.contract_no}`
@@ -953,7 +982,7 @@ export default function ReportsPage() {
                           {group.address || "No address provided"}
                         </Typography>
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
-                          {group.isGeneratingFiles ? (
+                          {showGeneratingOnly ? (
                             <GeneratingFilesProgress />
                           ) : !downloadable ? (
                             <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
@@ -1024,7 +1053,9 @@ export default function ReportsPage() {
                     </Box>
                     <Box component="tbody">
                       {paginatedGroups.map((group) => {
-                        const status = statusTone(group.approvalStatus, group.isGeneratingFiles, group.release_status);
+                        const hasDownloads = hasGroupDownloadVariants(group);
+                        const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
+                        const status = statusTone(group.approvalStatus, showGeneratingOnly, group.release_status);
                         const downloadable = group.downloadable !== false;
                         const title = group.contract_no
                           ? `${typeLabel(group.type)} · ${group.contract_no}`
@@ -1080,7 +1111,7 @@ export default function ReportsPage() {
                                   pb: 0.5,
                                 }}
                               >
-                                {group.isGeneratingFiles ? (
+                                {showGeneratingOnly ? (
                                   <GeneratingFilesProgress />
                                 ) : !downloadable ? (
                                   <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
