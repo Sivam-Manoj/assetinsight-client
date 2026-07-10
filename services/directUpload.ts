@@ -25,7 +25,7 @@ type UploadSession = {
   }>;
 };
 
-const DIRECT_UPLOAD_CONCURRENCY = 6;
+const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,12 +53,31 @@ function putFileWithProgress(
         if (delta) onDelta?.(delta);
         resolve();
       } else {
-        reject(new Error(`R2 upload failed for ${file.name}: ${xhr.status}`));
+        const detail = xhr.responseText?.trim().replace(/\s+/g, " ").slice(0, 180);
+        reject(new Error(`R2 upload failed for ${file.name} (${xhr.status})${detail ? `: ${detail}` : ""}`));
       }
     };
     xhr.onerror = () => reject(new Error(`R2 upload failed for ${file.name}`));
     xhr.send(file);
   });
+}
+
+async function uploadFileThroughServerFallback(
+  endpoint: "/asset" | "/lot-listing",
+  sessionId: string,
+  fileId: string,
+  file: File
+) {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  await API.post(
+    `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 300000,
+    }
+  );
 }
 
 async function putFileWithRetry(
@@ -143,10 +162,28 @@ export async function uploadReportFilesDirectToR2(args: {
     await mapWithConcurrency(args.files, async (item, index) => {
       const target = targetById.get(manifest[index].fileId);
       if (!target) throw new Error(`Missing upload target for ${item.file.name}`);
-      await putFileWithRetry(target.uploadUrl, item.file, target.contentType, (delta) => {
-        uploadedBytes += delta;
+      try {
+        await putFileWithRetry(target.uploadUrl, item.file, target.contentType, (delta) => {
+          uploadedBytes += delta;
+          args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
+        });
+      } catch (directUploadError) {
+        // Browser direct PUT requests may be blocked by R2 CORS or a corporate
+        // network. Upload only this failed file through the authenticated API,
+        // keeping the same session/key and avoiding a duplicate report.
+        await uploadFileThroughServerFallback(
+          args.endpoint,
+          session.sessionId,
+          manifest[index].fileId,
+          item.file
+        ).catch((fallbackError) => {
+          const directMessage = directUploadError instanceof Error ? directUploadError.message : "Direct R2 upload failed";
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Server fallback upload failed";
+          throw new Error(`${directMessage}. ${fallbackMessage}`);
+        });
+        uploadedBytes += item.file.size || 1;
         args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
-      });
+      }
     });
   }
 
