@@ -11,6 +11,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  LinearProgress,
   Stack,
   Tab,
   Tabs,
@@ -124,6 +125,15 @@ export default function PreviewsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
+  const hasActiveJobs = useMemo(
+    () => [...newReports, ...submittedReports].some((report: any) =>
+      report.generation_state === "queued" ||
+      report.generation_state === "processing" ||
+      report.job_status === "queued" ||
+      report.job_status === "processing"
+    ),
+    [newReports, submittedReports]
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [resubmitting, setResubmitting] = useState<string | null>(null);
@@ -197,18 +207,18 @@ export default function PreviewsPage() {
         })
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
-      const submittedAssets: CombinedReport[] = (submittedAssetResponse.data || []).map(
-        (report) => ({ ...report, reportType: "asset" as const })
-      );
+      const submittedAssets: CombinedReport[] = (submittedAssetResponse.data || [])
+        .filter((report: any) => !(report.status === "approved" && report.files_ready === true))
+        .map((report) => ({ ...report, reportType: "asset" as const }));
       const realEstateSubmitted: CombinedReport[] = (realEstateResponse.data || [])
         .filter(
           (report) =>
             report.status === "pending_approval" || report.status === "approved"
         )
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
-      const lotListingSubmitted: CombinedReport[] = (
-        submittedLotListingResponse.data || []
-      ).map((report) => ({ ...report, reportType: "lotListing" as const }));
+      const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
+        .filter((report: any) => !(report.status === "approved" && report.files_ready === true))
+        .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
       setNewReports(
         [...assetPreviews, ...realEstatePreviews, ...lotListingPreviews].sort(
@@ -243,12 +253,13 @@ export default function PreviewsPage() {
   }, [loadReports]);
 
   useEffect(() => {
+    if (!hasActiveJobs) return;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       void loadReports({ silent: true });
     }, 10000);
     return () => window.clearInterval(intervalId);
-  }, [loadReports]);
+  }, [hasActiveJobs, loadReports]);
 
   const handleManualRefresh = async () => {
     await loadReports({ successToast: true });
@@ -453,6 +464,8 @@ export default function PreviewsPage() {
                 Boolean((report as any).files_generating) ||
                 Boolean((report as any).files_regenerating);
               const jobActive =
+                (report as any).generation_state === "queued" ||
+                (report as any).generation_state === "processing" ||
                 report.status === "processing" ||
                 (report as any).job_status === "queued" ||
                 (report as any).job_status === "processing" ||
@@ -632,11 +645,27 @@ export default function PreviewsPage() {
                       </Alert>
                     ) : null}
                     {jobActive ? (
-                      <Alert severity="info">
-                        {activeTab === "new"
-                          ? "Preview generation is running in the background. You will receive an email when it is ready."
-                          : "Files are currently being generated or regenerated in the background."}
-                      </Alert>
+                      <Box sx={{ p: 1.6, borderRadius: 2, bgcolor: "rgba(37,99,235,0.07)" }}>
+                        <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between" }}>
+                          <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
+                            {(report as any).generation_progress?.message ||
+                              (activeTab === "new" ? "Generating preview" : "Generating files")}
+                          </Typography>
+                          <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
+                            {Math.round(Number((report as any).generation_progress?.progressPercent || 0))}%
+                          </Typography>
+                        </Stack>
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(2, Number((report as any).generation_progress?.progressPercent || 0))}
+                          sx={{ mt: 1, height: 7, borderRadius: 1 }}
+                        />
+                        {(report as any).generation_progress?.totalLots ? (
+                          <Typography variant="caption" sx={{ mt: 0.8, display: "block", color: "var(--app-text-muted)" }}>
+                            Lot {(report as any).generation_progress.currentLot || 0} of {(report as any).generation_progress.totalLots}
+                          </Typography>
+                        ) : null}
+                      </Box>
                     ) : null}
                     {jobFailed ? (
                       <Alert severity="error">

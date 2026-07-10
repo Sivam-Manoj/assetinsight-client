@@ -15,6 +15,14 @@ export interface AssetReport {
   job_error?: string;
   generation_state?: "queued" | "processing" | "ready" | "error";
   files_ready?: boolean;
+  generation_progress?: {
+    stage?: string;
+    progressPercent?: number;
+    message?: string;
+    currentLot?: number;
+    totalLots?: number;
+    updatedAt?: string;
+  };
   preview_data?: any;
   preview_files?: {
     pdf?: string;

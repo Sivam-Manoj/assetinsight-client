@@ -42,6 +42,12 @@ type ReportGroup = {
   downloadable?: boolean;
   isGeneratingFiles?: boolean;
   generationState?: "queued" | "processing" | "ready" | "error";
+  generationProgress?: {
+    progressPercent?: number;
+    message?: string;
+    currentLot?: number;
+    totalLots?: number;
+  };
   jobError?: string;
   lotSummary?: string;
   type?: string;
@@ -220,7 +226,8 @@ function actionButtonSx(kind: "download" | "delete") {
   };
 }
 
-function GeneratingFilesProgress() {
+function GeneratingFilesProgress({ progress }: { progress?: ReportGroup["generationProgress"] }) {
+  const percent = Math.max(2, Math.min(100, Number(progress?.progressPercent || 0)));
   return (
     <Box sx={{ minWidth: { xs: 180, sm: 220 } }}>
       <Stack spacing={0.75}>
@@ -232,9 +239,14 @@ function GeneratingFilesProgress() {
             whiteSpace: "nowrap",
           }}
         >
-          Generating updated files...
+          {progress?.message || "Generating updated files..."}
         </Typography>
-        <LinearProgress sx={{ height: 6, borderRadius: 99 }} />
+        <LinearProgress variant="determinate" value={percent} sx={{ height: 6, borderRadius: 1 }} />
+        {progress?.totalLots ? (
+          <Typography variant="caption" sx={{ color: "var(--app-text-muted)" }}>
+            Lot {progress.currentLot || 0} of {progress.totalLots} · {Math.round(percent)}%
+          </Typography>
+        ) : null}
       </Stack>
     </Box>
   );
@@ -535,6 +547,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (asset as any).generation_state,
+        generationProgress: (asset as any).generation_progress,
         jobError: (asset as any).job_error,
         lotSummary: summarizeLotNumbers(lots, asset._id),
         type: "Asset",
@@ -614,6 +627,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (report as any).generation_state,
+        generationProgress: (report as any).generation_progress,
         jobError: (report as any).job_error,
         type: "RealEstate",
         variants: {
@@ -703,6 +717,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (listing as any).generation_state,
+        generationProgress: (listing as any).generation_progress,
         jobError: (listing as any).job_error,
         lotSummary: summarizeLotNumbers(lots, listing._id),
         type: "LotListing",
@@ -1049,7 +1064,7 @@ export default function ReportsPage() {
                         </Typography>
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
                           {showGeneratingOnly ? (
-                            <GeneratingFilesProgress />
+                            <GeneratingFilesProgress progress={group.generationProgress} />
                           ) : showErrorOnly ? (
                             <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                               <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700 }}>
@@ -1193,7 +1208,7 @@ export default function ReportsPage() {
                                 }}
                               >
                                 {showGeneratingOnly ? (
-                                  <GeneratingFilesProgress />
+                                  <GeneratingFilesProgress progress={group.generationProgress} />
                                 ) : showErrorOnly ? (
                                   <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                                     <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700, maxWidth: 220 }}>

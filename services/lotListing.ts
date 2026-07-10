@@ -55,6 +55,14 @@ export interface LotListing {
   files_ready?: boolean;
   files_generating?: boolean;
   files_regenerating?: boolean;
+  generation_progress?: {
+    stage?: string;
+    progressPercent?: number;
+    message?: string;
+    currentLot?: number;
+    totalLots?: number;
+    updatedAt?: string;
+  };
   include_damage_analysis?: boolean;
   progress?: {
     phase: string;
@@ -101,6 +109,11 @@ export interface LotListingProgress {
   percent?: number;
   serverProgress01?: number;
   message?: string;
+  stage?: string;
+  progressPercent?: number;
+  currentLot?: number;
+  totalLots?: number;
+  updatedAt?: string;
   result?: {
     reportId?: string;
     reportType?: string;
