@@ -21,8 +21,8 @@ import {
 } from "@mui/icons-material";
 import { toast } from "react-toastify";
 import { ReportsService, type PdfReport } from "@/services/reports";
-import { deleteAssetReport, getAssetReports, type AssetReport } from "@/services/assets";
-import { deleteLotListing, getLotListings, type LotListing } from "@/services/lotListing";
+import { deleteAssetReport, getAssetReports, resubmitReport, type AssetReport } from "@/services/assets";
+import { deleteLotListing, getLotListings, resubmitLotListing, type LotListing } from "@/services/lotListing";
 import {
   RealEstateService,
   type RealEstateReport,
@@ -41,6 +41,9 @@ type ReportGroup = {
   released_at?: string | null;
   downloadable?: boolean;
   isGeneratingFiles?: boolean;
+  generationState?: "queued" | "processing" | "ready" | "error";
+  jobError?: string;
+  lotSummary?: string;
   type?: string;
   variants: {
     pdf?: PdfReport;
@@ -67,6 +70,11 @@ function typeLabel(type?: string) {
 }
 
 function isFileGenerationActive(report: any) {
+  if (report?.files_ready === true || report?.generation_state === "ready") return false;
+  if (report?.generation_state === "error") return false;
+  if (report?.generation_state === "queued" || report?.generation_state === "processing") {
+    return true;
+  }
   return (
     Boolean(report?.files_generating) ||
     Boolean(report?.files_regenerating) ||
@@ -76,7 +84,26 @@ function isFileGenerationActive(report: any) {
   );
 }
 
-function statusTone(status?: string, isGeneratingFiles = false, releaseStatus?: string) {
+function summarizeLotNumbers(lots: any[], fallbackId: string) {
+  const numbers = (Array.isArray(lots) ? lots : [])
+    .map((lot) => String(lot?.lot_number ?? "").trim())
+    .filter(Boolean);
+  if (numbers.length > 0) {
+    const first = numbers.slice(0, 3).map((value) => `Lot ${value}`).join(", ");
+    return numbers.length > 3 ? `${first} +${numbers.length - 3}` : first;
+  }
+  return `#${String(fallbackId).slice(-6)}`;
+}
+
+function statusTone(
+  status?: string,
+  isGeneratingFiles = false,
+  releaseStatus?: string,
+  generationState?: string
+) {
+  if (generationState === "error") {
+    return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Generation failed" };
+  }
   if (isGeneratingFiles) {
     return {
       bg: "rgba(37,99,235,0.12)",
@@ -231,6 +258,10 @@ export default function ReportsPage() {
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
   const loadingReportsRef = useRef(false);
+  const hasActiveJobs = useMemo(
+    () => [...assetReports, ...realEstateReports, ...lotListingReports].some(isFileGenerationActive),
+    [assetReports, realEstateReports, lotListingReports]
+  );
 
   const loadReports = useCallback(async (
     options: { showLoading?: boolean; silent?: boolean; successToast?: boolean } = {}
@@ -258,6 +289,8 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
+            (report as any).status === "error" ||
+            (report as any).generation_state === "error" ||
             isFileGenerationActive(report)
         )
       );
@@ -266,6 +299,8 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
+            (report as any).status === "error" ||
+            (report as any).generation_state === "error" ||
             isFileGenerationActive(report)
         )
       );
@@ -274,6 +309,8 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
+            report.status === "error" ||
+            (report as any).generation_state === "error" ||
             isFileGenerationActive(report)
           )
       );
@@ -318,12 +355,13 @@ export default function ReportsPage() {
   }, [loadReports]);
 
   useEffect(() => {
+    if (!hasActiveJobs) return;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       void loadReports({ silent: true });
     }, 10000);
     return () => window.clearInterval(intervalId);
-  }, [loadReports]);
+  }, [hasActiveJobs, loadReports]);
 
   const handleManualRefresh = async () => {
     await loadReports({ successToast: true });
@@ -358,6 +396,19 @@ export default function ReportsPage() {
       );
     } finally {
       setDeletingKey(null);
+    }
+  }
+
+  async function handleRetry(group: ReportGroup) {
+    try {
+      const type = String(group.type || "").toLowerCase();
+      if (type === "asset") await resubmitReport(group.key);
+      else if (type.includes("lot")) await resubmitLotListing(group.key);
+      else throw new Error("Open the report preview to retry this report type.");
+      toast.success("File generation queued again.");
+      await loadReports();
+    } catch (retryError: any) {
+      toast.error(retryError?.response?.data?.message || retryError?.message || "Retry failed");
     }
   }
 
@@ -405,6 +456,7 @@ export default function ReportsPage() {
           released_at: (report as any).released_at,
           downloadable: (report as any).downloadable !== false,
           isGeneratingFiles: false,
+          generationState: "ready",
           type: (report as any).type,
           variants: {},
         };
@@ -482,6 +534,9 @@ export default function ReportsPage() {
         released_at: (asset as any).released_at,
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
+        generationState: (asset as any).generation_state,
+        jobError: (asset as any).job_error,
+        lotSummary: summarizeLotNumbers(lots, asset._id),
         type: "Asset",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -558,6 +613,8 @@ export default function ReportsPage() {
         released_at: (report as any).released_at,
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
+        generationState: (report as any).generation_state,
+        jobError: (report as any).job_error,
         type: "RealEstate",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -645,6 +702,9 @@ export default function ReportsPage() {
         released_at: (listing as any).released_at,
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
+        generationState: (listing as any).generation_state,
+        jobError: (listing as any).job_error,
+        lotSummary: summarizeLotNumbers(lots, listing._id),
         type: "LotListing",
         variants: {
           specPdf: previewFiles.spec_pdf
@@ -939,7 +999,13 @@ export default function ReportsPage() {
                 {paginatedGroups.map((group) => {
                   const hasDownloads = hasGroupDownloadVariants(group);
                   const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
-                  const status = statusTone(group.approvalStatus, showGeneratingOnly, group.release_status);
+                  const showErrorOnly = group.generationState === "error" && !hasDownloads;
+                  const status = statusTone(
+                    group.approvalStatus,
+                    showGeneratingOnly,
+                    group.release_status,
+                    group.generationState
+                  );
                   const downloadable = group.downloadable !== false;
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} · ${group.contract_no}`
@@ -957,7 +1023,7 @@ export default function ReportsPage() {
                                 textOverflow: "ellipsis",
                               }}
                             >
-                              {title}
+                              {title}{group.lotSummary ? ` - ${group.lotSummary}` : ""}
                             </Typography>
                             <Typography sx={{ color: "var(--app-text-muted)", mt: 0.5 }}>
                               {new Date(group.createdAt).toLocaleDateString()} · {group.fairMarketValue || "—"}
@@ -984,6 +1050,15 @@ export default function ReportsPage() {
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
                           {showGeneratingOnly ? (
                             <GeneratingFilesProgress />
+                          ) : showErrorOnly ? (
+                            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                              <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700 }}>
+                                {group.jobError || "File generation failed."}
+                              </Typography>
+                              <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
+                                Retry
+                              </Button>
+                            </Stack>
                           ) : !downloadable ? (
                             <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
                               Files available after release
@@ -1055,7 +1130,13 @@ export default function ReportsPage() {
                       {paginatedGroups.map((group) => {
                         const hasDownloads = hasGroupDownloadVariants(group);
                         const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
-                        const status = statusTone(group.approvalStatus, showGeneratingOnly, group.release_status);
+                        const showErrorOnly = group.generationState === "error" && !hasDownloads;
+                        const status = statusTone(
+                          group.approvalStatus,
+                          showGeneratingOnly,
+                          group.release_status,
+                          group.generationState
+                        );
                         const downloadable = group.downloadable !== false;
                         const title = group.contract_no
                           ? `${typeLabel(group.type)} · ${group.contract_no}`
@@ -1072,7 +1153,7 @@ export default function ReportsPage() {
                           >
                             <Box component="td" sx={{ px: 2.5, py: 2 }}>
                               <Typography sx={{ color: "var(--app-text)", fontWeight: 800 }}>
-                                {title}
+                                {title}{group.lotSummary ? ` - ${group.lotSummary}` : ""}
                               </Typography>
                               <Typography sx={{ color: "var(--app-text-muted)", mt: 0.4 }}>
                                 {group.address || "No address provided"}
@@ -1113,6 +1194,15 @@ export default function ReportsPage() {
                               >
                                 {showGeneratingOnly ? (
                                   <GeneratingFilesProgress />
+                                ) : showErrorOnly ? (
+                                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                                    <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700, maxWidth: 220 }}>
+                                      {group.jobError || "File generation failed."}
+                                    </Typography>
+                                    <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
+                                      Retry
+                                    </Button>
+                                  </Stack>
                                 ) : !downloadable ? (
                                   <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
                                     Files available after release

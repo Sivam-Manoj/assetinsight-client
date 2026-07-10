@@ -10,8 +10,13 @@ export type DirectUploadFile = {
 
 type UploadSession = {
   sessionId: string;
-  reportId: string;
+  reportId?: string;
   jobId: string;
+  status?: string;
+  resumed?: boolean;
+  alreadyQueued?: boolean;
+  processed?: boolean;
+  readyToComplete?: boolean;
   files: Array<{
     fileId: string;
     uploadUrl: string;
@@ -102,7 +107,8 @@ export async function uploadReportFilesDirectToR2(args: {
   const totalBytes = args.files.reduce((sum, item) => sum + (item.file.size || 1), 0) || 1;
   let uploadedBytes = 0;
   const manifest = args.files.map((item, index) => ({
-    fileId: `${item.fieldname || "images"}-${index}-${Date.now()}`,
+    // Keep file ids deterministic so create/complete can be retried safely.
+    fileId: `${item.fieldname || "images"}-${index}`,
     name: item.file.name || `${item.fieldname || "image"}-${index + 1}`,
     type: item.file.type || "application/octet-stream",
     size: item.file.size,
@@ -120,16 +126,29 @@ export async function uploadReportFilesDirectToR2(args: {
     }
   );
   const session = sessionEnvelope.data;
+  if (session.alreadyQueued && session.reportId) {
+    args.onUploadProgress?.(1);
+    return {
+      message: "Submission already accepted and is being processed.",
+      jobId: session.jobId,
+      reportId: session.reportId,
+      status: session.status || "processing",
+      phase: session.processed || session.status === "processed" ? "done" : "processing",
+      resumed: true,
+    };
+  }
   const targetById = new Map(session.files.map((file) => [file.fileId, file]));
 
-  await mapWithConcurrency(args.files, async (item, index) => {
-    const target = targetById.get(manifest[index].fileId);
-    if (!target) throw new Error(`Missing upload target for ${item.file.name}`);
-    await putFileWithRetry(target.uploadUrl, item.file, target.contentType, (delta) => {
-      uploadedBytes += delta;
-      args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
+  if (!session.readyToComplete) {
+    await mapWithConcurrency(args.files, async (item, index) => {
+      const target = targetById.get(manifest[index].fileId);
+      if (!target) throw new Error(`Missing upload target for ${item.file.name}`);
+      await putFileWithRetry(target.uploadUrl, item.file, target.contentType, (delta) => {
+        uploadedBytes += delta;
+        args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
+      });
     });
-  });
+  }
 
   args.onUploadProgress?.(0.95);
   const { data } = await API.post(`${args.endpoint}/upload-session/${session.sessionId}/complete`, {});

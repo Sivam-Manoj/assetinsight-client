@@ -51,6 +51,8 @@ export interface LotListing {
   job_status?: "queued" | "processing" | "done" | "error";
   job_error?: string;
   error_message?: string;
+  generation_state?: "queued" | "processing" | "ready" | "error";
+  files_ready?: boolean;
   files_generating?: boolean;
   files_regenerating?: boolean;
   include_damage_analysis?: boolean;
@@ -244,7 +246,9 @@ export async function getSubmittedLotListings(): Promise<{ data: LotListing[] }>
     (r) =>
       r.status === "pending_approval" ||
       r.status === "approved" ||
-      (r.status === "processing" && (r.files_generating || r.files_regenerating))
+      r.generation_state === "queued" ||
+      r.generation_state === "processing" ||
+      r.generation_state === "error"
   );
   return { data: submitted };
 }

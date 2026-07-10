@@ -28,6 +28,7 @@ import {
   CURRENT_BROWSER_LOCATION_LABEL,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
+import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 
 // // Code-split the CatalogueSection for camera-based lot capture (disabled for Mixed-only)
 // const CatalogueSection = dynamic(() => import("./catalogue/CatalogueSection"), {
@@ -231,6 +232,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const pollIntervalRef = useRef<any>(null);
   const pollStartedRef = useRef(false);
   const jobIdRef = useRef<string | null>(null);
+  const forceNewSubmissionRef = useRef(false);
+  const [activeReportConflict, setActiveReportConflict] = useState(false);
   
   // Upload stats for progress modal
   const [uploadStats, setUploadStats] = useState<{
@@ -336,10 +339,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     
     try {
       setDraftSaving(true);
+      jobIdRef.current ||= `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const deviceId = getDeviceId();
       
       // Prepare form data
       const formData = {
+        clientSubmissionId: jobIdRef.current,
         clientName,
         effectiveDate,
         appraisalPurpose,
@@ -462,6 +467,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   // Restore form fields helper
   const restoreFormFields = (formData: any) => {
+    if (formData.clientSubmissionId) jobIdRef.current = String(formData.clientSubmissionId);
     if (formData.clientName) setClientName(formData.clientName);
     if (formData.effectiveDate) setEffectiveDate(formData.effectiveDate);
     if (formData.appraisalPurpose) setAppraisalPurpose(formData.appraisalPurpose);
@@ -1098,8 +1104,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       );
     } catch {}
   }, [currencyTouched]);
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
 
     if (!validateForm()) {
       setError("Please fix required fields.");
@@ -1266,9 +1272,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
       // Generate a job/progress id for server-side tracking
       const jobId =
-        typeof crypto !== "undefined" && (crypto as any)?.randomUUID
+        jobIdRef.current ||
+        (typeof crypto !== "undefined" && (crypto as any)?.randomUUID
           ? (crypto as any).randomUUID()
-          : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
       jobIdRef.current = jobId;
 
       const payload: AssetCreateDetails = {
@@ -1302,6 +1309,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         include_damage_analysis: includeDamageAnalysis,
         bank_photos_enabled: bankPhotosEnabled,
         progress_id: jobId,
+        client_submission_id: jobId,
+        force_new: forceNewSubmissionRef.current,
         ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
         ...(factorsAgeCondition.trim() && {
           factors_age_condition: factorsAgeCondition.trim(),
@@ -1349,11 +1358,17 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         window.dispatchEvent(new Event("cv:report-created"));
       }
       clearFieldsAfterSubmit();
+      forceNewSubmissionRef.current = false;
       setSubmitting(false);
       onSuccess?.(msg);
     } catch (err: any) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       setProgressPhase("error");
+      if (err?.response?.status === 409 && err?.response?.data?.code === "ACTIVE_REPORT_EXISTS") {
+        setSubmitting(false);
+        setActiveReportConflict(true);
+        return;
+      }
       const msg =
         err?.response?.data?.message ||
         err?.message ||
@@ -2072,6 +2087,26 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           </Fragment>
         )}
       </div>
+      <ActiveReportConflictDialog
+        open={activeReportConflict}
+        reportLabel="asset report"
+        onCancel={() => setActiveReportConflict(false)}
+        onResume={() => {
+          setActiveReportConflict(false);
+          window.dispatchEvent(new Event("cv:report-created"));
+          toast.info("The existing report is still processing. Check My Reports for its status.");
+          onSuccess?.("Existing report resumed. Open My Reports to follow its progress.");
+        }}
+        onCreateSeparate={() => {
+          setActiveReportConflict(false);
+          jobIdRef.current =
+            typeof crypto !== "undefined" && (crypto as any)?.randomUUID
+              ? (crypto as any).randomUUID()
+              : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          forceNewSubmissionRef.current = true;
+          window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
     </form>
   );
 });

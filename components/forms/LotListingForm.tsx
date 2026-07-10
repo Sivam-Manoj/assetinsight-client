@@ -10,6 +10,7 @@ import {
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 import { uploadReportFilesDirectToR2, type DirectUploadFile } from "@/services/directUpload";
+import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
@@ -92,6 +93,8 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
   >(() => Object.fromEntries(STEPS.map((s) => [s.key, "pending"])));
   const pollIntervalRef = useRef<any>(null);
   const jobIdRef = useRef<string | null>(null);
+  const forceNewSubmissionRef = useRef(false);
+  const [activeReportConflict, setActiveReportConflict] = useState(false);
 
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
@@ -126,8 +129,10 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     if (submitting || mixedLots.length === 0) return;
 
     try {
+      jobIdRef.current ||= `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       // Save form data
       const formData = {
+        clientSubmissionId: jobIdRef.current,
         contractNo,
         salesDate,
         location,
@@ -206,6 +211,7 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       if (images.length === 0) return false;
 
       // Restore form fields
+      if (formData.clientSubmissionId) jobIdRef.current = String(formData.clientSubmissionId);
       if (formData.contractNo) setContractNo(formData.contractNo);
       if (formData.salesDate) setSalesDate(formData.salesDate);
       if (formData.location) setLocation(formData.location);
@@ -468,8 +474,8 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     toast.success("Draft saved");
   };
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
 
     if (!validateForm()) {
       setError("Please fix required fields.");
@@ -515,9 +521,10 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
       });
 
       const jobId =
-        typeof crypto !== "undefined" && (crypto as any)?.randomUUID
+        jobIdRef.current ||
+        (typeof crypto !== "undefined" && (crypto as any)?.randomUUID
           ? (crypto as any).randomUUID()
-          : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
       jobIdRef.current = jobId;
 
       const details = {
@@ -536,6 +543,8 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         include_damage_analysis: true,
         bank_photos_enabled: bankPhotosEnabled,
         progress_id: jobId,
+        client_submission_id: jobId,
+        force_new: forceNewSubmissionRef.current,
         mixed_lots: mixedLots.map((l) => ({
           count: l.files.length,
           extra_count: (l.extraFiles || []).length,
@@ -582,8 +591,10 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
           },
         });
         response = { data };
-      } catch (directError) {
-        console.warn("[LotListingForm] Direct R2 upload failed; falling back to multipart upload:", directError);
+      } catch (directError: any) {
+        const status = Number(directError?.response?.status || 0);
+        if (![404, 405, 501].includes(status)) throw directError;
+        console.warn("[LotListingForm] Direct upload is unsupported; using legacy multipart upload.");
         const formData = new FormData();
         filesToSend.forEach((file) => {
           formData.append("images", file);
@@ -615,11 +626,17 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
         window.dispatchEvent(new Event("cv:report-created"));
       }
       clearForm(false);
+      forceNewSubmissionRef.current = false;
       setSubmitting(false);
       onSuccess?.(msg);
     } catch (err: any) {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       setProgressPhase("error");
+      if (err?.response?.status === 409 && err?.response?.data?.code === "ACTIVE_REPORT_EXISTS") {
+        setSubmitting(false);
+        setActiveReportConflict(true);
+        return;
+      }
       const msg =
         err?.response?.data?.message || err?.message || "Failed to create lot listing";
       setError(msg);
@@ -906,6 +923,26 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
           </>
         )}
       </div>
+      <ActiveReportConflictDialog
+        open={activeReportConflict}
+        reportLabel="lot listing"
+        onCancel={() => setActiveReportConflict(false)}
+        onResume={() => {
+          setActiveReportConflict(false);
+          window.dispatchEvent(new Event("cv:report-created"));
+          toast.info("The existing report is still processing. Check My Reports for its status.");
+          onSuccess?.("Existing report resumed. Open My Reports to follow its progress.");
+        }}
+        onCreateSeparate={() => {
+          setActiveReportConflict(false);
+          jobIdRef.current =
+            typeof crypto !== "undefined" && (crypto as any)?.randomUUID
+              ? (crypto as any).randomUUID()
+              : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          forceNewSubmissionRef.current = true;
+          window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
     </form>
   );
 }

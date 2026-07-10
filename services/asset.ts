@@ -134,8 +134,10 @@ export const AssetService = {
         files: directFiles,
         onUploadProgress: options?.onUploadProgress,
       });
-    } catch (error) {
-      console.warn("[AssetService] Direct R2 upload failed; falling back to multipart upload:", error);
+    } catch (error: any) {
+      const status = Number(error?.response?.status || 0);
+      if (![404, 405, 501].includes(status)) throw error;
+      console.warn("[AssetService] Direct upload is unsupported; using legacy multipart upload.");
     }
 
     const fd = new FormData();

@@ -13,6 +13,8 @@ export interface AssetReport {
   job_id?: string;
   job_status?: "queued" | "processing" | "done" | "error";
   job_error?: string;
+  generation_state?: "queued" | "processing" | "ready" | "error";
+  files_ready?: boolean;
   preview_data?: any;
   preview_files?: {
     pdf?: string;
@@ -44,6 +46,10 @@ export interface PreviewDataResponse {
     status: ReportStatus;
     files_generating?: boolean;
     files_regenerating?: boolean;
+    generation_state?: "queued" | "processing" | "ready" | "error";
+    files_ready?: boolean;
+    job_status?: "queued" | "processing" | "done" | "error";
+    job_error?: string;
     preview_data: any;
     preview_files?: {
       pdf?: string;
