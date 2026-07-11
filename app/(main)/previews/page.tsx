@@ -174,6 +174,10 @@ export default function PreviewsPage() {
 
       const assetPreviews: CombinedReport[] = (assetResponse.data || [])
         .filter((report) => {
+          const wasSubmitted = Boolean(
+            (report as any).preview_submitted_at ||
+            (report as any).approval_requested_at
+          );
           const generating =
             Boolean((report as any).files_generating) ||
             Boolean((report as any).files_regenerating);
@@ -182,19 +186,29 @@ export default function PreviewsPage() {
               report.status === "error" ||
               report.status === "preview" ||
               report.status === "declined") &&
-            !generating
+            !generating &&
+            !wasSubmitted
           );
         })
         .map((report) => ({ ...report, reportType: "asset" as const }));
 
       const realEstatePreviews: CombinedReport[] = (realEstateResponse.data || [])
         .filter(
-          (report) => report.status === "preview" || report.status === "declined"
+          (report: any) =>
+            (report.status === "preview" || report.status === "declined") &&
+            !report.preview_submitted_at &&
+            !report.approval_requested_at
         )
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
 
       const lotListingPreviews: CombinedReport[] = (lotListingResponse.data || [])
         .filter((report) => {
+          const wasSubmitted = Boolean(
+            (report as any).preview_submitted_at ||
+            (report as any).approval_requested_at ||
+            (report as any).generation_target_status === "approved" ||
+            (report as any).generation_target_status === "pending_approval"
+          );
           const generating =
             Boolean((report as any).files_generating) ||
             Boolean((report as any).files_regenerating);
@@ -202,7 +216,8 @@ export default function PreviewsPage() {
             ((report.status === "processing" && !generating) ||
               report.status === "error" ||
               report.status === "preview" ||
-              report.status === "declined")
+              report.status === "declined") &&
+            !wasSubmitted
           );
         })
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
@@ -212,8 +227,11 @@ export default function PreviewsPage() {
         .map((report) => ({ ...report, reportType: "asset" as const }));
       const realEstateSubmitted: CombinedReport[] = (realEstateResponse.data || [])
         .filter(
-          (report) =>
-            report.status === "pending_approval" || report.status === "approved"
+          (report: any) =>
+            report.status === "pending_approval" ||
+            report.status === "approved" ||
+            Boolean(report.preview_submitted_at) ||
+            Boolean(report.approval_requested_at)
         )
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
       const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
@@ -286,6 +304,7 @@ export default function PreviewsPage() {
   };
 
   const handleSuccess = () => {
+    setActiveTab("submitted");
     requestReportsRefetch();
     void loadReports();
     toast.success("Report submitted successfully.");

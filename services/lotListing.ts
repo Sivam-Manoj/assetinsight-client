@@ -256,12 +256,13 @@ export async function getSubmittedLotListings(): Promise<{ data: LotListing[] }>
   // Server returns { message, data }, so extract the data array
   const listings = Array.isArray(response.data) ? response.data : (response.data?.data || []);
   const submitted = listings.filter(
-    (r) =>
+    (r: any) =>
       r.status === "pending_approval" ||
       r.status === "approved" ||
-      r.generation_state === "queued" ||
-      r.generation_state === "processing" ||
-      r.generation_state === "error"
+      Boolean(r.preview_submitted_at) ||
+      Boolean(r.approval_requested_at) ||
+      r.generation_target_status === "approved" ||
+      r.generation_target_status === "pending_approval"
   );
   return { data: submitted };
 }
