@@ -7,20 +7,30 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   InputAdornment,
   LinearProgress,
   MenuItem,
+  Paper,
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
-  DownloadRounded,
+  CollectionsRounded,
+  DeleteOutlineRounded,
+  DescriptionRounded,
+  InsertDriveFileRounded,
   MergeRounded,
+  PictureAsPdfRounded,
   RefreshRounded,
+  RestartAltRounded,
   SearchRounded,
+  TableChartRounded,
+  VisibilityRounded,
 } from "@mui/icons-material";
 import { toast } from "react-toastify";
 import { ReportsService, type PdfReport } from "@/services/reports";
@@ -30,7 +40,7 @@ import {
   RealEstateService,
   type RealEstateReport,
 } from "@/services/realEstate";
-import { EmptyState, PageHeader, SectionPanel, SurfaceCard } from "@/components/common/WorkspaceUI";
+import { EmptyState, SurfaceCard } from "@/components/common/WorkspaceUI";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -58,6 +68,8 @@ type ReportGroup = {
   };
   jobError?: string;
   lotSummary?: string;
+  lotCount?: number;
+  thumbnail?: string;
   type?: string;
   isMergedReport?: boolean;
   mergedSourceCount?: number;
@@ -134,8 +146,11 @@ function statusTone(
       label: "Awaiting release",
     };
   }
+  if (status === "approved" && releaseStatus === "released") {
+    return { bg: "#e8f7ee", color: "#087a43", label: "Released" };
+  }
   if (status === "approved") {
-    return { bg: "rgba(5,150,105,0.12)", color: "#059669", label: "Approved" };
+    return { bg: "#e8f7ee", color: "#087a43", label: "Approved" };
   }
   if (status === "rejected") {
     return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Rejected" };
@@ -183,57 +198,98 @@ function hasGroupDownloadVariants(group: ReportGroup) {
   });
 }
 
-function actionButtonSx(kind: "download" | "delete") {
+function actionButtonSx(kind: "download" | "delete"): Record<string, any> {
   if (kind === "delete") {
     return {
-      minWidth: 0,
-      px: 1.8,
-      py: 0.95,
-      borderRadius: 999,
-      fontWeight: 800,
-      fontSize: 13,
-      lineHeight: 1,
+      minWidth: 52,
+      minHeight: 54,
+      px: 0.75,
+      py: 0.65,
+      borderRadius: 1.25,
+      fontWeight: 700,
+      fontSize: 10,
+      lineHeight: 1.1,
       textTransform: "none",
-      whiteSpace: "nowrap",
-      flexShrink: 0,
-      borderColor: "rgba(244, 63, 94, 0.4)",
-      color: "#fb7185",
-      bgcolor: "transparent",
+      whiteSpace: "normal",
+      borderColor: "rgba(220,38,38,0.28)",
+      color: "#dc2626",
+      bgcolor: "var(--app-panel-soft)",
+      flexDirection: "column",
+      gap: 0.35,
+      "& .MuiButton-startIcon": { m: 0 },
       "&:hover": {
-        borderColor: "#fb7185",
-        bgcolor: "rgba(244, 63, 94, 0.08)",
+        borderColor: "#dc2626",
+        bgcolor: "rgba(220,38,38,0.06)",
       },
     };
   }
 
   return {
-    minWidth: 0,
-    px: 1.8,
-    py: 0.95,
-    borderRadius: 999,
-    fontWeight: 800,
-    fontSize: 13,
-    lineHeight: 1,
+    minWidth: 50,
+    minHeight: 54,
+    px: 0.65,
+    py: 0.65,
+    borderRadius: 1.25,
+    fontWeight: 700,
+    fontSize: 10,
+    lineHeight: 1.1,
     textTransform: "none",
-    whiteSpace: "nowrap",
-    flexShrink: 0,
-    color: "#ecf6ff",
-    border: "none",
-    background:
-      "linear-gradient(135deg, #1d5fe2 0%, #0f4ccf 100%)",
-    boxShadow: "0 10px 24px rgba(15, 76, 207, 0.24)",
+    whiteSpace: "normal",
+    color: "var(--app-text)",
+    border: "1px solid var(--app-border)",
+    background: "var(--app-panel-soft)",
+    boxShadow: "none",
+    flexDirection: "column",
+    gap: 0.35,
+    "& .MuiButton-startIcon": { m: 0 },
     "&:hover": {
-      background:
-        "linear-gradient(135deg, #2a69eb 0%, #1556da 100%)",
-      boxShadow: "0 12px 28px rgba(15, 76, 207, 0.3)",
+      borderColor: "var(--app-accent)",
+      color: "var(--app-accent)",
+      background: "var(--app-accent-soft)",
+      boxShadow: "none",
     },
     "&.Mui-disabled": {
-      color: "rgba(236, 246, 255, 0.68)",
-      background:
-        "linear-gradient(135deg, rgba(29,95,226,0.38) 0%, rgba(15,76,207,0.38) 100%)",
+      color: "var(--app-text-muted)",
+      background: "var(--app-panel-soft)",
       boxShadow: "none",
     },
   };
+}
+
+function fileActionIcon(
+  variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images"
+) {
+  if (variant === "pdf") return <VisibilityRounded sx={{ fontSize: 18 }} />;
+  if (variant === "specPdf") return <PictureAsPdfRounded sx={{ fontSize: 18 }} />;
+  if (variant === "xlsx") return <TableChartRounded sx={{ fontSize: 18 }} />;
+  if (variant === "images") return <CollectionsRounded sx={{ fontSize: 18 }} />;
+  return <DescriptionRounded sx={{ fontSize: 18 }} />;
+}
+
+function getFirstReportImage(lots: any[], report: any): string | undefined {
+  const globalImages = [
+    ...(Array.isArray(report?.preview_data?.image_urls) ? report.preview_data.image_urls : []),
+    ...(Array.isArray(report?.image_urls) ? report.image_urls : []),
+  ].filter((value) => typeof value === "string" && value.trim());
+
+  for (const lot of Array.isArray(lots) ? lots : []) {
+    const direct = [
+      lot?.image_url,
+      ...(Array.isArray(lot?.image_urls) ? lot.image_urls : []),
+      ...(Array.isArray(lot?.extra_image_urls) ? lot.extra_image_urls : []),
+    ].find((value) => typeof value === "string" && value.trim());
+    if (direct) return direct;
+
+    const firstIndex = [
+      ...(Array.isArray(lot?.image_indexes) ? lot.image_indexes : []),
+      ...(Array.isArray(lot?.extra_image_indexes) ? lot.extra_image_indexes : []),
+    ].find((value) => Number.isInteger(Number(value)));
+    if (firstIndex !== undefined && globalImages[Number(firstIndex)]) {
+      return globalImages[Number(firstIndex)];
+    }
+  }
+
+  return globalImages[0];
 }
 
 function GeneratingFilesProgress({ progress }: { progress?: ReportGroup["generationProgress"] }) {
@@ -481,6 +537,7 @@ export default function ReportsPage() {
           downloadable: (report as any).downloadable !== false,
           isGeneratingFiles: false,
           generationState: "ready",
+          lotCount: Number((report as any).lot_count || 0),
           type: (report as any).type,
           variants: {},
         };
@@ -562,6 +619,8 @@ export default function ReportsPage() {
         generationProgress: (asset as any).generation_progress,
         jobError: (asset as any).job_error,
         lotSummary: summarizeLotNumbers(lots, asset._id),
+        lotCount: lots.length,
+        thumbnail: getFirstReportImage(lots, asset),
         type: "Asset",
         isMergedReport: (asset as any).is_merged_report === true,
         mergedSourceCount: Array.isArray((asset as any).merged_from_report_ids)
@@ -645,6 +704,8 @@ export default function ReportsPage() {
         generationState: (report as any).generation_state,
         generationProgress: (report as any).generation_progress,
         jobError: (report as any).job_error,
+        lotCount: 1,
+        thumbnail: getFirstReportImage([], report),
         type: "RealEstate",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -736,6 +797,8 @@ export default function ReportsPage() {
         generationProgress: (listing as any).generation_progress,
         jobError: (listing as any).job_error,
         lotSummary: summarizeLotNumbers(lots, listing._id),
+        lotCount: lots.length,
+        thumbnail: getFirstReportImage(lots, listing),
         type: "LotListing",
         variants: {
           specPdf: previewFiles.spec_pdf
@@ -913,429 +976,437 @@ export default function ReportsPage() {
     }
   }
 
-  return (
-    <Stack spacing={3}>
-      <PageHeader
-        eyebrow="Records"
-        title="My Reports"
-        description="Search, filter, and download generated report packages across asset, real estate, salvage, and lot listing workflows."
-        action={
-          <Button
-            variant="outlined"
-            startIcon={
-              refreshing ? (
-                <CircularProgress color="inherit" size={16} />
-              ) : (
-                <RefreshRounded />
-              )
-            }
-            onClick={() => void handleManualRefresh()}
-            disabled={loading || refreshing}
-            sx={{ whiteSpace: "nowrap" }}
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
-      />
+  const resetFilters = () => {
+    setQuery("");
+    setTypeFilter("");
+    setSortBy("date-desc");
+    setPageSize(20);
+    setPage(1);
+  };
 
-      <SectionPanel
-        title="Report library"
-        subtitle="All approved and pending report packages in one searchable workspace."
+  const renderFileControls = (group: ReportGroup) => {
+    const hasDownloads = hasGroupDownloadVariants(group);
+    const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
+    const showErrorOnly = group.generationState === "error" && !hasDownloads;
+    const downloadable = group.downloadable !== false;
+
+    if (showGeneratingOnly) {
+      return <GeneratingFilesProgress progress={group.generationProgress} />;
+    }
+
+    if (showErrorOnly) {
+      return (
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Typography sx={{ color: "#dc2626", fontSize: 12, fontWeight: 700 }}>
+            {group.jobError || "File generation failed."}
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
+            Retry
+          </Button>
+        </Stack>
+      );
+    }
+
+    if (!downloadable) {
+      return (
+        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+          Files available after release
+        </Typography>
+      );
+    }
+
+    return (
+      <Stack direction="row" spacing={0.55} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+        {(["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map(
+          (variant) => {
+            const file = group.variants[variant];
+            if (!file) return null;
+            const disabled =
+              downloadingId === file._id ||
+              !downloadable ||
+              (!!file.approvalStatus && file.approvalStatus !== "approved");
+            const label = actionLabel(variant);
+            return (
+              <Tooltip key={variant} title={`Download ${label}`} arrow>
+                <span>
+                  <Button
+                    size="small"
+                    startIcon={fileActionIcon(variant)}
+                    onClick={() => handleDownload(file._id)}
+                    disabled={disabled}
+                    sx={{
+                      ...actionButtonSx("download"),
+                      minWidth: variant === "crDocx" ? 62 : 50,
+                    }}
+                  >
+                    {downloadingId === file._id ? "..." : label}
+                  </Button>
+                </span>
+              </Tooltip>
+            );
+          }
+        )}
+      </Stack>
+    );
+  };
+
+  const renderReportActions = (group: ReportGroup) => (
+    <Stack direction="row" spacing={0.55} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+      {String(group.type || "").toLowerCase() === "asset" ? (
+        <Tooltip title="Merge this report with other Asset reports using the same contract" arrow>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<MergeRounded sx={{ fontSize: 18 }} />}
+            onClick={() => setMergeAnchorId(group.key)}
+            sx={{ ...actionButtonSx("download"), minWidth: 72 }}
+          >
+            Merge
+          </Button>
+        </Tooltip>
+      ) : null}
+      <Tooltip title="Permanently delete this report" arrow>
+        <span>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DeleteOutlineRounded sx={{ fontSize: 18 }} />}
+            onClick={() => handleDelete(group)}
+            disabled={deletingKey === group.key}
+            sx={actionButtonSx("delete")}
+          >
+            {deletingKey === group.key ? "..." : "Delete"}
+          </Button>
+        </span>
+      </Tooltip>
+    </Stack>
+  );
+
+  return (
+    <Stack
+      spacing={2.25}
+      sx={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}
+    >
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={1.5}
+        sx={{ alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between" }}
       >
-        <Stack spacing={2.5}>
-          <Box
-            sx={{
-              display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: {
-                xs: "1fr",
-                sm: "1.5fr repeat(3, minmax(0, 0.7fr))",
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+            <Typography variant="h3" sx={{ color: "var(--app-text)", fontWeight: 800 }}>
+              My Reports
+            </Typography>
+            <Chip
+              size="small"
+              label={groups.length}
+              sx={{ borderRadius: 1.25, fontWeight: 800, bgcolor: "var(--app-panel-soft)" }}
+            />
+          </Stack>
+          <Typography sx={{ mt: 0.65, color: "var(--app-text-muted)" }}>
+            Review report status and download each available file directly.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={refreshing ? <CircularProgress color="inherit" size={16} /> : <RefreshRounded />}
+          onClick={() => void handleManualRefresh()}
+          disabled={loading || refreshing}
+          sx={{ borderRadius: 1.5, whiteSpace: "nowrap" }}
+        >
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </Button>
+      </Stack>
+
+      <Paper
+        elevation={0}
+        sx={{
+          p: { xs: 1.5, md: 2 },
+          border: "1px solid var(--app-border)",
+          borderRadius: 2,
+          bgcolor: "var(--app-panel-soft)",
+          minWidth: 0,
+        }}
+      >
+        <Box
+          sx={{
+            display: "grid",
+            gap: 1.25,
+            alignItems: "center",
+            gridTemplateColumns: {
+              xs: "minmax(0, 1fr)",
+              sm: "repeat(2, minmax(0, 1fr))",
+              lg: "minmax(260px, 1.5fr) minmax(145px, .65fr) minmax(175px, .8fr) minmax(125px, .55fr) auto",
+            },
+          }}
+        >
+          <TextField
+            size="small"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search reports..."
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRounded sx={{ color: "var(--app-text-muted)" }} />
+                  </InputAdornment>
+                ),
               },
             }}
+          />
+          <Select
+            size="small"
+            value={typeFilter}
+            displayEmpty
+            onChange={(event) => setTypeFilter(String(event.target.value))}
           >
-            <TextField
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by report, contract, value, or date"
-            />
-            <Select
-              value={typeFilter}
-              displayEmpty
-              onChange={(event) => setTypeFilter(String(event.target.value))}
-            >
-              <MenuItem value="">All types</MenuItem>
-              {availableTypes.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {typeLabel(type)}
-                </MenuItem>
-              ))}
-            </Select>
-            <Select
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value as any)}
-            >
-              <MenuItem value="date-desc">Newest first</MenuItem>
-              <MenuItem value="date-asc">Oldest first</MenuItem>
-              <MenuItem value="value-desc">Value high to low</MenuItem>
-              <MenuItem value="value-asc">Value low to high</MenuItem>
-            </Select>
-            <Select
-              value={pageSize}
-              onChange={(event) => setPageSize(Number(event.target.value))}
-            >
-              {[10, 20, 50].map((size) => (
-                <MenuItem key={size} value={size}>
-                  {size} / page
-                </MenuItem>
-              ))}
-            </Select>
-          </Box>
+            <MenuItem value="">All types</MenuItem>
+            {availableTypes.map((type) => (
+              <MenuItem key={type} value={type}>
+                {typeLabel(type)}
+              </MenuItem>
+            ))}
+          </Select>
+          <Select
+            size="small"
+            value={sortBy}
+            onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+          >
+            <MenuItem value="date-desc">Newest first</MenuItem>
+            <MenuItem value="date-asc">Oldest first</MenuItem>
+            <MenuItem value="value-desc">Value high to low</MenuItem>
+            <MenuItem value="value-asc">Value low to high</MenuItem>
+          </Select>
+          <Select
+            size="small"
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+          >
+            {[10, 20, 50].map((size) => (
+              <MenuItem key={size} value={size}>
+                {size} rows
+              </MenuItem>
+            ))}
+          </Select>
+          <Button
+            variant="outlined"
+            startIcon={<RestartAltRounded />}
+            onClick={resetFilters}
+            sx={{ borderRadius: 1.5, whiteSpace: "nowrap" }}
+          >
+            Reset
+          </Button>
+        </Box>
+      </Paper>
 
+      {loading ? (
+        <Paper
+          elevation={0}
+          sx={{ minHeight: 320, display: "grid", placeItems: "center", border: "1px solid var(--app-border)", borderRadius: 2 }}
+        >
+          <Stack spacing={2} sx={{ alignItems: "center" }}>
+            <CircularProgress />
+            <Typography sx={{ color: "var(--app-text-muted)" }}>Loading reports...</Typography>
+          </Stack>
+        </Paper>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : filteredGroups.length === 0 ? (
+        <EmptyState
+          title="No reports found"
+          description={
+            groups.length === 0
+              ? "Create a report from the dashboard to populate this page."
+              : "No reports match the current search and filters."
+          }
+        />
+      ) : (
+        <>
           <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1}
-            sx={{ justifyContent: "space-between" }}
+            spacing={1.25}
+            sx={{ display: "flex", "@media (min-width: 1280px)": { display: "none" } }}
           >
-            <Typography sx={{ color: "var(--app-text-muted)" }}>
-              Showing {totalItems === 0 ? 0 : startIndex + 1}-{endIndex} of {totalItems}
-            </Typography>
-            <Typography sx={{ color: "var(--app-text-muted)" }}>
-              Includes grouped variant downloads where available.
-            </Typography>
+            {paginatedGroups.map((group) => {
+              const hasDownloads = hasGroupDownloadVariants(group);
+              const status = statusTone(
+                group.approvalStatus,
+                Boolean(group.isGeneratingFiles) && !hasDownloads,
+                group.release_status,
+                group.generationState
+              );
+              const title = group.contract_no
+                ? `${typeLabel(group.type)} - ${group.contract_no}`
+                : group.address || typeLabel(group.type);
+              return (
+                <SurfaceCard key={group.key} sx={{ p: { xs: 1.75, sm: 2 }, borderRadius: 2, overflow: "hidden" }}>
+                  <Stack spacing={1.6}>
+                    <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, alignItems: "flex-start" }}>
+                      <Box
+                        sx={{
+                          width: 68,
+                          height: 68,
+                          flex: "0 0 68px",
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 1.25,
+                          overflow: "hidden",
+                          bgcolor: "rgba(148,163,184,.08)",
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        {group.thumbnail ? (
+                          <Box component="img" src={group.thumbnail} alt="" loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <InsertDriveFileRounded sx={{ color: "var(--app-text-muted)" }} />
+                        )}
+                      </Box>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography sx={{ color: "var(--app-text)", fontWeight: 800, overflowWrap: "anywhere" }}>
+                          {title}
+                        </Typography>
+                        {group.contract_no ? (
+                          <Typography variant="body2" sx={{ mt: 0.25, color: "var(--app-text-muted)" }}>
+                            Contract: {group.contract_no}
+                          </Typography>
+                        ) : null}
+                        {group.lotSummary ? (
+                          <Typography variant="body2" sx={{ mt: 0.25, color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>
+                            {group.lotSummary}
+                          </Typography>
+                        ) : null}
+                        {group.isMergedReport ? (
+                          <Typography sx={{ color: "#2563eb", mt: 0.35, fontSize: 12, fontWeight: 800 }}>
+                            Merged from {group.mergedSourceCount || 2} reports
+                          </Typography>
+                        ) : null}
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={status.label}
+                        sx={{ borderRadius: 1.25, bgcolor: status.bg, color: status.color, fontWeight: 800, flexShrink: 0 }}
+                      />
+                    </Stack>
+
+                    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }, gap: 1 }}>
+                      {[
+                        ["Lots / FMV", `${group.lotCount || "-"} lot${group.lotCount === 1 ? "" : "s"} · ${group.fairMarketValue || "-"}`],
+                        ["Type", typeLabel(group.type)],
+                        ["Created", new Date(group.createdAt).toLocaleDateString()],
+                        ["Client", group.address && group.address !== group.contract_no ? group.address : "-"],
+                      ].map(([label, value]) => (
+                        <Box key={label} sx={{ p: 1, bgcolor: "rgba(148,163,184,.06)", borderRadius: 1.25, minWidth: 0 }}>
+                          <Typography variant="caption" sx={{ color: "var(--app-text-muted)", fontWeight: 700 }}>{label}</Typography>
+                          <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700, overflowWrap: "anywhere" }}>{value}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+
+                    <Box>
+                      <Typography variant="caption" sx={{ display: "block", mb: 0.75, color: "var(--app-text-muted)", fontWeight: 800 }}>
+                        Files
+                      </Typography>
+                      {renderFileControls(group)}
+                    </Box>
+                    <Stack direction="row" sx={{ justifyContent: "flex-end" }}>{renderReportActions(group)}</Stack>
+                  </Stack>
+                </SurfaceCard>
+              );
+            })}
           </Stack>
 
-          {loading ? (
-            <Box sx={{ minHeight: 260, display: "grid", placeItems: "center" }}>
-              <Stack spacing={2} sx={{ alignItems: "center" }}>
-                <CircularProgress />
-                <Typography sx={{ color: "var(--app-text-muted)" }}>
-                  Loading reports...
-                </Typography>
-              </Stack>
-            </Box>
-          ) : error ? (
-            <Alert severity="error">{error}</Alert>
-          ) : filteredGroups.length === 0 ? (
-            <EmptyState
-              title="No reports found"
-              description={
-                groups.length === 0
-                  ? "Create a report from the dashboard to populate this library."
-                  : "No reports match the current search and filters."
-              }
-            />
-          ) : (
-            <>
-              <Stack spacing={1.5} sx={{ display: { xs: "flex", md: "none" } }}>
+          <SurfaceCard
+            sx={{
+              p: 0,
+              display: "none",
+              borderRadius: 2,
+              overflow: "hidden",
+              "@media (min-width: 1280px)": { display: "block" },
+            }}
+          >
+            <Box component="table" sx={{ width: "100%", maxWidth: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
+              <Box component="colgroup">
+                {["21%", "9%", "8%", "10%", "9%", "29%", "14%"].map((width, index) => (
+                  <Box component="col" key={index} sx={{ width }} />
+                ))}
+              </Box>
+              <Box component="thead">
+                <Box component="tr" sx={{ bgcolor: "rgba(148,163,184,.06)" }}>
+                  {["Report", "Lots / FMV", "Type", "Created", "Status", "Files", "Actions"].map((heading) => (
+                    <Box component="th" key={heading} sx={{ px: 1.25, py: 1.4, textAlign: "left", color: "var(--app-text)", fontSize: 12, fontWeight: 800, borderBottom: "1px solid var(--app-border)" }}>
+                      {heading}
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+              <Box component="tbody">
                 {paginatedGroups.map((group) => {
                   const hasDownloads = hasGroupDownloadVariants(group);
-                  const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
-                  const showErrorOnly = group.generationState === "error" && !hasDownloads;
                   const status = statusTone(
                     group.approvalStatus,
-                    showGeneratingOnly,
+                    Boolean(group.isGeneratingFiles) && !hasDownloads,
                     group.release_status,
                     group.generationState
                   );
-                  const downloadable = group.downloadable !== false;
                   const title = group.contract_no
-                    ? `${typeLabel(group.type)} · ${group.contract_no}`
+                    ? `${typeLabel(group.type)} - ${group.contract_no}`
                     : group.address || typeLabel(group.type);
                   return (
-                    <SurfaceCard key={group.key} sx={{ p: 2.25 }}>
-                      <Stack spacing={1.5}>
-                        <Stack direction="row" spacing={1.5} sx={{ justifyContent: "space-between" }}>
+                    <Box component="tr" key={group.key} sx={{ "&:not(:last-child) td": { borderBottom: "1px solid var(--app-border)" }, "&:hover": { bgcolor: "rgba(148,163,184,.035)" } }}>
+                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
+                        <Stack direction="row" spacing={1} sx={{ minWidth: 0, alignItems: "flex-start" }}>
+                          <Box sx={{ width: 58, height: 58, flex: "0 0 58px", border: "1px solid var(--app-border)", borderRadius: 1, overflow: "hidden", bgcolor: "rgba(148,163,184,.08)", display: "grid", placeItems: "center" }}>
+                            {group.thumbnail ? (
+                              <Box component="img" src={group.thumbnail} alt="" loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <InsertDriveFileRounded sx={{ color: "var(--app-text-muted)" }} />
+                            )}
+                          </Box>
                           <Box sx={{ minWidth: 0 }}>
-                            <Typography
-                              sx={{
-                                color: "var(--app-text)",
-                                fontWeight: 800,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {title}{group.lotSummary ? ` - ${group.lotSummary}` : ""}
-                            </Typography>
-                            <Typography sx={{ color: "var(--app-text-muted)", mt: 0.5 }}>
-                              {new Date(group.createdAt).toLocaleDateString()} · {group.fairMarketValue || "—"}
-                            </Typography>
-                          </Box>
-                          <Box
-                            sx={{
-                              px: 1.25,
-                              py: 0.5,
-                              borderRadius: 99,
-                              bgcolor: status.bg,
-                              color: status.color,
-                              fontWeight: 700,
-                              fontSize: 12,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {status.label}
+                            <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 800, overflowWrap: "anywhere" }}>{title}</Typography>
+                            {group.contract_no ? <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)" }}>Contract: {group.contract_no}</Typography> : null}
+                            {group.lotSummary ? <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>{group.lotSummary}</Typography> : null}
+                            {group.isMergedReport ? <Typography variant="caption" sx={{ display: "block", color: "#2563eb", fontWeight: 800 }}>Merged · {group.mergedSourceCount || 2} sources</Typography> : null}
                           </Box>
                         </Stack>
-                          <Typography sx={{ color: "var(--app-text-muted)" }}>
-                            {group.address || "No address provided"}
-                          </Typography>
-                          {group.isMergedReport ? (
-                            <Typography sx={{ color: "#2563eb", fontSize: 12, fontWeight: 800 }}>
-                              Merged from {group.mergedSourceCount || 2} Asset reports
-                            </Typography>
-                          ) : null}
-                        <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
-                          {showGeneratingOnly ? (
-                            <GeneratingFilesProgress progress={group.generationProgress} />
-                          ) : showErrorOnly ? (
-                            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                              <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700 }}>
-                                {group.jobError || "File generation failed."}
-                              </Typography>
-                              <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
-                                Retry
-                              </Button>
-                            </Stack>
-                          ) : !downloadable ? (
-                            <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
-                              Files available after release
-                            </Typography>
-                          ) : (
-                            (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
-                              const file = group.variants[variant];
-                              if (!file) return null;
-                              const disabled =
-                                downloadingId === file._id ||
-                                !downloadable ||
-                                (!!file.approvalStatus && file.approvalStatus !== "approved");
-                              return (
-                                <Button
-                                  key={variant}
-                                  size="small"
-                                  onClick={() => handleDownload(file._id)}
-                                  disabled={disabled}
-                                  sx={actionButtonSx("download")}
-                                >
-                                  {actionLabel(variant)}
-                                </Button>
-                              );
-                            })
-                          )}
-                          {String(group.type || "").toLowerCase() === "asset" ? (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              startIcon={<MergeRounded />}
-                              onClick={() => setMergeAnchorId(group.key)}
-                              sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
-                            >
-                              Merge Assets
-                            </Button>
-                          ) : null}
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleDelete(group)}
-                            disabled={deletingKey === group.key}
-                            sx={actionButtonSx("delete")}
-                          >
-                            {deletingKey === group.key ? "Deleting..." : "Delete"}
-                          </Button>
-                        </Stack>
-                      </Stack>
-                    </SurfaceCard>
+                      </Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
+                        <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700 }}>{group.lotCount || "-"} lot{group.lotCount === 1 ? "" : "s"}</Typography>
+                        <Typography variant="caption" sx={{ color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>{group.fairMarketValue || "-"}</Typography>
+                      </Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
+                        <Chip size="small" variant="outlined" label={typeLabel(group.type)} sx={{ borderRadius: 1, maxWidth: "100%" }} />
+                      </Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
+                        <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700 }}>{new Date(group.createdAt).toLocaleDateString()}</Typography>
+                        <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)" }}>{new Date(group.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Typography>
+                      </Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
+                        <Chip size="small" label={status.label} sx={{ borderRadius: 1, bgcolor: status.bg, color: status.color, fontWeight: 800, maxWidth: "100%" }} />
+                        {group.released_at ? <Typography variant="caption" sx={{ display: "block", mt: 0.45, color: "var(--app-text-muted)" }}>{new Date(group.released_at).toLocaleDateString()}</Typography> : null}
+                      </Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.1, verticalAlign: "top" }}>{renderFileControls(group)}</Box>
+                      <Box component="td" sx={{ px: 1.25, py: 1.1, verticalAlign: "top" }}>{renderReportActions(group)}</Box>
+                    </Box>
                   );
                 })}
-              </Stack>
+              </Box>
+            </Box>
+          </SurfaceCard>
 
-              <SurfaceCard sx={{ p: 0, display: { xs: "none", md: "block" }, overflow: "hidden" }}>
-                <Box sx={{ overflowX: "auto" }}>
-                  <Box component="table" sx={{ width: "100%", borderCollapse: "collapse" }}>
-                    <Box component="thead">
-                      <Box component="tr" sx={{ bgcolor: "rgba(148,163,184,0.08)" }}>
-                        {["Report", "Date", "Value", "Status", "Actions"].map((heading) => (
-                          <Box
-                            key={heading}
-                            component="th"
-                            sx={{
-                              textAlign: heading === "Actions" ? "right" : "left",
-                              px: 2.5,
-                              py: 1.75,
-                              color: "var(--app-text-muted)",
-                              fontSize: 12,
-                              fontWeight: 800,
-                              letterSpacing: "0.08em",
-                              textTransform: "uppercase",
-                              borderBottom: "1px solid var(--app-border)",
-                            }}
-                          >
-                            {heading}
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
-                    <Box component="tbody">
-                      {paginatedGroups.map((group) => {
-                        const hasDownloads = hasGroupDownloadVariants(group);
-                        const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
-                        const showErrorOnly = group.generationState === "error" && !hasDownloads;
-                        const status = statusTone(
-                          group.approvalStatus,
-                          showGeneratingOnly,
-                          group.release_status,
-                          group.generationState
-                        );
-                        const downloadable = group.downloadable !== false;
-                        const title = group.contract_no
-                          ? `${typeLabel(group.type)} · ${group.contract_no}`
-                          : group.address || typeLabel(group.type);
-                        return (
-                          <Box
-                            key={group.key}
-                            component="tr"
-                            sx={{
-                              "&:not(:last-child) td": {
-                                borderBottom: "1px solid var(--app-border)",
-                              },
-                            }}
-                          >
-                            <Box component="td" sx={{ px: 2.5, py: 2 }}>
-                              <Typography sx={{ color: "var(--app-text)", fontWeight: 800 }}>
-                                {title}{group.lotSummary ? ` - ${group.lotSummary}` : ""}
-                              </Typography>
-                              <Typography sx={{ color: "var(--app-text-muted)", mt: 0.4 }}>
-                                {group.address || "No address provided"}
-                              </Typography>
-                              {group.isMergedReport ? (
-                                <Typography sx={{ color: "#2563eb", mt: 0.35, fontSize: 12, fontWeight: 800 }}>
-                                  Merged from {group.mergedSourceCount || 2} reports
-                                </Typography>
-                              ) : null}
-                            </Box>
-                            <Box component="td" sx={{ px: 2.5, py: 2, color: "var(--app-text)" }}>
-                              {new Date(group.createdAt).toLocaleDateString()}
-                            </Box>
-                            <Box component="td" sx={{ px: 2.5, py: 2, color: "var(--app-text)" }}>
-                              {group.fairMarketValue || "—"}
-                            </Box>
-                            <Box component="td" sx={{ px: 2.5, py: 2 }}>
-                              <Box
-                                sx={{
-                                  display: "inline-flex",
-                                  px: 1.25,
-                                  py: 0.5,
-                                  borderRadius: 99,
-                                  bgcolor: status.bg,
-                                  color: status.color,
-                                  fontWeight: 700,
-                                  fontSize: 12,
-                                }}
-                              >
-                                {status.label}
-                              </Box>
-                            </Box>
-                            <Box component="td" sx={{ px: 2.5, py: 2 }}>
-                              <Stack
-                                direction="row"
-                                spacing={0.8}
-                                sx={{
-                                  justifyContent: "flex-end",
-                                  flexWrap: "nowrap",
-                                  overflowX: "auto",
-                                  pb: 0.5,
-                                }}
-                              >
-                                {showGeneratingOnly ? (
-                                  <GeneratingFilesProgress progress={group.generationProgress} />
-                                ) : showErrorOnly ? (
-                                  <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                                    <Typography sx={{ color: "#dc2626", fontSize: 13, fontWeight: 700, maxWidth: 220 }}>
-                                      {group.jobError || "File generation failed."}
-                                    </Typography>
-                                    <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
-                                      Retry
-                                    </Button>
-                                  </Stack>
-                                ) : !downloadable ? (
-                                  <Typography sx={{ color: "#d97706", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
-                                    Files available after release
-                                  </Typography>
-                                ) : (
-                                  (["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map((variant) => {
-                                    const file = group.variants[variant];
-                                    if (!file) return null;
-                                    const disabled =
-                                      downloadingId === file._id ||
-                                      !downloadable ||
-                                      (!!file.approvalStatus &&
-                                        file.approvalStatus !== "approved");
-                                    return (
-                                      <Button
-                                        key={variant}
-                                        size="small"
-                                        onClick={() => handleDownload(file._id)}
-                                        disabled={disabled}
-                                        sx={actionButtonSx("download")}
-                                      >
-                                        {actionLabel(variant)}
-                                      </Button>
-                                    );
-                                  })
-                                )}
-                                {String(group.type || "").toLowerCase() === "asset" ? (
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<MergeRounded />}
-                                    onClick={() => setMergeAnchorId(group.key)}
-                                    sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
-                                  >
-                                    Merge Assets
-                                  </Button>
-                                ) : null}
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  onClick={() => handleDelete(group)}
-                                  disabled={deletingKey === group.key}
-                                  sx={actionButtonSx("delete")}
-                                >
-                                  {deletingKey === group.key ? "Deleting..." : "Delete"}
-                                </Button>
-                              </Stack>
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  </Box>
-                </Box>
-              </SurfaceCard>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
+            <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
+              Showing {totalItems === 0 ? 0 : startIndex + 1}-{endIndex} of {totalItems} reports
+            </Typography>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", justifyContent: { xs: "space-between", sm: "flex-end" } }}>
+              <Button size="small" variant="outlined" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} sx={{ borderRadius: 1.25 }}>Previous</Button>
+              <Typography variant="body2" sx={{ px: 1, color: "var(--app-text-muted)", whiteSpace: "nowrap" }}>Page {currentPage} of {totalPages}</Typography>
+              <Button size="small" variant="outlined" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} sx={{ borderRadius: 1.25 }}>Next</Button>
+            </Stack>
+          </Stack>
+        </>
+      )}
 
-              <Stack direction="row" spacing={1} sx={{ justifyContent: "flex-end" }}>
-                <Button
-                  variant="outlined"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage((value) => Math.max(1, value - 1))}
-                >
-                  Previous
-                </Button>
-                <Button variant="text" disabled>
-                  Page {currentPage} / {totalPages}
-                </Button>
-                <Button
-                  variant="outlined"
-                  disabled={currentPage >= totalPages}
-                  onClick={() =>
-                    setPage((value) => Math.min(totalPages, value + 1))
-                  }
-                >
-                  Next
-                </Button>
-              </Stack>
-            </>
-          )}
-        </Stack>
-      </SectionPanel>
       <AssetMergeDialog
         open={Boolean(mergeAnchorId)}
         anchorReportId={mergeAnchorId}
