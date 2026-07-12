@@ -73,6 +73,11 @@ export interface AssetMergeCandidate {
   imageCount: number;
   thumbnailUrl?: string;
   isMergedReport?: boolean;
+  owner?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
 export interface AssetMergeCandidatesResponse {

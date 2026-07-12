@@ -293,6 +293,11 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
                         <Typography variant="body2" color="text.secondary" noWrap>
                           {new Date(candidate.createdAt).toLocaleDateString()} · {candidate.lotCount} lots · {candidate.imageCount} images
                         </Typography>
+                        {candidate.owner?.email || candidate.owner?.name ? (
+                          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                            Created by {candidate.owner.email || candidate.owner.name}
+                          </Typography>
+                        ) : null}
                         <Typography variant="caption" color="text.secondary" noWrap>
                           {candidate.lotNumbers.length ? candidate.lotNumbers.map((value) => `Lot ${value}`).join(", ") : "No lot numbers"}
                         </Typography>
