@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload } from "lucide-react";
+import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, GitMerge as MergeIcon } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getPreviewData, 
@@ -443,7 +443,16 @@ export default function PreviewModal({
       if (saved?.data) setPreviewData(saved.data);
       if (saved?.files_regeneration_queued) {
         setHasChanges(false);
-        toast.success("Changes saved. Files are being regenerated with the updated report data.");
+        const isFirstMergedPreviewBuild = previewData?.is_merged_report === true && !previewFiles?.excel;
+        toast.success(
+          isFirstMergedPreviewBuild
+            ? "Lot conflicts resolved. The merged preview is being generated."
+            : "Changes saved. Files are being regenerated with the updated report data."
+        );
+        if (isFirstMergedPreviewBuild) {
+          if (onSuccess) onSuccess();
+          onClose();
+        }
         return;
       }
       let pdfRefreshed = false;
@@ -503,8 +512,21 @@ export default function PreviewModal({
         );
       } else {
         if (hasChanges) {
-          await updatePreviewData(reportId, previewData);
+          const savePreview = updatePreviewDataOverride || updatePreviewData;
+          const saved = await savePreview(reportId, previewData);
           setHasChanges(false);
+
+          // A conflict-only merged report has no generated preview artifacts yet. Once
+          // duplicate lot numbers are resolved, saving starts that durable preview job;
+          // submitting in the same tick would race the queued generation request.
+          if (saved?.files_regeneration_queued) {
+            toast.success(
+              "Changes saved. The merged preview is being generated and can be submitted when ready."
+            );
+            if (onSuccess) onSuccess();
+            onClose();
+            return;
+          }
         }
         await submitForApproval(reportId);
         toast.success("Report submitted for approval successfully!");
@@ -990,6 +1012,22 @@ export default function PreviewModal({
 
   // Group lots by mixed_group_index and determine sub-mode label
   const lotsArray: any[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
+  const duplicateLotNumberKeys = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    lotsArray.forEach((lot, index) => {
+      const key = String(lot?.lot_number ?? getLotDisplayNumber(lot, index)).trim().toLowerCase();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return new Set(
+      Array.from(counts.entries())
+        .filter(([, count]) => count > 1)
+        .map(([key]) => key)
+    );
+  }, [lotsArray]);
+  const isDuplicateLotNumber = (lot: any, index: number) =>
+    duplicateLotNumberKeys.has(
+      String(lot?.lot_number ?? getLotDisplayNumber(lot, index)).trim().toLowerCase()
+    );
   const includeDamageAnalysis = previewData?.include_damage_analysis !== false;
   const groupMap = new Map<number, { idx: number; lot: any }[]>();
   for (let i = 0; i < lotsArray.length; i++) {
@@ -1099,6 +1137,34 @@ export default function PreviewModal({
                 ? "This report is already in the submitted queue while the new files are being regenerated."
                 : "Your preview has already been submitted. It will appear in Submitted Previews while DOCX, Excel, and Images files are generated."}
             </p>
+          </div>
+        </div>
+      )}
+
+      {previewData?.is_merged_report && (
+        <div
+          className={`mb-4 border p-4 ${
+            duplicateLotNumberKeys.size > 0
+              ? "border-amber-300 bg-amber-50"
+              : "border-blue-200 bg-blue-50"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <MergeIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-700" />
+            <div>
+              <p className="font-semibold text-slate-900">
+                Merged from {Array.isArray(previewData?.merged_from_report_ids) ? previewData.merged_from_report_ids.length : 2} Asset reports
+              </p>
+              {duplicateLotNumberKeys.size > 0 ? (
+                <p className="mt-1 text-sm text-amber-800">
+                  Duplicate lot numbers {Array.from(duplicateLotNumberKeys).join(", ")} must be changed before this report can be submitted.
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-blue-700">
+                  Source reports remain unchanged. Review the combined lots before submission.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1640,7 +1706,11 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-mobile`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm ${
+                                    isDuplicateLotNumber(lot, idx)
+                                      ? "border-amber-500 bg-amber-50"
+                                      : "border-gray-300"
+                                  }`}
                                   placeholder={String(idx + 1)}
                                 />
                               </div>
@@ -1755,7 +1825,11 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-desktop`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className="w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold"
+                                  className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold ${
+                                    isDuplicateLotNumber(lot, idx)
+                                      ? "border-amber-500 bg-amber-50"
+                                      : "border-gray-300"
+                                  }`}
                                   placeholder={String(idx + 1)}
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "lot_number", "desktop")}</div>

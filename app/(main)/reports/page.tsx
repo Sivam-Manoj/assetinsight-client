@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   Box,
@@ -16,6 +18,7 @@ import {
 } from "@mui/material";
 import {
   DownloadRounded,
+  MergeRounded,
   RefreshRounded,
   SearchRounded,
 } from "@mui/icons-material";
@@ -28,6 +31,11 @@ import {
   type RealEstateReport,
 } from "@/services/realEstate";
 import { EmptyState, PageHeader, SectionPanel, SurfaceCard } from "@/components/common/WorkspaceUI";
+
+const AssetMergeDialog = dynamic(
+  () => import("@/components/reports/AssetMergeDialog"),
+  { ssr: false }
+);
 
 type ReportGroup = {
   key: string;
@@ -51,6 +59,8 @@ type ReportGroup = {
   jobError?: string;
   lotSummary?: string;
   type?: string;
+  isMergedReport?: boolean;
+  mergedSourceCount?: number;
   variants: {
     pdf?: PdfReport;
     specPdf?: PdfReport;
@@ -253,6 +263,7 @@ function GeneratingFilesProgress({ progress }: { progress?: ReportGroup["generat
 }
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<PdfReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -269,6 +280,7 @@ export default function ReportsPage() {
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
+  const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
   const loadingReportsRef = useRef(false);
   const hasActiveJobs = useMemo(
     () => [...assetReports, ...realEstateReports, ...lotListingReports].some(isFileGenerationActive),
@@ -551,6 +563,10 @@ export default function ReportsPage() {
         jobError: (asset as any).job_error,
         lotSummary: summarizeLotNumbers(lots, asset._id),
         type: "Asset",
+        isMergedReport: (asset as any).is_merged_report === true,
+        mergedSourceCount: Array.isArray((asset as any).merged_from_report_ids)
+          ? (asset as any).merged_from_report_ids.length
+          : 0,
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
           specPdf: previewFiles.spec_pdf
@@ -1059,9 +1075,14 @@ export default function ReportsPage() {
                             {status.label}
                           </Box>
                         </Stack>
-                        <Typography sx={{ color: "var(--app-text-muted)" }}>
-                          {group.address || "No address provided"}
-                        </Typography>
+                          <Typography sx={{ color: "var(--app-text-muted)" }}>
+                            {group.address || "No address provided"}
+                          </Typography>
+                          {group.isMergedReport ? (
+                            <Typography sx={{ color: "#2563eb", fontSize: 12, fontWeight: 800 }}>
+                              Merged from {group.mergedSourceCount || 2} Asset reports
+                            </Typography>
+                          ) : null}
                         <Stack direction="row" spacing={0.8} sx={{ flexWrap: "nowrap", overflowX: "auto", pb: 0.5 }}>
                           {showGeneratingOnly ? (
                             <GeneratingFilesProgress progress={group.generationProgress} />
@@ -1099,6 +1120,17 @@ export default function ReportsPage() {
                               );
                             })
                           )}
+                          {String(group.type || "").toLowerCase() === "asset" ? (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<MergeRounded />}
+                              onClick={() => setMergeAnchorId(group.key)}
+                              sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                            >
+                              Merge Assets
+                            </Button>
+                          ) : null}
                           <Button
                             size="small"
                             variant="outlined"
@@ -1173,6 +1205,11 @@ export default function ReportsPage() {
                               <Typography sx={{ color: "var(--app-text-muted)", mt: 0.4 }}>
                                 {group.address || "No address provided"}
                               </Typography>
+                              {group.isMergedReport ? (
+                                <Typography sx={{ color: "#2563eb", mt: 0.35, fontSize: 12, fontWeight: 800 }}>
+                                  Merged from {group.mergedSourceCount || 2} reports
+                                </Typography>
+                              ) : null}
                             </Box>
                             <Box component="td" sx={{ px: 2.5, py: 2, color: "var(--app-text)" }}>
                               {new Date(group.createdAt).toLocaleDateString()}
@@ -1244,6 +1281,17 @@ export default function ReportsPage() {
                                     );
                                   })
                                 )}
+                                {String(group.type || "").toLowerCase() === "asset" ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<MergeRounded />}
+                                    onClick={() => setMergeAnchorId(group.key)}
+                                    sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                                  >
+                                    Merge Assets
+                                  </Button>
+                                ) : null}
                                 <Button
                                   size="small"
                                   variant="outlined"
@@ -1288,6 +1336,16 @@ export default function ReportsPage() {
           )}
         </Stack>
       </SectionPanel>
+      <AssetMergeDialog
+        open={Boolean(mergeAnchorId)}
+        anchorReportId={mergeAnchorId}
+        onClose={() => setMergeAnchorId(null)}
+        onCreated={() => {
+          setMergeAnchorId(null);
+          window.dispatchEvent(new Event("cv:report-created"));
+          router.push("/previews");
+        }}
+      />
     </Stack>
   );
 }

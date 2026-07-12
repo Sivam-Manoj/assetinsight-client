@@ -46,6 +46,51 @@ export interface AssetReport {
   effective_date?: string;
   createdAt: string;
   updatedAt: string;
+  is_merged_report?: boolean;
+  merged_from_report_ids?: string[];
+  merge_primary_report_id?: string | null;
+  merge_conflicts?: AssetMergeConflict[];
+}
+
+export interface AssetMergeConflict {
+  type: "duplicate_lot_number";
+  lotNumber: string;
+  lotIds: string[];
+  sourceReportIds: string[];
+}
+
+export interface AssetMergeCandidate {
+  id: string;
+  isAnchor: boolean;
+  eligible: boolean;
+  disabledReason?: string | null;
+  status: ReportStatus;
+  clientName: string;
+  contractNo: string;
+  createdAt: string;
+  lotCount: number;
+  lotNumbers: string[];
+  imageCount: number;
+  thumbnailUrl?: string;
+  isMergedReport?: boolean;
+}
+
+export interface AssetMergeCandidatesResponse {
+  contractNo: string;
+  contractKey: string;
+  anchorReportId: string;
+  candidates: AssetMergeCandidate[];
+}
+
+export interface AssetMergeResult {
+  reportId: string;
+  status: ReportStatus;
+  resumed: boolean;
+  is_merged_report: true;
+  sourceCount: number;
+  lotCount: number;
+  merge_conflicts: AssetMergeConflict[];
+  generation_state?: "queued" | "processing" | "ready" | "error";
 }
 
 export interface PreviewDataResponse {
@@ -217,6 +262,28 @@ export const declineReport = async (
 export const getAssetReports = async (): Promise<{ message: string; data: AssetReport[] }> => {
   const { data } = await API.get<{ message: string; data: AssetReport[] }>(`/asset`);
   return data;
+};
+
+export const getAssetMergeCandidates = async (
+  reportId: string
+): Promise<AssetMergeCandidatesResponse> => {
+  const { data } = await API.get<{
+    message: string;
+    data: AssetMergeCandidatesResponse;
+  }>(`/asset/${reportId}/merge-candidates`);
+  return data.data;
+};
+
+export const mergeAssetReports = async (payload: {
+  sourceReportIds: string[];
+  primaryReportId: string;
+  mergeRequestId: string;
+}): Promise<AssetMergeResult> => {
+  const { data } = await API.post<{ message: string; data: AssetMergeResult }>(
+    "/asset/merge",
+    payload
+  );
+  return data.data;
 };
 
 /**

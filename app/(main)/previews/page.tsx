@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Alert,
   Avatar,
@@ -21,6 +22,7 @@ import {
   AutoAwesomeRounded,
   DeleteOutlineRounded,
   EditRounded,
+  MergeRounded,
   RefreshRounded,
   SendRounded,
   VisibilityRounded,
@@ -55,6 +57,11 @@ import StatusBadge from "@/components/reports/StatusBadge";
 import PreviewModal from "@/components/reports/PreviewModal";
 import RealEstatePreviewModal from "@/components/reports/RealEstatePreviewModal";
 import LotListingPreviewModal from "@/components/reports/LotListingPreviewModal";
+
+const AssetMergeDialog = dynamic(
+  () => import("@/components/reports/AssetMergeDialog"),
+  { ssr: false }
+);
 
 type CombinedReport =
   | (AssetReport & { reportType: "asset" })
@@ -144,6 +151,7 @@ export default function PreviewsPage() {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isResubmitMode, setIsResubmitMode] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CombinedReport | null>(null);
+  const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
   const loadingReportsRef = useRef(false);
 
   const loadReports = useCallback(async (
@@ -178,15 +186,11 @@ export default function PreviewsPage() {
             (report as any).preview_submitted_at ||
             (report as any).approval_requested_at
           );
-          const generating =
-            Boolean((report as any).files_generating) ||
-            Boolean((report as any).files_regenerating);
           return (
             (report.status === "processing" ||
               report.status === "error" ||
               report.status === "preview" ||
               report.status === "declined") &&
-            !generating &&
             !wasSubmitted
           );
         })
@@ -518,6 +522,12 @@ export default function PreviewsPage() {
                           <StatusBadge
                             status={jobActive ? "processing" : jobFailed ? "error" : (report.status as any)}
                           />
+                          {report.reportType === "asset" && (report as any).is_merged_report ? (
+                            <StatusPill
+                              label={`Merged · ${Array.isArray((report as any).merged_from_report_ids) ? (report as any).merged_from_report_ids.length : 2} sources`}
+                              color="info"
+                            />
+                          ) : null}
                         </Stack>
                         <Typography
                           variant="h6"
@@ -602,6 +612,16 @@ export default function PreviewsPage() {
                             {resubmitting === report._id
                               ? "Retrying..."
                               : "Retry generation"}
+                          </Button>
+                        ) : null}
+
+                        {report.reportType === "asset" && !jobActive ? (
+                          <Button
+                            variant="outlined"
+                            startIcon={<MergeRounded />}
+                            onClick={() => setMergeAnchorId(report._id)}
+                          >
+                            Merge Assets
                           </Button>
                         ) : null}
 
@@ -787,6 +807,17 @@ export default function PreviewsPage() {
           isResubmitMode={isResubmitMode}
         />
       ) : null}
+      <AssetMergeDialog
+        open={Boolean(mergeAnchorId)}
+        anchorReportId={mergeAnchorId}
+        onClose={() => setMergeAnchorId(null)}
+        onCreated={() => {
+          setMergeAnchorId(null);
+          setActiveTab("new");
+          requestReportsRefetch();
+          void loadReports();
+        }}
+      />
     </Stack>
   );
 }
