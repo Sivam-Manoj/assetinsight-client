@@ -984,7 +984,7 @@ export default function ReportsPage() {
     setPage(1);
   };
 
-  const renderFileControls = (group: ReportGroup) => {
+  const renderFileControls = (group: ReportGroup, singleLine = false) => {
     const hasDownloads = hasGroupDownloadVariants(group);
     const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
     const showErrorOnly = group.generationState === "error" && !hasDownloads;
@@ -1016,7 +1016,16 @@ export default function ReportsPage() {
     }
 
     return (
-      <Stack direction="row" spacing={0.55} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+      <Stack
+        direction="row"
+        spacing={singleLine ? 0.4 : 0.55}
+        useFlexGap
+        sx={{
+          minWidth: 0,
+          flexWrap: singleLine ? "nowrap" : "wrap",
+          alignItems: "center",
+        }}
+      >
         {(["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map(
           (variant) => {
             const file = group.variants[variant];
@@ -1036,7 +1045,11 @@ export default function ReportsPage() {
                     disabled={disabled}
                     sx={{
                       ...actionButtonSx("download"),
-                      minWidth: variant === "crDocx" ? 62 : 50,
+                      minWidth: singleLine ? (variant === "crDocx" ? 54 : 44) : variant === "crDocx" ? 62 : 50,
+                      minHeight: singleLine ? 50 : 54,
+                      px: singleLine ? 0.35 : 0.65,
+                      fontSize: singleLine ? 9 : 10,
+                      flex: "0 0 auto",
                     }}
                   >
                     {downloadingId === file._id ? "..." : label}
@@ -1050,8 +1063,13 @@ export default function ReportsPage() {
     );
   };
 
-  const renderReportActions = (group: ReportGroup) => (
-    <Stack direction="row" spacing={0.55} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
+  const renderReportActions = (group: ReportGroup, singleLine = false) => (
+    <Stack
+      direction="row"
+      spacing={singleLine ? 0.4 : 0.55}
+      useFlexGap
+      sx={{ flexWrap: singleLine ? "nowrap" : "wrap", alignItems: "center", minWidth: 0 }}
+    >
       {String(group.type || "").toLowerCase() === "asset" ? (
         <Tooltip title="Merge this report with other Asset reports using the same contract" arrow>
           <Button
@@ -1059,7 +1077,14 @@ export default function ReportsPage() {
             variant="outlined"
             startIcon={<MergeRounded sx={{ fontSize: 18 }} />}
             onClick={() => setMergeAnchorId(group.key)}
-            sx={{ ...actionButtonSx("download"), minWidth: 72 }}
+            sx={{
+              ...actionButtonSx("download"),
+              minWidth: singleLine ? 60 : 72,
+              minHeight: singleLine ? 50 : 54,
+              px: singleLine ? 0.35 : 0.65,
+              fontSize: singleLine ? 9 : 10,
+              flex: "0 0 auto",
+            }}
           >
             Merge
           </Button>
@@ -1073,7 +1098,14 @@ export default function ReportsPage() {
             startIcon={<DeleteOutlineRounded sx={{ fontSize: 18 }} />}
             onClick={() => handleDelete(group)}
             disabled={deletingKey === group.key}
-            sx={actionButtonSx("delete")}
+            sx={{
+              ...actionButtonSx("delete"),
+              minWidth: singleLine ? 48 : 52,
+              minHeight: singleLine ? 50 : 54,
+              px: singleLine ? 0.35 : 0.75,
+              fontSize: singleLine ? 9 : 10,
+              flex: "0 0 auto",
+            }}
           >
             {deletingKey === group.key ? "..." : "Delete"}
           </Button>
@@ -1326,7 +1358,7 @@ export default function ReportsPage() {
           >
             <Box component="table" sx={{ width: "100%", maxWidth: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
               <Box component="colgroup">
-                {["21%", "9%", "8%", "10%", "9%", "29%", "14%"].map((width, index) => (
+                {["20%", "8%", "8%", "10%", "9%", "33%", "12%"].map((width, index) => (
                   <Box component="col" key={index} sx={{ width }} />
                 ))}
               </Box>
@@ -1385,8 +1417,12 @@ export default function ReportsPage() {
                         <Chip size="small" label={status.label} sx={{ borderRadius: 1, bgcolor: status.bg, color: status.color, fontWeight: 800, maxWidth: "100%" }} />
                         {group.released_at ? <Typography variant="caption" sx={{ display: "block", mt: 0.45, color: "var(--app-text-muted)" }}>{new Date(group.released_at).toLocaleDateString()}</Typography> : null}
                       </Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.1, verticalAlign: "top" }}>{renderFileControls(group)}</Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.1, verticalAlign: "top" }}>{renderReportActions(group)}</Box>
+                      <Box component="td" sx={{ px: 0.8, py: 1.1, verticalAlign: "top", whiteSpace: "nowrap" }}>
+                        {renderFileControls(group, true)}
+                      </Box>
+                      <Box component="td" sx={{ px: 0.8, py: 1.1, verticalAlign: "top", whiteSpace: "nowrap" }}>
+                        {renderReportActions(group, true)}
+                      </Box>
                     </Box>
                   );
                 })}
