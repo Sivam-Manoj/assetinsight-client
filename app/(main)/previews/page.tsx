@@ -70,6 +70,36 @@ type CombinedReport =
 
 type TabType = "new" | "submitted";
 
+const WORKFLOW_LABELS: Record<string, string> = {
+  preparing_preview: "Preparing preview",
+  preview_ready: "Preview ready",
+  generating_files: "Generating files",
+  awaiting_approval: "Awaiting approval",
+  awaiting_release: "Awaiting release",
+  ready: "Ready to download",
+  error: "Generation failed",
+};
+
+function isWorkflowActive(report: any): boolean {
+  if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
+  return (
+    report?.generation_state === "queued" ||
+    report?.generation_state === "processing" ||
+    report?.job_status === "queued" ||
+    report?.job_status === "processing"
+  );
+}
+
+function workflowBadgeStatus(report: any) {
+  const stage = report?.workflow_stage;
+  if (stage === "error") return "error";
+  if (stage === "preview_ready") return "preview";
+  if (stage === "awaiting_approval" || stage === "awaiting_release") return "pending_approval";
+  if (stage === "ready") return "approved";
+  if (stage === "preparing_preview" || stage === "generating_files") return "processing";
+  return report?.status || "draft";
+}
+
 function requestReportsRefetch() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event("cv:report-created"));
@@ -133,12 +163,7 @@ export default function PreviewsPage() {
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
   const hasActiveJobs = useMemo(
-    () => [...newReports, ...submittedReports].some((report: any) =>
-      report.generation_state === "queued" ||
-      report.generation_state === "processing" ||
-      report.job_status === "queued" ||
-      report.job_status === "processing"
-    ),
+    () => [...newReports, ...submittedReports].some(isWorkflowActive),
     [newReports, submittedReports]
   );
   const [loading, setLoading] = useState(true);
@@ -227,7 +252,7 @@ export default function PreviewsPage() {
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
       const submittedAssets: CombinedReport[] = (submittedAssetResponse.data || [])
-        .filter((report: any) => !(report.status === "approved" && report.files_ready === true))
+        .filter((report: any) => report.workflow_stage !== "ready")
         .map((report) => ({ ...report, reportType: "asset" as const }));
       const realEstateSubmitted: CombinedReport[] = (realEstateResponse.data || [])
         .filter(
@@ -239,7 +264,7 @@ export default function PreviewsPage() {
         )
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
       const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
-        .filter((report: any) => !(report.status === "approved" && report.files_ready === true))
+        .filter((report: any) => report.workflow_stage !== "ready")
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
       setNewReports(
@@ -483,17 +508,9 @@ export default function PreviewsPage() {
           <Stack spacing={2}>
             {reports.map((report) => {
               const info = summaryForReport(report);
-              const filesGenerating =
-                Boolean((report as any).files_generating) ||
-                Boolean((report as any).files_regenerating);
-              const jobActive =
-                (report as any).generation_state === "queued" ||
-                (report as any).generation_state === "processing" ||
-                report.status === "processing" ||
-                (report as any).job_status === "queued" ||
-                (report as any).job_status === "processing" ||
-                filesGenerating;
+              const jobActive = isWorkflowActive(report);
               const jobFailed =
+                (report as any).workflow_stage === "error" ||
                 report.status === "error" ||
                 (report as any).job_status === "error";
               const canRetryFailedJob =
@@ -520,7 +537,8 @@ export default function PreviewsPage() {
                         >
                           <StatusPill label={info.typeLabel} color="info" />
                           <StatusBadge
-                            status={jobActive ? "processing" : jobFailed ? "error" : (report.status as any)}
+                            status={workflowBadgeStatus(report) as any}
+                            label={WORKFLOW_LABELS[(report as any).workflow_stage]}
                           />
                           {report.reportType === "asset" && (report as any).is_merged_report ? (
                             <StatusPill
@@ -596,7 +614,8 @@ export default function PreviewsPage() {
                               </>
                             ) : (
                               <Button disabled startIcon={<RefreshRounded />}>
-                                {activeTab === "new" ? "Generating preview" : "Generating files"}
+                                {WORKFLOW_LABELS[(report as any).workflow_stage] ||
+                                  (activeTab === "new" ? "Preparing preview" : "Generating files")}
                               </Button>
                             )}
                           </>
@@ -673,30 +692,39 @@ export default function PreviewsPage() {
                       <Alert severity="error">{report.decline_reason}</Alert>
                     ) : null}
 
-                    {report.status === "pending_approval" ? (
+                    {(report as any).workflow_stage === "awaiting_approval" ? (
                       <Alert severity="warning">
-                        Awaiting admin approval before files can move forward.
+                        Files are ready and awaiting the assigned report approver.
                       </Alert>
                     ) : null}
-                    {report.status === "approved" ? (
-                      <Alert severity="success">
-                        Approved. You can still edit and resubmit if needed.
+                    {(report as any).workflow_stage === "awaiting_release" ? (
+                      <Alert severity="warning">
+                        Approved and awaiting the assigned release manager.
                       </Alert>
                     ) : null}
                     {jobActive ? (
                       <Box sx={{ p: 1.6, borderRadius: 2, bgcolor: "rgba(37,99,235,0.07)" }}>
                         <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between" }}>
                           <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
-                            {(report as any).generation_progress?.message ||
-                              (activeTab === "new" ? "Generating preview" : "Generating files")}
+                            {(report as any).workflow_message ||
+                              (report as any).generation_progress?.message ||
+                              (activeTab === "new" ? "Preparing preview" : "Generating files")}
                           </Typography>
                           <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
-                            {Math.round(Number((report as any).generation_progress?.progressPercent || 0))}%
+                            {Math.round(Number(
+                              (report as any).workflow_progress_percent ??
+                                (report as any).generation_progress?.progressPercent ??
+                                0
+                            ))}%
                           </Typography>
                         </Stack>
                         <LinearProgress
                           variant="determinate"
-                          value={Math.max(2, Number((report as any).generation_progress?.progressPercent || 0))}
+                          value={Math.max(2, Number(
+                            (report as any).workflow_progress_percent ??
+                              (report as any).generation_progress?.progressPercent ??
+                              0
+                          ))}
                           sx={{ mt: 1, height: 7, borderRadius: 1 }}
                         />
                         {(report as any).generation_progress?.totalLots ? (

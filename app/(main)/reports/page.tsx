@@ -60,6 +60,9 @@ type ReportGroup = {
   downloadable?: boolean;
   isGeneratingFiles?: boolean;
   generationState?: "queued" | "processing" | "ready" | "error";
+  workflowStage?: string;
+  workflowMessage?: string;
+  workflowProgressPercent?: number;
   generationProgress?: {
     progressPercent?: number;
     message?: string;
@@ -99,7 +102,8 @@ function typeLabel(type?: string) {
 }
 
 function isFileGenerationActive(report: any) {
-  if (report?.files_ready === true || report?.generation_state === "ready") return false;
+  if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
+  if (["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error"].includes(report?.workflow_stage)) return false;
   if (report?.generation_state === "error") return false;
   if (report?.generation_state === "queued" || report?.generation_state === "processing") {
     return true;
@@ -129,8 +133,19 @@ function statusTone(
   isGeneratingFiles = false,
   releaseStatus?: string,
   generationState?: string,
-  reportStatus?: string
+  reportStatus?: string,
+  workflowStage?: string
 ) {
+  const workflowLabels: Record<string, { bg: string; color: string; label: string }> = {
+    preparing_preview: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" },
+    preview_ready: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preview ready" },
+    generating_files: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Generating files" },
+    awaiting_approval: { bg: "rgba(217,119,6,0.12)", color: "#d97706", label: "Awaiting approval" },
+    awaiting_release: { bg: "rgba(217,119,6,0.12)", color: "#d97706", label: "Awaiting release" },
+    ready: { bg: "#e8f7ee", color: "#087a43", label: "Ready to download" },
+    error: { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Generation failed" },
+  };
+  if (workflowStage && workflowLabels[workflowStage]) return workflowLabels[workflowStage];
   if (reportStatus === "processing") {
     return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" };
   }
@@ -637,6 +652,9 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (asset as any).generation_state,
+        workflowStage: (asset as any).workflow_stage,
+        workflowMessage: (asset as any).workflow_message,
+        workflowProgressPercent: (asset as any).workflow_progress_percent,
         reportStatus: asset.status,
         generationProgress: (asset as any).generation_progress,
         jobError: (asset as any).job_error,
@@ -724,6 +742,9 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (report as any).generation_state,
+        workflowStage: (report as any).workflow_stage,
+        workflowMessage: (report as any).workflow_message,
+        workflowProgressPercent: (report as any).workflow_progress_percent,
         reportStatus: report.status,
         generationProgress: (report as any).generation_progress,
         jobError: (report as any).job_error,
@@ -817,6 +838,9 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (listing as any).generation_state,
+        workflowStage: (listing as any).workflow_stage,
+        workflowMessage: (listing as any).workflow_message,
+        workflowProgressPercent: (listing as any).workflow_progress_percent,
         reportStatus: listing.status,
         generationProgress: (listing as any).generation_progress,
         jobError: (listing as any).job_error,
@@ -1010,13 +1034,25 @@ export default function ReportsPage() {
 
   const renderFileControls = (group: ReportGroup, singleLine = false) => {
     const hasDownloads = hasGroupDownloadVariants(group);
+    const workflowProgress = {
+      ...(group.generationProgress || {}),
+      ...(group.workflowMessage ? { message: group.workflowMessage } : {}),
+      ...(Number.isFinite(group.workflowProgressPercent)
+        ? { progressPercent: group.workflowProgressPercent }
+        : {}),
+    };
     const isPreparingPreview =
-      group.reportStatus === "processing" ||
+      group.workflowStage === "preparing_preview" ||
+      (!group.workflowStage && group.reportStatus === "processing") ||
       (group.reportStatus === "preview" && Boolean(group.isGeneratingFiles));
-    const isPreviewReady = group.reportStatus === "preview" && !group.isGeneratingFiles;
-    const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
+    const isPreviewReady =
+      group.workflowStage === "preview_ready" ||
+      (!group.workflowStage && group.reportStatus === "preview" && !group.isGeneratingFiles);
+    const showGeneratingOnly =
+      group.workflowStage === "generating_files" ||
+      (!group.workflowStage && Boolean(group.isGeneratingFiles) && !hasDownloads);
     const showErrorOnly =
-      group.generationState === "error" &&
+      (group.workflowStage === "error" || group.generationState === "error") &&
       !hasDownloads &&
       !["processing", "preview", "declined"].includes(String(group.reportStatus || ""));
     const downloadable = group.downloadable !== false;
@@ -1024,7 +1060,7 @@ export default function ReportsPage() {
     if (isPreparingPreview) {
       return (
         <GeneratingFilesProgress
-          progress={group.generationProgress}
+          progress={workflowProgress}
           fallbackMessage="Analyzing images and preparing your first preview..."
         />
       );
@@ -1044,7 +1080,7 @@ export default function ReportsPage() {
     }
 
     if (showGeneratingOnly) {
-      return <GeneratingFilesProgress progress={group.generationProgress} />;
+      return <GeneratingFilesProgress progress={workflowProgress} />;
     }
 
     if (showErrorOnly) {
@@ -1057,6 +1093,22 @@ export default function ReportsPage() {
             Retry
           </Button>
         </Stack>
+      );
+    }
+
+    if (group.workflowStage === "awaiting_approval") {
+      return (
+        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+          Files ready; awaiting approval
+        </Typography>
+      );
+    }
+
+    if (group.workflowStage === "awaiting_release") {
+      return (
+        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+          Approved; awaiting release
+        </Typography>
       );
     }
 
@@ -1319,7 +1371,8 @@ export default function ReportsPage() {
                 Boolean(group.isGeneratingFiles) && !hasDownloads,
                 group.release_status,
                 group.generationState,
-                group.reportStatus
+                group.reportStatus,
+                group.workflowStage
               );
               const title = group.contract_no
                 ? `${typeLabel(group.type)} - ${group.contract_no}`
@@ -1433,7 +1486,8 @@ export default function ReportsPage() {
                     Boolean(group.isGeneratingFiles) && !hasDownloads,
                     group.release_status,
                     group.generationState,
-                    group.reportStatus
+                    group.reportStatus,
+                    group.workflowStage
                   );
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} - ${group.contract_no}`

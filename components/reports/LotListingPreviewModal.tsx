@@ -371,7 +371,7 @@ export default function LotListingPreviewModal({
           assumeFilesGenerating: true,
           assumeFilesRegenerating: true,
         });
-        toast.success("Lot listing approved files are being regenerated.");
+        toast.success("Lot listing files are being regenerated and will remain automatically released.");
       } else {
         await updateLotListingPreview(reportId, {
           preview_data: previewData,
@@ -383,13 +383,13 @@ export default function LotListingPreviewModal({
           assumeFilesGenerating: true,
           assumeFilesRegenerating: false,
         });
-        toast.success("Lot listing approved files are being generated.");
+        toast.success("Lot listing files are being generated and will be released automatically.");
       }
 
       if (onSuccess) onSuccess();
       onClose();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to submit for approval");
+      toast.error(error.response?.data?.message || "Failed to submit lot listing");
     } finally {
       setSubmitting(false);
     }

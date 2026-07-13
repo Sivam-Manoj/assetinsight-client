@@ -511,31 +511,17 @@ export default function PreviewModal({
             : "Report resubmitted! Files are being regenerated."
         );
       } else {
-        if (hasChanges) {
-          const savePreview = updatePreviewDataOverride || updatePreviewData;
-          const saved = await savePreview(reportId, previewData);
-          setHasChanges(false);
-
-          // A conflict-only merged report has no generated preview artifacts yet. Once
-          // duplicate lot numbers are resolved, saving starts that durable preview job;
-          // submitting in the same tick would race the queued generation request.
-          if (saved?.files_regeneration_queued) {
-            toast.success(
-              "Changes saved. The merged preview is being generated and can be submitted when ready."
-            );
-            if (onSuccess) onSuccess();
-            onClose();
-            return;
-          }
-        }
-        await submitForApproval(reportId);
-        toast.success("Report submitted for approval successfully!");
+        // Submit the exact edited snapshot in one request. Saving first and then
+        // submitting allowed the second request to queue an older preview copy.
+        const submitted = await submitForApproval(reportId, previewData);
+        setHasChanges(false);
+        toast.success(submitted.message || "Report submitted. Files are being generated.");
       }
       
       if (onSuccess) onSuccess();
       onClose();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to submit for approval");
+      toast.error(error.response?.data?.message || "Failed to submit report");
     } finally {
       setSubmitting(false);
     }
@@ -1130,7 +1116,7 @@ export default function PreviewModal({
           <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold text-blue-900">
-              {filesRegenerating ? "Files are being regenerated" : "Already submitted for approval"}
+              {filesRegenerating ? "Files are being regenerated" : "Report already submitted"}
             </p>
             <p className="text-sm text-blue-700 mt-1">
               {filesRegenerating
@@ -2197,7 +2183,7 @@ export default function PreviewModal({
                 <li>Review the data</li>
                 <li>Make any necessary edits</li>
                 <li>Save your changes</li>
-                <li>Submit for admin approval</li>
+                <li>Submit the report and generate final files</li>
               </ol>
             </div>
           </div>
@@ -2285,7 +2271,7 @@ export default function PreviewModal({
                     ? "Submit and approve after regeneration"
                     : isResubmitMode
                       ? "Resubmit report"
-                      : "Submit for approval"
+                      : "Submit report"
                 }
                 className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg transition-all hover:shadow-xl text-sm sm:text-base ${
                   isResubmitMode 

@@ -20,6 +20,7 @@ export type ReportStatus =
 
 interface StatusBadgeProps {
   status: ReportStatus;
+  label?: string;
   className?: string;
 }
 
@@ -63,6 +64,7 @@ const statusConfig = {
 
 export default function StatusBadge({
   status,
+  label,
   className = "",
 }: StatusBadgeProps) {
   const config = statusConfig[status] || statusConfig.draft;
@@ -70,7 +72,7 @@ export default function StatusBadge({
   return (
     <Chip
       icon={config.icon}
-      label={config.label}
+      label={label || config.label}
       color={config.color}
       className={className}
       size="small"

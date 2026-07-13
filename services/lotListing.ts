@@ -1,4 +1,5 @@
 import API from "@/lib/api";
+import type { ReportWorkflowStage } from "./assets";
 
 export interface LotListingLot {
   lot_id: string;
@@ -52,6 +53,9 @@ export interface LotListing {
   job_error?: string;
   error_message?: string;
   generation_state?: "queued" | "processing" | "ready" | "error";
+  workflow_stage?: ReportWorkflowStage;
+  workflow_message?: string;
+  workflow_progress_percent?: number;
   files_ready?: boolean;
   files_generating?: boolean;
   files_regenerating?: boolean;
@@ -100,6 +104,9 @@ export interface LotListing {
   release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
   released_at?: string | null;
   downloadable?: boolean;
+  preview_submitted_at?: string;
+  approval_requested_at?: string;
+  generation_target_status?: "preview" | "pending_approval" | "approved";
   createdAt: string;
   updatedAt: string;
 }

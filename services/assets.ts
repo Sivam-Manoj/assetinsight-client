@@ -1,6 +1,14 @@
 import API from "@/lib/api";
 
 export type ReportStatus = 'draft' | 'processing' | 'preview' | 'pending_approval' | 'approved' | 'declined' | 'error';
+export type ReportWorkflowStage =
+  | "preparing_preview"
+  | "preview_ready"
+  | "generating_files"
+  | "awaiting_approval"
+  | "awaiting_release"
+  | "ready"
+  | "error";
 
 export interface AssetReport {
   _id: string;
@@ -14,6 +22,9 @@ export interface AssetReport {
   job_status?: "queued" | "processing" | "done" | "error";
   job_error?: string;
   generation_state?: "queued" | "processing" | "ready" | "error";
+  workflow_stage?: ReportWorkflowStage;
+  workflow_message?: string;
+  workflow_progress_percent?: number;
   files_ready?: boolean;
   generation_progress?: {
     stage?: string;
@@ -105,6 +116,9 @@ export interface PreviewDataResponse {
     files_generating?: boolean;
     files_regenerating?: boolean;
     generation_state?: "queued" | "processing" | "ready" | "error";
+    workflow_stage?: ReportWorkflowStage;
+    workflow_message?: string;
+    workflow_progress_percent?: number;
     files_ready?: boolean;
     job_status?: "queued" | "processing" | "done" | "error";
     job_error?: string;
@@ -225,11 +239,12 @@ export const refreshAssetSpecPdf = async (
  * Submit report for admin approval
  */
 export const submitForApproval = async (
-  reportId: string
+  reportId: string,
+  previewData?: any
 ): Promise<{ message: string; data: any }> => {
   const { data } = await API.post<{ message: string; data: any }>(
     `/asset/${reportId}/submit-approval`,
-    {}
+    previewData ? { preview_data: previewData } : {}
   );
   return data;
 };
