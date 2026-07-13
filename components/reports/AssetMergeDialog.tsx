@@ -112,19 +112,6 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
     () => candidates.filter((candidate) => candidate.eligible).length,
     [candidates]
   );
-  const duplicateLotNumbers = useMemo(() => {
-    const counts = new Map<string, { value: string; count: number }>();
-    selected.forEach((candidate) =>
-      candidate.lotNumbers.forEach((value) => {
-        const key = value.trim().toLowerCase();
-        if (!key) return;
-        const current = counts.get(key) || { value, count: 0 };
-        current.count += 1;
-        counts.set(key, current);
-      })
-    );
-    return Array.from(counts.values()).filter((entry) => entry.count > 1);
-  }, [selected]);
   const totals = useMemo(
     () => ({
       reports: selected.length,
@@ -166,11 +153,7 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
       if (anchorReportId) {
         window.localStorage.removeItem(`asset-merge-request:${anchorReportId}`);
       }
-      toast.success(
-        result.merge_conflicts.length > 0
-          ? "Merged preview created. Resolve duplicate lot numbers before submitting."
-          : "Merged Asset preview created."
-      );
+      toast.success("Merged Asset preview created with sequential lot numbers.");
       onCreated(result);
     } catch (requestError: any) {
       setError(
@@ -238,9 +221,9 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
                 </Box>
               ))}
             </Box>
-            {duplicateLotNumbers.length > 0 ? (
-              <Alert severity="warning">
-                Duplicate lot numbers {duplicateLotNumbers.map((entry) => entry.value).join(", ")} will be flagged in the merged preview and must be changed before submission.
+            {selected.length >= 2 ? (
+              <Alert severity="info">
+                The merged report will be ordered and renumbered automatically as Lot 1 through Lot {totals.lots}.
               </Alert>
             ) : null}
             {eligibleCount < 2 ? (
