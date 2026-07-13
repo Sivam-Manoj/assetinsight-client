@@ -67,6 +67,7 @@ type ReportGroup = {
     totalLots?: number;
   };
   jobError?: string;
+  reportStatus?: string;
   lotSummary?: string;
   lotCount?: number;
   thumbnail?: string;
@@ -127,8 +128,21 @@ function statusTone(
   status?: string,
   isGeneratingFiles = false,
   releaseStatus?: string,
-  generationState?: string
+  generationState?: string,
+  reportStatus?: string
 ) {
+  if (reportStatus === "processing") {
+    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" };
+  }
+  if (reportStatus === "preview" && isGeneratingFiles) {
+    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" };
+  }
+  if (reportStatus === "preview") {
+    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preview ready" };
+  }
+  if (reportStatus === "declined") {
+    return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Changes required" };
+  }
   if (generationState === "error") {
     return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Generation failed" };
   }
@@ -292,7 +306,13 @@ function getFirstReportImage(lots: any[], report: any): string | undefined {
   return globalImages[0];
 }
 
-function GeneratingFilesProgress({ progress }: { progress?: ReportGroup["generationProgress"] }) {
+function GeneratingFilesProgress({
+  progress,
+  fallbackMessage = "Generating updated files...",
+}: {
+  progress?: ReportGroup["generationProgress"];
+  fallbackMessage?: string;
+}) {
   const percent = Math.max(2, Math.min(100, Number(progress?.progressPercent || 0)));
   return (
     <Box sx={{ minWidth: { xs: 180, sm: 220 } }}>
@@ -305,7 +325,7 @@ function GeneratingFilesProgress({ progress }: { progress?: ReportGroup["generat
             whiteSpace: "nowrap",
           }}
         >
-          {progress?.message || "Generating updated files..."}
+          {progress?.message || fallbackMessage}
         </Typography>
         <LinearProgress variant="determinate" value={percent} sx={{ height: 6, borderRadius: 1 }} />
         {progress?.totalLots ? (
@@ -537,6 +557,7 @@ export default function ReportsPage() {
           downloadable: (report as any).downloadable !== false,
           isGeneratingFiles: false,
           generationState: "ready",
+          reportStatus: String((report as any).status || "approved"),
           lotCount: Number((report as any).lot_count || 0),
           type: (report as any).type,
           variants: {},
@@ -616,6 +637,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (asset as any).generation_state,
+        reportStatus: asset.status,
         generationProgress: (asset as any).generation_progress,
         jobError: (asset as any).job_error,
         lotSummary: summarizeLotNumbers(lots, asset._id),
@@ -702,6 +724,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (report as any).generation_state,
+        reportStatus: report.status,
         generationProgress: (report as any).generation_progress,
         jobError: (report as any).job_error,
         lotCount: 1,
@@ -794,6 +817,7 @@ export default function ReportsPage() {
         downloadable: isDownloadable,
         isGeneratingFiles: isGenerating,
         generationState: (listing as any).generation_state,
+        reportStatus: listing.status,
         generationProgress: (listing as any).generation_progress,
         jobError: (listing as any).job_error,
         lotSummary: summarizeLotNumbers(lots, listing._id),
@@ -986,9 +1010,38 @@ export default function ReportsPage() {
 
   const renderFileControls = (group: ReportGroup, singleLine = false) => {
     const hasDownloads = hasGroupDownloadVariants(group);
+    const isPreparingPreview =
+      group.reportStatus === "processing" ||
+      (group.reportStatus === "preview" && Boolean(group.isGeneratingFiles));
+    const isPreviewReady = group.reportStatus === "preview" && !group.isGeneratingFiles;
     const showGeneratingOnly = Boolean(group.isGeneratingFiles) && !hasDownloads;
-    const showErrorOnly = group.generationState === "error" && !hasDownloads;
+    const showErrorOnly =
+      group.generationState === "error" &&
+      !hasDownloads &&
+      !["processing", "preview", "declined"].includes(String(group.reportStatus || ""));
     const downloadable = group.downloadable !== false;
+
+    if (isPreparingPreview) {
+      return (
+        <GeneratingFilesProgress
+          progress={group.generationProgress}
+          fallbackMessage="Analyzing images and preparing your first preview..."
+        />
+      );
+    }
+
+    if (isPreviewReady && !hasDownloads) {
+      return (
+        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+          <Typography sx={{ color: "#2563eb", fontSize: 12, fontWeight: 800 }}>
+            Preview ready for your review.
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => router.push("/previews")}>
+            Open preview
+          </Button>
+        </Stack>
+      );
+    }
 
     if (showGeneratingOnly) {
       return <GeneratingFilesProgress progress={group.generationProgress} />;
@@ -1265,7 +1318,8 @@ export default function ReportsPage() {
                 group.approvalStatus,
                 Boolean(group.isGeneratingFiles) && !hasDownloads,
                 group.release_status,
-                group.generationState
+                group.generationState,
+                group.reportStatus
               );
               const title = group.contract_no
                 ? `${typeLabel(group.type)} - ${group.contract_no}`
@@ -1378,7 +1432,8 @@ export default function ReportsPage() {
                     group.approvalStatus,
                     Boolean(group.isGeneratingFiles) && !hasDownloads,
                     group.release_status,
-                    group.generationState
+                    group.generationState,
+                    group.reportStatus
                   );
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} - ${group.contract_no}`
