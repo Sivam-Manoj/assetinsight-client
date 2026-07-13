@@ -26,7 +26,7 @@ interface LotListingPreviewModalProps {
   reportId: string;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (submittedReport?: any) => void;
   isResubmitMode?: boolean;
 }
 
@@ -363,9 +363,11 @@ export default function LotListingPreviewModal({
 
     try {
       setSubmitting(true);
+      let submittedReport: LotListing | undefined;
 
       if (isResubmitMode) {
         const updated = await resubmitLotListing(reportId, { preview_data: previewData });
+        submittedReport = updated;
         setHasChanges(false);
         applyLotListingState(updated, {
           assumeFilesGenerating: true,
@@ -379,6 +381,7 @@ export default function LotListingPreviewModal({
         });
         setHasChanges(false);
         const submitted = await submitLotListingForApproval(reportId, { preview_data: previewData });
+        submittedReport = submitted;
         applyLotListingState(submitted, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: false,
@@ -386,7 +389,7 @@ export default function LotListingPreviewModal({
         toast.success("Lot listing files are being generated and will be released automatically.");
       }
 
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(submittedReport);
       onClose();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit lot listing");

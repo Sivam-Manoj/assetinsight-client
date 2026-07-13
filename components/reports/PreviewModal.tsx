@@ -25,7 +25,7 @@ interface PreviewModalProps {
   reportId: string;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (submittedReport?: any) => void;
   isResubmitMode?: boolean; // If true, this is for editing/resubmitting an already submitted report
   loadPreviewDataOverride?: (reportId: string) => Promise<any>;
   updatePreviewDataOverride?: (
@@ -500,6 +500,7 @@ export default function PreviewModal({
 
     try {
       setSubmitting(true);
+      let submittedReport: any;
       
       if (isResubmitMode) {
         // For resubmit mode: save changes and resubmit in one call
@@ -514,11 +515,16 @@ export default function PreviewModal({
         // Submit the exact edited snapshot in one request. Saving first and then
         // submitting allowed the second request to queue an older preview copy.
         const submitted = await submitForApproval(reportId, previewData);
+        submittedReport = { ...submitted.data, _id: submitted.data?.reportId || reportId };
         setHasChanges(false);
         toast.success(submitted.message || "Report submitted. Files are being generated.");
       }
       
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(
+        isResubmitMode
+          ? undefined
+          : submittedReport
+      );
       onClose();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit report");

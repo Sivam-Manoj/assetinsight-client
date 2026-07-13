@@ -602,10 +602,18 @@ export default function ReportsPage() {
           ? (asset as any).lots
           : [];
       const total = lots.reduce((sum: number, lot: any) => {
-        const parsed = Number(
+        const lotValue = Number(
           String(lot?.estimated_value || "").replace(/[^0-9.-]+/g, "")
         );
-        return sum + (Number.isFinite(parsed) ? parsed : 0);
+        const itemValue = Array.isArray(lot?.items)
+          ? lot.items.reduce((itemSum: number, item: any) => {
+              const parsed = Number(
+                String(item?.estimated_value || "").replace(/[^0-9.-]+/g, "")
+              );
+              return itemSum + (Number.isFinite(parsed) ? parsed : 0);
+            }, 0)
+          : 0;
+        return sum + Math.max(Number.isFinite(lotValue) ? lotValue : 0, itemValue);
       }, 0);
       const fairMarketValue =
         total > 0

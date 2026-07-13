@@ -252,7 +252,6 @@ export default function PreviewsPage() {
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
       const submittedAssets: CombinedReport[] = (submittedAssetResponse.data || [])
-        .filter((report: any) => report.workflow_stage !== "ready")
         .map((report) => ({ ...report, reportType: "asset" as const }));
       const realEstateSubmitted: CombinedReport[] = (realEstateResponse.data || [])
         .filter(
@@ -264,7 +263,6 @@ export default function PreviewsPage() {
         )
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
       const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
-        .filter((report: any) => report.workflow_stage !== "ready")
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
 
       setNewReports(
@@ -332,7 +330,32 @@ export default function PreviewsPage() {
     setIsResubmitMode(false);
   };
 
-  const handleSuccess = () => {
+  const handleSuccess = (submittedReport?: any) => {
+    const reportId = String(
+      submittedReport?._id || submittedReport?.reportId || selectedReportId || ""
+    );
+    if (reportId) {
+      const source = [...newReports, ...submittedReports].find(
+        (report) => String(report._id) === reportId
+      );
+      if (source) {
+        const nextReport = {
+          ...source,
+          ...(submittedReport || {}),
+          _id: reportId,
+          reportType: source.reportType,
+          preview_submitted_at:
+            submittedReport?.preview_submitted_at || new Date().toISOString(),
+        } as CombinedReport;
+        setNewReports((current) =>
+          current.filter((report) => String(report._id) !== reportId)
+        );
+        setSubmittedReports((current) => [
+          nextReport,
+          ...current.filter((report) => String(report._id) !== reportId),
+        ]);
+      }
+    }
     setActiveTab("submitted");
     requestReportsRefetch();
     void loadReports();
