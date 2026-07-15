@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthService } from "@/services/auth";
 import { Eye, EyeOff, Lock, Loader2 } from "lucide-react";
+import { useAuthContext } from "@/context/AuthContext";
 
 export default function ResetPasswordForm({ token }: { token: string }) {
+  const { acceptAuthResponse } = useAuthContext();
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -25,8 +27,12 @@ export default function ResetPasswordForm({ token }: { token: string }) {
     setLoading(true);
     try {
       const res = await AuthService.resetPassword({ token, password });
+      acceptAuthResponse(res);
       setMessage(res.message || "Password reset successful");
-      setTimeout(() => router.replace("/me"), 800);
+      setTimeout(
+        () => router.replace(res.authState === "authenticated" ? "/me" : "/device-access"),
+        800
+      );
     } catch (err: any) {
       setError(err?.message || "Failed to reset password");
     } finally {

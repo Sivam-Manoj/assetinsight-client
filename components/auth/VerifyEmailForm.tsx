@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthService } from "@/services/auth";
+import { useAuthContext } from "@/context/AuthContext";
 import { Mail, Hash, Loader2 } from "lucide-react";
 
 export default function VerifyEmailForm() {
   const router = useRouter();
+  const { acceptAuthResponse } = useAuthContext();
   const search = useSearchParams();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -32,11 +34,13 @@ export default function VerifyEmailForm() {
         email,
         verificationCode: code,
       });
+      acceptAuthResponse(res);
       setMessage(res.message || "Email verified successfully.");
-      setTimeout(
-        () => router.replace("/login?email=" + encodeURIComponent(email)),
-        800
-      );
+      setTimeout(() => {
+        router.replace(
+          res.authState === "authenticated" ? "/dashboard" : "/device-access"
+        );
+      }, 800);
     } catch (err: any) {
       setError(err?.message || "Failed to verify email");
     } finally {

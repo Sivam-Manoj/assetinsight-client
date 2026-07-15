@@ -6,20 +6,33 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import type { AuthUser, LoginPayload } from "@/services/auth";
+import type { AuthResponse, AuthUser, LoginPayload } from "@/services/auth";
 import { AuthService } from "@/services/auth";
 import { UserService } from "@/services/user";
 import { clearTokens, hasStoredTokens } from "@/lib/auth-storage";
+import {
+  clearStoredDeviceAccess,
+  getStoredDeviceAccess,
+  storeDeviceAccess,
+  type RestrictedDeviceAccess,
+} from "@/lib/device-access";
+import { DeviceAccessService } from "@/services/device-access";
 
 export type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
   error: string | null;
   loggingOut: boolean;
+  deviceAccess: RestrictedDeviceAccess | null;
   refresh: () => Promise<void>;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<AuthResponse>;
+  acceptAuthResponse: (response: AuthResponse) => AuthResponse;
+  registerDevice: () => Promise<void>;
+  refreshDeviceStatus: () => Promise<void>;
+  rerequestDevice: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -30,6 +43,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deviceAccess, setDeviceAccess] = useState<RestrictedDeviceAccess | null>(null);
+  const statusRequest = useRef<Promise<void> | null>(null);
+
+  const applyResponse = useCallback((data: AuthResponse) => {
+    if (data.authState === "authenticated") {
+      setUser(data.user);
+      setDeviceAccess(null);
+      clearStoredDeviceAccess();
+    } else {
+      setUser(null);
+      setDeviceAccess(data);
+      storeDeviceAccess(data);
+    }
+    return data;
+  }, []);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -39,10 +67,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoggingOut(false);
     } catch (err: any) {
       setUser(null);
-      setError(
-        err?.response?.data?.message || err?.message || "Unable to load your account"
-      );
-      clearTokens();
+      const restricted = err?.response?.data as RestrictedDeviceAccess | undefined;
+      if (restricted?.authState) {
+        setDeviceAccess(restricted);
+        storeDeviceAccess(restricted);
+        clearTokens();
+      } else {
+        setError(
+          err?.response?.data?.message || err?.message || "Unable to load your account"
+        );
+        clearTokens();
+      }
     }
   }, []);
 
@@ -51,19 +86,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setLoggingOut(false);
       const data = await AuthService.login(payload);
-      setUser(data.user);
+      return applyResponse(data);
     },
-    []
+    [applyResponse]
   );
+
+  const exchangeIfApproved = useCallback(async () => {
+    const authenticated = await DeviceAccessService.exchange();
+    setUser(authenticated.user);
+    setDeviceAccess(null);
+    setError(null);
+  }, []);
+
+  const registerDevice = useCallback(async () => {
+    const next = await DeviceAccessService.register();
+    if ((next as unknown as { authState?: string }).authState === "approved") {
+      await exchangeIfApproved();
+      return;
+    }
+    setDeviceAccess(next);
+  }, [exchangeIfApproved]);
+
+  const refreshDeviceStatus = useCallback(() => {
+    if (statusRequest.current) return statusRequest.current;
+    const request = (async () => {
+      const result = await DeviceAccessService.status();
+      const status = result.status || result.authState;
+      if (status === "approved") {
+        await exchangeIfApproved();
+        return;
+      }
+      const next = { ...result, authState: status } as RestrictedDeviceAccess;
+      setDeviceAccess(next);
+      storeDeviceAccess(next);
+    })().finally(() => {
+      statusRequest.current = null;
+    });
+    statusRequest.current = request;
+    return request;
+  }, [exchangeIfApproved]);
+
+  const rerequestDevice = useCallback(async () => {
+    const next = await DeviceAccessService.rerequest();
+    setDeviceAccess(next);
+  }, []);
 
   const logout = useCallback(async () => {
     setLoggingOut(true);
     await AuthService.logout();
     setUser(null);
+    setDeviceAccess(null);
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && hasStoredTokens()) {
+    const storedDeviceAccess = getStoredDeviceAccess();
+    if (storedDeviceAccess) {
+      setDeviceAccess(storedDeviceAccess);
+      setUser(null);
+      setLoggingOut(false);
+      setLoading(false);
+    } else if (typeof window !== "undefined" && hasStoredTokens()) {
       refresh().finally(() => setLoading(false));
     } else {
       clearTokens();
@@ -73,9 +155,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refresh]);
 
+  useEffect(() => {
+    const onRestricted = (event: Event) => {
+      const detail = (event as CustomEvent<RestrictedDeviceAccess>).detail;
+      if (!detail?.authState) return;
+      clearTokens();
+      setUser(null);
+      setDeviceAccess(detail);
+      storeDeviceAccess(detail);
+    };
+    window.addEventListener("device-access-restricted", onRestricted);
+    return () => window.removeEventListener("device-access-restricted", onRestricted);
+  }, []);
+
+  useEffect(() => {
+    const onSessionInvalidated = () => {
+      clearTokens();
+      clearStoredDeviceAccess();
+      setUser(null);
+      setDeviceAccess(null);
+      setLoggingOut(false);
+      setError("Your device session is no longer valid. Sign in again to continue.");
+    };
+    window.addEventListener("auth-session-invalidated", onSessionInvalidated);
+    return () => window.removeEventListener("auth-session-invalidated", onSessionInvalidated);
+  }, []);
+
   const value = useMemo<AuthContextType>(
-    () => ({ user, loading, error, loggingOut, refresh, login, logout }),
-    [user, loading, error, loggingOut, refresh, login, logout]
+    () => ({
+      user,
+      loading,
+      error,
+      loggingOut,
+      deviceAccess,
+      refresh,
+      login,
+      acceptAuthResponse: applyResponse,
+      registerDevice,
+      refreshDeviceStatus,
+      rerequestDevice,
+      logout,
+    }),
+    [
+      user,
+      loading,
+      error,
+      loggingOut,
+      deviceAccess,
+      refresh,
+      login,
+      applyResponse,
+      registerDevice,
+      refreshDeviceStatus,
+      rerequestDevice,
+      logout,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

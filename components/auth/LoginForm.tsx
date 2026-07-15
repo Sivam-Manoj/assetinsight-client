@@ -36,9 +36,13 @@ export default function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      await login({ email, password });
-      const next = search.get("next");
-      router.replace(next || "/dashboard");
+      const result = await login({ email, password });
+      if (result.authState !== "authenticated") {
+        router.replace("/device-access");
+      } else {
+        const next = search.get("next");
+        router.replace(next || "/dashboard");
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to login");
     } finally {

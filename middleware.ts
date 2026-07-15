@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const ACCESS_COOKIE = "cv_access_token";
 const REFRESH_COOKIE = "cv_refresh_token";
+const DEVICE_PENDING_COOKIE = "cv_device_pending";
 
 function isPublicPath(pathname: string) {
   return (
@@ -12,6 +13,7 @@ function isPublicPath(pathname: string) {
     pathname.startsWith("/verify-email") ||
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password")
+    || pathname.startsWith("/device-access")
   );
 }
 
@@ -46,6 +48,15 @@ export function middleware(request: NextRequest) {
   const { nextUrl } = request;
   const pathname = nextUrl.pathname;
   const hasSession = getSessionState(request);
+  const hasDeviceRequest = Boolean(request.cookies.get(DEVICE_PENDING_COOKIE)?.value);
+
+  if (hasDeviceRequest && !hasSession && !isPublicPath(pathname)) {
+    return NextResponse.redirect(new URL("/device-access", request.url));
+  }
+
+  if (pathname.startsWith("/device-access") && hasSession && !hasDeviceRequest) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
 
   if (!hasSession && !isPublicPath(pathname)) {
     const loginUrl = new URL("/login", request.url);

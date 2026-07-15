@@ -1,5 +1,11 @@
 import API from '@/lib/api';
 import { clearTokens, setTokens } from '@/lib/auth-storage';
+import {
+  buildBasicDeviceContext,
+  clearStoredDeviceAccess,
+  storeDeviceAccess,
+  type RestrictedDeviceAccess,
+} from '@/lib/device-access';
 
 export type SignupPayload = {
   email: string;
@@ -15,6 +21,17 @@ export type LoginPayload = {
   email: string;
   password: string;
 };
+
+export type AuthenticatedResponse = {
+  authState: 'authenticated';
+  message?: string;
+  accessToken: string;
+  refreshToken: string;
+  user: AuthUser;
+  device?: { id: string; status: string; displayName?: string };
+};
+
+export type AuthResponse = AuthenticatedResponse | RestrictedDeviceAccess;
 
 export type VerifyEmailPayload = {
   email: string;
@@ -52,29 +69,48 @@ export type AuthUser = {
   updatedAt?: string;
 };
 
+async function deviceAwarePayload<T extends Record<string, unknown>>(payload: T) {
+  return { ...payload, deviceContext: await buildBasicDeviceContext() };
+}
+
+function applyAuthResponse(data: AuthResponse) {
+  if (data.authState === 'authenticated') {
+    setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+    clearStoredDeviceAccess();
+  } else {
+    clearTokens();
+    storeDeviceAccess(data);
+  }
+  return data;
+}
+
 export const AuthService = {
   async signup(payload: SignupPayload): Promise<{ message: string }> {
     const { data } = await API.post<{ message: string }>('/auth/signup', payload);
     return data;
   },
 
-  async login(payload: LoginPayload): Promise<{ accessToken: string; refreshToken: string; user: AuthUser }> {
+  async login(payload: LoginPayload): Promise<AuthResponse> {
     try {
-      const { data } = await API.post<{ accessToken: string; refreshToken: string; user: AuthUser }>(
+      const { data } = await API.post<AuthResponse>(
         '/auth/login',
-        payload,
+        await deviceAwarePayload(payload),
       );
-      setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-      return data;
+      return applyAuthResponse(data);
     } catch (err: any) {
+      const restricted = err?.response?.data as RestrictedDeviceAccess | undefined;
+      if (restricted?.authState) return applyAuthResponse(restricted);
       const serverMsg = err?.response?.data?.message || err?.message || 'Failed to login';
       throw new Error(serverMsg);
     }
   },
 
-  async verifyEmail(payload: VerifyEmailPayload): Promise<{ message: string }> {
-    const { data } = await API.post<{ message: string }>('/auth/verify-email', payload);
-    return data;
+  async verifyEmail(payload: VerifyEmailPayload): Promise<AuthResponse & { message?: string }> {
+    const { data } = await API.post<AuthResponse & { message?: string }>(
+      '/auth/verify-email',
+      await deviceAwarePayload(payload),
+    );
+    return applyAuthResponse(data);
   },
 
   async resendVerificationCode(email: string): Promise<{ message: string }> {
@@ -90,26 +126,20 @@ export const AuthService = {
     return data;
   },
 
-  async resetPasswordByCode(payload: ResetPasswordCodePayload): Promise<{ message: string; accessToken?: string; refreshToken?: string }> {
-    const { data } = await API.post<{ message: string; accessToken?: string; refreshToken?: string }>(
+  async resetPasswordByCode(payload: ResetPasswordCodePayload): Promise<AuthResponse & { message?: string }> {
+    const { data } = await API.post<AuthResponse & { message?: string }>(
       '/auth/reset-password-code',
-      payload,
+      await deviceAwarePayload(payload),
     );
-    if (data.accessToken && data.refreshToken) {
-      setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-    }
-    return data;
+    return applyAuthResponse(data);
   },
 
-  async resetPassword(payload: ResetPasswordPayload): Promise<{ message: string; accessToken?: string; refreshToken?: string }> {
-    const { data } = await API.post<{ message: string; accessToken?: string; refreshToken?: string }>(
+  async resetPassword(payload: ResetPasswordPayload): Promise<AuthResponse & { message?: string }> {
+    const { data } = await API.post<AuthResponse & { message?: string }>(
       `/auth/reset-password/${payload.token}`,
-      { password: payload.password },
+      await deviceAwarePayload({ password: payload.password }),
     );
-    if (data.accessToken && data.refreshToken) {
-      setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
-    }
-    return data;
+    return applyAuthResponse(data);
   },
 
   async logout() {
@@ -121,6 +151,7 @@ export const AuthService = {
       }
     } finally {
       clearTokens();
+      clearStoredDeviceAccess();
     }
   },
 };

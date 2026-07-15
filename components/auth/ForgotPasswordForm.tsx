@@ -4,9 +4,11 @@ import { useState } from "react";
 import { AuthService } from "@/services/auth";
 import { useRouter } from "next/navigation";
 import { Hash, Loader2, Lock, Mail } from "lucide-react";
+import { useAuthContext } from "@/context/AuthContext";
 
 export default function ForgotPasswordForm() {
   const router = useRouter();
+  const { acceptAuthResponse } = useAuthContext();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -48,8 +50,12 @@ export default function ForgotPasswordForm() {
           code: code.trim(),
           password,
         });
+        acceptAuthResponse(res);
         setMessage(res.message || "Password reset successful.");
-        setTimeout(() => router.replace("/me"), 800);
+        setTimeout(
+          () => router.replace(res.authState === "authenticated" ? "/me" : "/device-access"),
+          800
+        );
       }
     } catch (err: any) {
       if (step === "request") {

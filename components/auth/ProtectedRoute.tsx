@@ -13,11 +13,16 @@ export default function ProtectedRoute({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading, loggingOut } = useAuthContext();
+  const { user, loading, loggingOut, deviceAccess } = useAuthContext();
   const hasSession = hasStoredTokens();
 
   useEffect(() => {
     if (loading || loggingOut || (hasSession && user)) {
+      return;
+    }
+
+    if (deviceAccess) {
+      router.replace("/device-access");
       return;
     }
 
@@ -26,7 +31,7 @@ export default function ProtectedRoute({
       : "/login";
 
     router.replace(loginUrl);
-  }, [hasSession, loading, loggingOut, pathname, router, user]);
+  }, [deviceAccess, hasSession, loading, loggingOut, pathname, router, user]);
 
   if (loading || loggingOut) {
     return (
@@ -39,10 +44,10 @@ export default function ProtectedRoute({
     );
   }
 
-  if (!hasSession || !user) {
+  if (deviceAccess || !hasSession || !user) {
     return (
       <Loading
-        message="Redirecting to login..."
+        message={deviceAccess ? "Opening device access..." : "Redirecting to login..."}
         height={140}
         width={140}
         className="min-h-[50vh]"
