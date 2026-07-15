@@ -375,13 +375,11 @@ export default function LotListingPreviewModal({
         });
         toast.success("Lot listing files are being regenerated and will remain automatically released.");
       } else {
-        await updateLotListingPreview(reportId, {
-          preview_data: previewData,
-          regenerate_files_on_lot_number_change: false,
-        });
-        setHasChanges(false);
+        // Submit the edited snapshot once. Saving first and then submitting the
+        // previous React state allowed the second request to restore stale text.
         const submitted = await submitLotListingForApproval(reportId, { preview_data: previewData });
         submittedReport = submitted;
+        setHasChanges(false);
         applyLotListingState(submitted, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: false,
