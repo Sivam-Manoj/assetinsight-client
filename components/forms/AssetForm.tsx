@@ -1780,7 +1780,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                         Damage Analysis
                       </label>
                       <p className="mt-1 text-[11px] text-gray-600">
-                        Generalized Damage Analysis
+                        Applies only to lots 1000 and above. Lower lot numbers are excluded automatically.
                       </p>
                     </div>
                     <button

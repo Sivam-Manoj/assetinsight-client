@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, GitMerge as MergeIcon } from "lucide-react";
+import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2, GitMerge as MergeIcon } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   getPreviewData, 
@@ -20,6 +20,15 @@ import {
   CURRENT_BROWSER_LOCATION_LABEL,
 } from "@/lib/browserLocation";
 import { ReportsService } from "@/services/reports";
+import {
+  applyDamageAnalysisLotPolicy,
+  getLotNumberForDamagePolicy,
+  isDamageAnalysisEligibleForLot,
+} from "@/lib/lotDamagePolicy";
+import {
+  removeGalleryPhotoEntry,
+  removeLotPhotoReference,
+} from "@/lib/previewPhotoDeletion";
 
 interface PreviewModalProps {
   reportId: string;
@@ -72,6 +81,17 @@ type ExpandedLotTextEditor = {
   lotIndex: number;
   field: ExpandableLotTextField;
   variant: "mobile" | "desktop";
+};
+
+type LotGalleryEntry = {
+  url: string;
+  globalIndex: number | null;
+  lotIndex: number;
+};
+
+type LotGalleryState = {
+  entries: LotGalleryEntry[];
+  currentIdx: number;
 };
 
 const normalizeSpecKey = (value: unknown) =>
@@ -271,7 +291,7 @@ export default function PreviewModal({
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
-  const [galleryLotImages, setGalleryLotImages] = useState<{ urls: string[]; currentIdx: number } | null>(null);
+  const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
   const focusStateRef = useRef<{
     fieldId: string | null;
     selectionStart: number | null;
@@ -404,7 +424,7 @@ export default function PreviewModal({
             Number.isFinite(Number(lot?.longitude))
           )
         : undefined;
-      setPreviewData({
+      setPreviewData(applyDamageAnalysisLotPolicy({
         ...nextPreviewData,
         location: fallbackLocation,
         latitude: Number.isFinite(Number(nextPreviewData.latitude))
@@ -417,7 +437,7 @@ export default function PreviewModal({
           : Number.isFinite(Number(fallbackCoordinates?.longitude))
             ? Number(fallbackCoordinates.longitude)
             : nextPreviewData.longitude,
-      });
+      }));
       setPreviewFiles((response.data as any).preview_files || null);
       setGroupingMode(response.data.grouping_mode);
       setImageCount(response.data.image_count);
@@ -439,8 +459,10 @@ export default function PreviewModal({
     try {
       setSaving(true);
       const savePreview = updatePreviewDataOverride || updatePreviewData;
-      const saved = await savePreview(reportId, previewData);
-      if (saved?.data) setPreviewData(saved.data);
+      const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+      setPreviewData(previewForRequest);
+      const saved = await savePreview(reportId, previewForRequest);
+      if (saved?.data) setPreviewData(applyDamageAnalysisLotPolicy(saved.data));
       if (saved?.files_regeneration_queued) {
         setHasChanges(false);
         const isFirstMergedPreviewBuild = previewData?.is_merged_report === true && !previewFiles?.excel;
@@ -466,7 +488,9 @@ export default function PreviewModal({
             spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
             cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
           }));
-          if (pdf.data?.preview_data) setPreviewData(pdf.data.preview_data);
+          if (pdf.data?.preview_data) {
+            setPreviewData(applyDamageAnalysisLotPolicy(pdf.data.preview_data));
+          }
           pdfRefreshed = true;
         }
       } catch (pdfError: any) {
@@ -505,7 +529,9 @@ export default function PreviewModal({
       if (isResubmitMode) {
         // For resubmit mode: save changes and resubmit in one call
         const submitUpdatedReport = resubmitReportOverride || resubmitReport;
-        await submitUpdatedReport(reportId, hasChanges ? previewData : undefined);
+        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+        setPreviewData(previewForRequest);
+        await submitUpdatedReport(reportId, previewForRequest);
         toast.success(
           isAssignedApprovalMode
             ? "Files are regenerating. The report will approve after generation succeeds."
@@ -514,7 +540,9 @@ export default function PreviewModal({
       } else {
         // Submit the exact edited snapshot in one request. Saving first and then
         // submitting allowed the second request to queue an older preview copy.
-        const submitted = await submitForApproval(reportId, previewData);
+        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+        setPreviewData(previewForRequest);
+        const submitted = await submitForApproval(reportId, previewForRequest);
         submittedReport = { ...submitted.data, _id: submitted.data?.reportId || reportId };
         setHasChanges(false);
         toast.success(submitted.message || "Report submitted. Files are being generated.");
@@ -646,7 +674,14 @@ export default function PreviewModal({
   const updateLot = (index: number, field: string, value: any) => {
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      newLots[index] = { ...newLots[index], [field]: value };
+      const nextLot = { ...newLots[index], [field]: value };
+      if (
+        field === "lot_number" &&
+        !isDamageAnalysisEligibleForLot(getLotNumberForDamagePolicy(nextLot))
+      ) {
+        nextLot.damage_analysis = "";
+      }
+      newLots[index] = nextLot;
       return { ...prev, lots: newLots };
     });
     setHasChanges(true);
@@ -762,45 +797,27 @@ export default function PreviewModal({
     setHasChanges(true);
   };
 
-  const deleteLotImage = (lotIndex: number, globalImageIndex: number) => {
-    if (!window.confirm("Remove this image from this lot and regenerated files?")) return;
-    setPreviewData((prev: any) => {
-      const newLots = [...(prev?.lots || [])];
-      const lot = { ...(newLots[lotIndex] || {}) };
-      const removeIndex = (values: any) =>
-        Array.isArray(values)
-          ? values.filter((value) => Number(value) !== globalImageIndex)
-          : values;
-      lot.image_indexes = removeIndex(lot.image_indexes);
-      lot.extra_image_indexes = removeIndex(lot.extra_image_indexes);
-      if (Number(lot.image_index) === globalImageIndex) delete lot.image_index;
-      if (Number(lot.cover_index) === globalImageIndex) delete lot.cover_index;
-      const imageUrl = imageUrls[globalImageIndex];
-      if (imageUrl) {
-        lot.image_urls = Array.isArray(lot.image_urls)
-          ? lot.image_urls.filter((url: string) => url !== imageUrl)
-          : lot.image_urls;
-        lot.extra_image_urls = Array.isArray(lot.extra_image_urls)
-          ? lot.extra_image_urls.filter((url: string) => url !== imageUrl)
-          : lot.extra_image_urls;
-        if (lot.image_url === imageUrl) delete lot.image_url;
-      }
-      newLots[lotIndex] = lot;
-      const stillReferenced = newLots.some((candidate: any) => {
-        const refs = [
-          ...(Array.isArray(candidate?.image_indexes) ? candidate.image_indexes : []),
-          ...(Array.isArray(candidate?.extra_image_indexes) ? candidate.extra_image_indexes : []),
-          ...(typeof candidate?.image_index === "number" ? [candidate.image_index] : []),
-        ];
-        return refs.some((value) => Number(value) === globalImageIndex);
+  const deleteLotImage = (
+    lotIndex: number,
+    entry: Pick<LotGalleryEntry, "globalIndex" | "url">
+  ) => {
+    if (
+      !window.confirm(
+        "Remove this photo from the lot? It will be permanently deleted from storage after you Save or Submit. Closing without saving leaves storage unchanged."
+      )
+    ) {
+      return;
+    }
+    setPreviewData((prev: any) =>
+      removeLotPhotoReference(prev, lotIndex, entry)
+    );
+    setGalleryLotImages((prev) => {
+      if (!prev) return prev;
+      const next = removeGalleryPhotoEntry(prev.entries, prev.currentIdx, {
+        ...entry,
+        lotIndex,
       });
-      const deleted = Array.isArray(prev?.deleted_image_indexes)
-        ? prev.deleted_image_indexes.map((value: any) => Number(value)).filter((value: number) => Number.isInteger(value))
-        : [];
-      const nextDeleted = stillReferenced || deleted.includes(globalImageIndex)
-        ? deleted
-        : [...deleted, globalImageIndex];
-      return { ...prev, lots: newLots, deleted_image_indexes: nextDeleted };
+      return next.entries.length ? next : null;
     });
     setHasChanges(true);
   };
@@ -815,10 +832,21 @@ export default function PreviewModal({
     ]
       .map((value) => Number(value))
       .filter((value, index, arr) => Number.isInteger(value) && value >= 0 && arr.indexOf(value) === index);
-    return indexes.flatMap((globalIndex) => {
+    const entries: Array<{ globalIndex: number | null; url: string }> = indexes.flatMap((globalIndex) => {
       const url = imageUrls[globalIndex];
       return url ? [{ globalIndex, url }] : [];
     });
+    const fallbackUrls = [
+      ...(Array.isArray(lot?.image_urls) ? lot.image_urls : []),
+      ...(Array.isArray(lot?.extra_image_urls) ? lot.extra_image_urls : []),
+      lot?.image_url,
+    ].filter((url): url is string => typeof url === "string" && Boolean(url));
+    fallbackUrls.forEach((url) => {
+      if (entries.some((entry) => entry.url === url)) return;
+      const rootIndex = imageUrls.indexOf(url);
+      entries.push({ globalIndex: rootIndex >= 0 ? rootIndex : null, url });
+    });
+    return entries;
   };
 
   const handleUploadLotImages = async (lot: any, index: number, fileList: FileList | null) => {
@@ -830,7 +858,7 @@ export default function PreviewModal({
       const uploadLotImages = uploadPreviewLotImagesOverride || uploadPreviewLotImages;
       const response = await uploadLotImages(reportId, lotKey, files, previewData);
       if (response.data?.preview_data) {
-        setPreviewData(response.data.preview_data);
+        setPreviewData(applyDamageAnalysisLotPolicy(response.data.preview_data));
       }
       if (Array.isArray(response.data?.imageUrls)) {
         setImageUrls(response.data.imageUrls);
@@ -1516,41 +1544,70 @@ export default function PreviewModal({
 
           {/* Lot-Specific Photo Gallery Modal */}
           {galleryLotImages !== null && (
-            <div className="fixed inset-0 z-50 bg-black/95 flex flex-col" onClick={() => setGalleryLotImages(null)}>
+            <div
+              className="fixed inset-0 z-50 flex flex-col bg-black/95"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Lot photo gallery"
+              onClick={() => setGalleryLotImages(null)}
+            >
               {/* Header */}
-              <div className="flex items-center justify-between p-4 bg-black/50">
+              <div
+                className="flex items-center justify-between gap-3 bg-black/50 p-4"
+                onClick={(event) => event.stopPropagation()}
+              >
                 <div className="text-white text-sm font-medium">
-                  Photo {galleryLotImages.currentIdx + 1} of {galleryLotImages.urls.length}
+                  Photo {galleryLotImages.currentIdx + 1} of {galleryLotImages.entries.length}
                 </div>
-                <button
-                  onClick={() => setGalleryLotImages(null)}
-                  className="text-white hover:text-gray-300 transition-colors p-2"
-                >
-                  <X className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = galleryLotImages.entries[galleryLotImages.currentIdx];
+                      if (current) deleteLotImage(current.lotIndex, current);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white shadow transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
+                    aria-label={`Remove photo ${galleryLotImages.currentIdx + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="hidden sm:inline">Remove photo</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGalleryLotImages(null)}
+                    className="p-2 text-white transition-colors hover:text-gray-300"
+                    aria-label="Close photo gallery"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
               </div>
 
               {/* Main Image */}
               <div className="flex-1 flex items-center justify-center p-4 relative" onClick={(e) => e.stopPropagation()}>
                 {galleryLotImages.currentIdx > 0 && (
                   <button
+                    type="button"
                     onClick={() => setGalleryLotImages(prev => prev ? { ...prev, currentIdx: prev.currentIdx - 1 } : null)}
                     className="absolute left-4 text-white hover:text-gray-300 transition-colors bg-black/30 rounded-full p-2"
+                    aria-label="Previous photo"
                   >
                     <ChevronLeft className="h-8 w-8" />
                   </button>
                 )}
-                {galleryLotImages.currentIdx < galleryLotImages.urls.length - 1 && (
+                {galleryLotImages.currentIdx < galleryLotImages.entries.length - 1 && (
                   <button
+                    type="button"
                     onClick={() => setGalleryLotImages(prev => prev ? { ...prev, currentIdx: prev.currentIdx + 1 } : null)}
                     className="absolute right-4 text-white hover:text-gray-300 transition-colors bg-black/30 rounded-full p-2"
+                    aria-label="Next photo"
                   >
                     <ChevronRight className="h-8 w-8" />
                   </button>
                 )}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={galleryLotImages.urls[galleryLotImages.currentIdx]}
+                  src={galleryLotImages.entries[galleryLotImages.currentIdx]?.url}
                   alt={`Photo ${galleryLotImages.currentIdx + 1}`}
                   className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-2xl"
                 />
@@ -1559,9 +1616,10 @@ export default function PreviewModal({
               {/* Thumbnail Strip */}
               <div className="bg-black/70 p-3" onClick={(e) => e.stopPropagation()}>
                 <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
-                  {galleryLotImages.urls.map((url, i) => (
-                    <div
-                      key={i}
+                  {galleryLotImages.entries.map((entry, i) => (
+                    <button
+                      type="button"
+                      key={`${entry.globalIndex ?? "url"}-${entry.url}`}
                       onClick={() => setGalleryLotImages(prev => prev ? { ...prev, currentIdx: i } : null)}
                       className={`flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden cursor-pointer transition-all ${
                         i === galleryLotImages.currentIdx 
@@ -1570,8 +1628,8 @@ export default function PreviewModal({
                       }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`Thumb ${i + 1}`} className="w-full h-full object-cover" />
-                    </div>
+                      <img src={entry.url} alt={`Photo ${i + 1} thumbnail`} className="w-full h-full object-cover" />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1618,7 +1676,10 @@ export default function PreviewModal({
                               const lotUploadKey = getLotUploadKey(lot, idx);
                               const uploadInputId = `asset-preview-upload-${idx}-mobile`;
                               const openLotGallery = (startIdx: number) => {
-                                setGalleryLotImages({ urls: lotImages.map((entry) => entry.url), currentIdx: startIdx });
+                                setGalleryLotImages({
+                                  entries: lotImages.map((entry) => ({ ...entry, lotIndex: idx })),
+                                  currentIdx: startIdx,
+                                });
                               };
                               return (
                                 <div className="mb-3">
@@ -1664,7 +1725,7 @@ export default function PreviewModal({
                                             onClick={(event) => {
                                               event.preventDefault();
                                               event.stopPropagation();
-                                              deleteLotImage(idx, globalIndex);
+                                              deleteLotImage(idx, { globalIndex, url });
                                             }}
                                             className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-red-600 text-xs font-black text-white opacity-95 shadow"
                                             aria-label={`Remove photo ${imgIdx + 1}`}
@@ -1674,12 +1735,14 @@ export default function PreviewModal({
                                         </div>
                                       ))}
                                       {lotImages.length > 20 && (
-                                        <div
+                                        <button
+                                          type="button"
                                           className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-100 border-2 border-gray-300 cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
                                           onClick={() => openLotGallery(20)}
+                                          aria-label={`Open ${lotImages.length - 20} more photos`}
                                         >
                                           <span className="text-sm font-semibold text-gray-600">+{lotImages.length - 20}</span>
-                                        </div>
+                                        </button>
                                       )}
                                     </div>
                                   </div>
@@ -1751,6 +1814,9 @@ export default function PreviewModal({
                                 onAdd={addLotSpec}
                                 onDelete={deleteLotSpec}
                                 includeDamageAnalysis={includeDamageAnalysis}
+                                damageEligible={isDamageAnalysisEligibleForLot(
+                                  getLotNumberForDamagePolicy(lot)
+                                )}
                                 damageAnalysis={lot.damage_analysis}
                                 onDamageAnalysisChange={(lotIndex, value) =>
                                   updateLot(lotIndex, "damage_analysis", value)
@@ -1806,7 +1872,10 @@ export default function PreviewModal({
                             const lotUploadKey = getLotUploadKey(lot, idx);
                             const uploadInputId = `asset-preview-upload-${idx}-desktop`;
                             const openLotGallery = (startIdx: number) => {
-                              setGalleryLotImages({ urls: lotImages.map((entry) => entry.url), currentIdx: startIdx });
+                              setGalleryLotImages({
+                                entries: lotImages.map((entry) => ({ ...entry, lotIndex: idx })),
+                                currentIdx: startIdx,
+                              });
                             };
                             return (
                             <React.Fragment key={idx}>
@@ -1854,7 +1923,7 @@ export default function PreviewModal({
                                             onClick={(event) => {
                                               event.preventDefault();
                                               event.stopPropagation();
-                                              deleteLotImage(idx, globalIndex);
+                                              deleteLotImage(idx, { globalIndex, url });
                                             }}
                                             className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-black text-white shadow"
                                             aria-label={`Remove photo ${imgI + 1}`}
@@ -1864,12 +1933,14 @@ export default function PreviewModal({
                                         </div>
                                       ))}
                                       {lotImages.length > 6 && (
-                                        <div
+                                        <button
+                                          type="button"
                                           className="w-14 h-14 rounded-lg bg-gray-100 border-2 border-gray-300 cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
                                           onClick={() => openLotGallery(6)}
+                                          aria-label={`Open ${lotImages.length - 6} more photos`}
                                         >
                                           <span className="text-xs font-bold text-gray-600">+{lotImages.length - 6}</span>
-                                        </div>
+                                        </button>
                                       )}
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
@@ -1959,6 +2030,9 @@ export default function PreviewModal({
                                   onAdd={addLotSpec}
                                   onDelete={deleteLotSpec}
                                   includeDamageAnalysis={includeDamageAnalysis}
+                                  damageEligible={isDamageAnalysisEligibleForLot(
+                                    getLotNumberForDamagePolicy(lot)
+                                  )}
                                   damageAnalysis={lot.damage_analysis}
                                   onDamageAnalysisChange={(lotIndex, value) =>
                                     updateLot(lotIndex, "damage_analysis", value)

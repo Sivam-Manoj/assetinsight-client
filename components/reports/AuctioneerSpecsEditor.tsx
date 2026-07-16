@@ -17,6 +17,7 @@ type Props = {
   onAdd?: (lotIndex: number, fieldName: string, value: string) => void;
   onDelete: (lotIndex: number, fieldName: string) => void;
   includeDamageAnalysis?: boolean;
+  damageEligible?: boolean;
   damageAnalysis?: string | null;
   onDamageAnalysisChange?: (lotIndex: number, value: string) => void;
   accent?: "rose" | "purple";
@@ -138,6 +139,7 @@ export default function AuctioneerSpecsEditor({
   onAdd,
   onDelete,
   includeDamageAnalysis = false,
+  damageEligible = true,
   damageAnalysis,
   onDamageAnalysisChange,
   accent = "rose",
@@ -243,6 +245,17 @@ export default function AuctioneerSpecsEditor({
       if (!fieldName) {
         setExpandedEditor((prev) =>
           prev ? { ...prev, error: "Field name is required." } : prev
+        );
+        return;
+      }
+      if (isDamageField(fieldName) && !damageEligible) {
+        setExpandedEditor((prev) =>
+          prev
+            ? {
+                ...prev,
+                error: "Damage Analysis is unavailable for lot numbers below 1000.",
+              }
+            : prev
         );
         return;
       }
@@ -439,7 +452,19 @@ export default function AuctioneerSpecsEditor({
           </button>
         </div>
 
-        {includeDamageAnalysis && onDamageAnalysisChange && (
+        {!damageEligible ? (
+          <div
+            className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900"
+            role="note"
+          >
+            <p className="text-xs font-black uppercase tracking-wide">
+              Damage Analysis not required
+            </p>
+            <p className="mt-1 text-[11px] font-medium leading-5">
+              This lot is below 1000, so Damage Analysis is excluded from the report and generated files.
+            </p>
+          </div>
+        ) : includeDamageAnalysis && onDamageAnalysisChange ? (
           <div className="mb-3 rounded-lg border border-red-200 bg-white p-3 text-gray-900">
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -469,7 +494,7 @@ export default function AuctioneerSpecsEditor({
               </span>
             </button>
           </div>
-        )}
+        ) : null}
 
         {visibleFields.length > 0 ? (
           <div className="max-h-[360px] overflow-y-auto pr-1">
