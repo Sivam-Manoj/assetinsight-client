@@ -253,7 +253,7 @@ export default function AuctioneerSpecsEditor({
           prev
             ? {
                 ...prev,
-                error: "Damage Analysis is unavailable for lot numbers below 1000.",
+                error: "Damage Analysis is unavailable for lot numbers above 1000.",
               }
             : prev
         );
@@ -461,7 +461,7 @@ export default function AuctioneerSpecsEditor({
               Damage Analysis not required
             </p>
             <p className="mt-1 text-[11px] font-medium leading-5">
-              This lot is below 1000, so Damage Analysis is excluded from the report and generated files.
+              This lot is above 1000, so Damage Analysis is excluded from the report and generated files.
             </p>
           </div>
         ) : includeDamageAnalysis && onDamageAnalysisChange ? (

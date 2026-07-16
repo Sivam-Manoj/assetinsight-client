@@ -1,4 +1,4 @@
-export const DAMAGE_ANALYSIS_MINIMUM_LOT_NUMBER = 1000;
+export const DAMAGE_ANALYSIS_MAXIMUM_LOT_NUMBER = 1000;
 
 export const parseLotNumberNumericPortion = (value: unknown): number | null => {
   const match = String(value ?? "").match(/\d[\d,]*/);
@@ -15,7 +15,7 @@ export const isDamageAnalysisEligibleForLot = (lotNumber: unknown): boolean => {
   const numericPortion = parseLotNumberNumericPortion(lotNumber);
   return (
     numericPortion === null ||
-    numericPortion >= DAMAGE_ANALYSIS_MINIMUM_LOT_NUMBER
+    numericPortion <= DAMAGE_ANALYSIS_MAXIMUM_LOT_NUMBER
   );
 };
 
