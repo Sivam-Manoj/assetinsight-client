@@ -1032,7 +1032,7 @@ export default function LotListingPreviewModal({
                 <div>
                   <h4 className="text-sm font-bold text-gray-900">Damages</h4>
                   <p className="mt-1 text-sm text-gray-600">
-                    Applies only to lots 1000 and above. Lower lot numbers never require Damage Analysis.
+                    Applies to lot numbers up to and including 1000. Lot numbers above 1000 never require Damage Analysis.
                   </p>
                 </div>
                 <button
