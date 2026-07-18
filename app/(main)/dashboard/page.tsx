@@ -23,6 +23,10 @@ import BottomDrawer from "@/components/BottomDrawer";
 import Loading from "@/components/common/Loading";
 import { AppIcon } from "@/components/common/AppIcon";
 import {
+  DraftStatusIndicator,
+  type DraftStatus,
+} from "@/components/forms/ui/FormUI";
+import {
   MetricCard,
   SectionPanel,
   StatusPill,
@@ -95,6 +99,10 @@ export default function DashboardPage() {
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
+  const [drawerDraftStatus, setDrawerDraftStatus] = useState<{
+    status: DraftStatus;
+    label?: string;
+  } | null>(null);
   const [stats, setStats] = useState<ReportStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -103,6 +111,10 @@ export default function DashboardPage() {
   const [recentError, setRecentError] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(new Date());
   const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setDrawerDraftStatus(null);
+  }, [drawerType]);
 
   const fetchRecent = useCallback(async () => {
     setRecentLoading(true);
@@ -768,6 +780,25 @@ export default function DashboardPage() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         title={drawerType ? DRAWER_TITLES[drawerType] : undefined}
+        description={
+          drawerType === "asset"
+            ? "Complete the report details, valuation settings, and lot media."
+            : drawerType === "lot-listing"
+              ? "Prepare listing details and organize auction-ready lot media."
+              : undefined
+        }
+        headerStatus={
+          (drawerType === "asset" || drawerType === "lot-listing") &&
+          drawerDraftStatus ? (
+            <DraftStatusIndicator
+              status={drawerDraftStatus.status}
+              label={drawerDraftStatus.label}
+            />
+          ) : undefined
+        }
+        contentScrollable={
+          drawerType !== "asset" && drawerType !== "lot-listing"
+        }
       >
         {drawerType === "real-estate" ? (
           <RealEstateForm
@@ -783,11 +814,17 @@ export default function DashboardPage() {
           <AssetForm
             onSuccess={() => setDrawerOpen(false)}
             onCancel={() => setDrawerOpen(false)}
+            onDraftStatusChange={(status, label) =>
+              setDrawerDraftStatus({ status, label })
+            }
           />
         ) : drawerType === "lot-listing" ? (
           <LotListingForm
             onSuccess={() => setDrawerOpen(false)}
             onCancel={() => setDrawerOpen(false)}
+            onDraftStatusChange={(status, label) =>
+              setDrawerDraftStatus({ status, label })
+            }
           />
         ) : null}
       </BottomDrawer>

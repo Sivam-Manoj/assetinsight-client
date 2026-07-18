@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "react-toastify";
 import {
   Plus,
@@ -19,29 +19,60 @@ import {
   Download,
   Lock,
   Unlock,
+  FileImage,
+  MoreHorizontal,
+  RotateCcw,
+  Video,
 } from "lucide-react";
 import JSZip from "jszip";
-import ImageAnnotator, { AnnBox } from "./ImageAnnotator";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import type { AnnBox } from "./ImageAnnotator";
+import { ImageMediaCard, VideoMediaCard } from "./MediaCard";
+import { getMixedFileKey } from "./types";
+import type { CameraLens, MixedLot, MixedMode } from "./types";
+
+export { getMixedFileKey } from "./types";
+export type { CameraLens, MixedLot, MixedMode } from "./types";
+
+const ImageAnnotator = dynamic(() => import("./ImageAnnotator"), {
+  ssr: false,
+});
 
 const IMAGE_UPLOAD_ACCEPT = "image/*,.heic,.heif,image/heic,image/heif";
+const MODE_OPTIONS: Array<{
+  value: MixedMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "single_lot",
+    label: "Bundle",
+    description: "Value the photos together as one lot.",
+  },
+  {
+    value: "per_item",
+    label: "Per item",
+    description: "Group multiple photos around each item.",
+  },
+  {
+    value: "per_photo",
+    label: "Per photo",
+    description: "Treat every main photo as a separate item.",
+  },
+];
 
-export type MixedMode = "single_lot" | "per_item" | "per_photo";
-export type CameraLens = { 
-  id: string; 
-  label: string; 
-  type: "ultrawide" | "main" | "telephoto"; 
-  zoom: number;
-};
-export type MixedLot = {
-  id: string;
-  files: File[]; // Main images for AI processing (first 50 analyzed, rest included in report)
-  extraFiles: File[]; // Extra images for report only (not analyzed by AI)
-  coverIndex: number; // 0-based within files
-  mode?: MixedMode;
-  videoFiles?: File[]; // Videos (report-only; zipped with originals, typically 1 per lot)
-  annotations?: Record<string, AnnBox[]>; // normalized boxes per file key
-};
-//Add 1–50 images
+function getModeLabel(mode?: MixedMode) {
+  return MODE_OPTIONS.find((option) => option.value === mode)?.label || "Mode required";
+}
+
 type Props = {
   value: MixedLot[];
   onChange: (lots: MixedLot[]) => void;
@@ -51,8 +82,18 @@ type Props = {
   downloadPrefix?: string; // optional: used for saving captured images locally
   actionButtons?: React.ReactNode; // Extra action buttons to show in toolbar
   onImageCapture?: () => void; // Callback when image is captured/added (for auto-save)
+  allowVideo?: boolean;
+  analysisImageLimit?: number;
 };
-//50
+
+type RemovedMedia = {
+  lotId: string;
+  kind: "main" | "extra" | "video";
+  index: number;
+  file: File;
+  coverIndex?: number;
+  annotations?: AnnBox[];
+};
 export default function MixedSection({
   value,
   onChange,
@@ -62,10 +103,31 @@ export default function MixedSection({
   downloadPrefix,
   actionButtons,
   onImageCapture,
+  allowVideo = true,
+  analysisImageLimit,
 }: Props) {
   const [lots, setLots] = useState<MixedLot[]>(value || []);
+  const lotsRef = useRef<MixedLot[]>(value || []);
+  const onChangeRef = useRef(onChange);
   const [activeIdx, setActiveIdx] = useState<number>(
     value?.length ? value.length - 1 : -1
+  );
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
+  const [removeLotPending, setRemoveLotPending] = useState<number | null>(null);
+  const [removedMedia, setRemovedMedia] = useState<RemovedMedia | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const commitLots = useCallback(
+    (updater: MixedLot[] | ((current: MixedLot[]) => MixedLot[])) => {
+      const current = lotsRef.current;
+      const next =
+        typeof updater === "function" ? updater(current) : updater;
+      if (next === current) return;
+      lotsRef.current = next;
+      setLots(next);
+      onChangeRef.current(next);
+    },
+    []
   );
 
   // Camera overlay state
@@ -139,9 +201,6 @@ export default function MixedSection({
     url: string;
   } | null>(null);
 
-  const getFileKey = (f: File) =>
-    `${f.name}|${f.size}|${(f as any).lastModified || 0}`;
-
   // Format file size helper
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -149,31 +208,26 @@ export default function MixedSection({
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  // Calculate total size of all files
-  const getTotalSize = (): number => {
-    return lots.reduce((total, lot) => {
-      const mainSize = lot.files.reduce((s, f) => s + f.size, 0);
-      const extraSize = (lot.extraFiles || []).reduce((s, f) => s + f.size, 0);
-      const videoSize = (lot.videoFiles || []).reduce((s, f) => s + f.size, 0);
-      return total + mainSize + extraSize + videoSize;
-    }, 0);
-  };
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
-  // Estimate upload time based on file size (assuming ~500KB/s average mobile upload speed)
-  const getEstimatedUploadTime = (bytes: number): string => {
-    const UPLOAD_SPEED = 500 * 1024; // 500 KB/s conservative estimate
-    const seconds = Math.ceil(bytes / UPLOAD_SPEED);
-    if (seconds < 60) return `~${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSecs = seconds % 60;
-    if (minutes < 60) return `~${minutes}m ${remainingSecs}s`;
-    const hours = Math.floor(minutes / 60);
-    const remainingMins = minutes % 60;
-    return `~${hours}h ${remainingMins}m`;
-  };
+  useEffect(() => {
+    const next = value || [];
+    lotsRef.current = next;
+    setLots(next);
+    setActiveIdx((current) => {
+      if (!next.length) return -1;
+      if (current < 0) return 0;
+      return Math.min(current, next.length - 1);
+    });
+  }, [value]);
 
-  useEffect(() => setLots(value || []), [value]);
-  useEffect(() => onChange(lots), [lots]);
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
 
   // Removed: no re-applying constraints or zoom reset on orientation change; UI only adapts
 
@@ -290,21 +344,27 @@ export default function MixedSection({
   function createLot() {
     const id = `lot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const next: MixedLot[] = [
-      ...lots,
+      ...lotsRef.current,
       { id, files: [], extraFiles: [], videoFiles: [], coverIndex: 0 },
     ];
-    setLots(next);
+    commitLots(next);
     setActiveIdx(next.length - 1);
   }
 
   function removeLot(idx: number) {
-    const next = lots.filter((_, i) => i !== idx);
-    setLots(next);
-    if (activeIdx >= next.length) setActiveIdx(next.length - 1);
+    const next = lotsRef.current.filter((_, i) => i !== idx);
+    commitLots(next);
+    setActiveIdx((current) => {
+      if (!next.length) return -1;
+      if (current > idx) return current - 1;
+      if (current === idx) return Math.min(idx, next.length - 1);
+      return current;
+    });
+    setRemoveLotPending(null);
   }
 
   function setLotMode(idx: number, mode: MixedMode) {
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
@@ -341,7 +401,7 @@ export default function MixedSection({
   }
 
   function addFilesToLot(idx: number, incoming: File[]) {
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
@@ -360,13 +420,17 @@ export default function MixedSection({
   function addFilesToLotWithMode(
     idx: number,
     incoming: File[],
-    selectedMode?: MixedMode,
+    _selectedMode?: MixedMode,
     isExtra: boolean = false
   ) {
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
+      if (!lot.mode) {
+        toast.warn("Select a mode for this lot first.");
+        return prev;
+      }
 
       if (isExtra) {
         const current = out[idx];
@@ -382,15 +446,6 @@ export default function MixedSection({
       }
 
       // Main files handling
-      let mode = lot.mode;
-      if (!mode && selectedMode) {
-        mode = selectedMode;
-        out[idx] = { ...lot, mode: selectedMode };
-      }
-      if (!mode) {
-        toast.warn("Select a mode for this lot first.");
-        return prev;
-      }
       const current = out[idx];
       const accepted = limitIncomingForLot(current, incoming, false);
       if (!accepted.length) return prev;
@@ -403,59 +458,129 @@ export default function MixedSection({
 
   // Videos: report-only, per-lot
   function addVideosToLot(idx: number, incoming: File[]) {
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
+      if (!allowVideo || !lot.mode) {
+        if (!lot.mode) toast.warn("Select a mode for this lot first.");
+        return prev;
+      }
       const videoFiles = [...(lot.videoFiles || []), ...incoming];
       out[idx] = { ...lot, videoFiles } as MixedLot;
       return out;
     });
   }
 
+  function queueUndo(item: RemovedMedia) {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setRemovedMedia(item);
+    undoTimerRef.current = setTimeout(() => {
+      setRemovedMedia(null);
+      undoTimerRef.current = null;
+    }, 8000);
+  }
+
   function removeVideo(idx: number, vidIdx: number) {
-    setLots((prev) => {
+    const lot = lotsRef.current[idx];
+    const file = lot?.videoFiles?.[vidIdx];
+    if (!lot || !file) return;
+    commitLots((prev) => {
       const out = [...prev];
-      const lot = out[idx];
-      if (!lot) return prev;
-      const videoFiles = (lot.videoFiles || []).filter((_, i) => i !== vidIdx);
-      out[idx] = { ...lot, videoFiles } as MixedLot;
+      const current = out[idx];
+      if (!current) return prev;
+      const videoFiles = (current.videoFiles || []).filter((_, i) => i !== vidIdx);
+      out[idx] = { ...current, videoFiles } as MixedLot;
       return out;
     });
+    queueUndo({ lotId: lot.id, kind: "video", index: vidIdx, file });
   }
 
   function removeImage(idx: number, imgIdx: number) {
-    setLots((prev) => {
+    const lot = lotsRef.current[idx];
+    const fileToRemove = lot?.files?.[imgIdx];
+    if (!lot || !fileToRemove) return;
+    const key = getMixedFileKey(fileToRemove);
+    const removedAnnotations = lot.annotations?.[key];
+    commitLots((prev) => {
       const out = [...prev];
-      const lot = out[idx];
-      if (!lot) return prev;
-      const fileToRemove = lot.files[imgIdx];
-      const key = fileToRemove ? getFileKey(fileToRemove) : null;
-      const files = lot.files.filter((_, i) => i !== imgIdx);
-      const coverIndex = Math.max(
-        0,
-        Math.min(files.length - 1, lot.coverIndex)
-      );
-      const annotations = { ...(lot.annotations || {}) };
-      if (key && annotations[key]) delete annotations[key];
-      out[idx] = { ...lot, files, coverIndex, annotations };
+      const current = out[idx];
+      if (!current) return prev;
+      const files = current.files.filter((_, i) => i !== imgIdx);
+      const coverIndex = files.length
+        ? imgIdx < current.coverIndex
+          ? current.coverIndex - 1
+          : Math.min(current.coverIndex, files.length - 1)
+        : 0;
+      const annotations = { ...(current.annotations || {}) };
+      delete annotations[key];
+      out[idx] = { ...current, files, coverIndex, annotations };
       return out;
+    });
+    queueUndo({
+      lotId: lot.id,
+      kind: "main",
+      index: imgIdx,
+      file: fileToRemove,
+      coverIndex: lot.coverIndex,
+      annotations: removedAnnotations,
     });
   }
 
   function removeExtraImage(idx: number, imgIdx: number) {
-    setLots((prev) => {
+    const lot = lotsRef.current[idx];
+    const file = lot?.extraFiles?.[imgIdx];
+    if (!lot || !file) return;
+    commitLots((prev) => {
       const out = [...prev];
-      const lot = out[idx];
-      if (!lot) return prev;
-      const extraFiles = (lot.extraFiles || []).filter((_, i) => i !== imgIdx);
-      out[idx] = { ...lot, extraFiles } as MixedLot;
+      const current = out[idx];
+      if (!current) return prev;
+      const extraFiles = (current.extraFiles || []).filter((_, i) => i !== imgIdx);
+      out[idx] = { ...current, extraFiles } as MixedLot;
       return out;
     });
+    queueUndo({ lotId: lot.id, kind: "extra", index: imgIdx, file });
+  }
+
+  function undoMediaRemoval() {
+    const removed = removedMedia;
+    if (!removed) return;
+    commitLots((prev) => {
+      const lotIdx = prev.findIndex((lot) => lot.id === removed.lotId);
+      if (lotIdx < 0) return prev;
+      const out = [...prev];
+      const lot = out[lotIdx];
+      if (removed.kind === "main") {
+        const files = [...lot.files];
+        files.splice(Math.min(removed.index, files.length), 0, removed.file);
+        const annotations = { ...(lot.annotations || {}) };
+        if (removed.annotations) {
+          annotations[getMixedFileKey(removed.file)] = removed.annotations;
+        }
+        out[lotIdx] = {
+          ...lot,
+          files,
+          coverIndex: Math.min(removed.coverIndex ?? lot.coverIndex, files.length - 1),
+          annotations,
+        };
+      } else if (removed.kind === "extra") {
+        const extraFiles = [...(lot.extraFiles || [])];
+        extraFiles.splice(Math.min(removed.index, extraFiles.length), 0, removed.file);
+        out[lotIdx] = { ...lot, extraFiles };
+      } else {
+        const videoFiles = [...(lot.videoFiles || [])];
+        videoFiles.splice(Math.min(removed.index, videoFiles.length), 0, removed.file);
+        out[lotIdx] = { ...lot, videoFiles };
+      }
+      return out;
+    });
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setRemovedMedia(null);
   }
 
   function setCover(idx: number, imgIdx: number) {
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
@@ -483,13 +608,13 @@ export default function MixedSection({
   function handleSaveAnnotations(boxes: AnnBox[]) {
     if (!editing) return;
     const { lotIdx, imgIdx } = editing;
-    setLots((prev) => {
+    commitLots((prev) => {
       const out = [...prev];
       const lot = out[lotIdx];
       if (!lot) return prev;
       const file = lot.files?.[imgIdx];
       if (!file) return prev;
-      const key = getFileKey(file);
+      const key = getMixedFileKey(file);
       const annotations = { ...(lot.annotations || {}) };
       annotations[key] = boxes;
       out[lotIdx] = { ...lot, annotations };
@@ -500,20 +625,26 @@ export default function MixedSection({
 
   // Manual upload
   function onManualUpload(files: FileList | null) {
-    if (activeIdx < 0) createLot();
     if (!files) return;
+    if (activeIdx < 0 || !lotsRef.current[activeIdx]?.mode) {
+      toast.warn("Create a lot and select its mode before adding photos.");
+      return;
+    }
     const incoming = Array.from(files);
-    addFilesToLot(activeIdx < 0 ? 0 : activeIdx, incoming);
+    addFilesToLot(activeIdx, incoming);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   // Manual upload for Extra images (report-only)
   function onManualUploadExtra(files: FileList | null) {
-    if (activeIdx < 0) createLot();
     if (!files) return;
+    if (activeIdx < 0 || !lotsRef.current[activeIdx]?.mode) {
+      toast.warn("Create a lot and select its mode before adding photos.");
+      return;
+    }
     const incoming = Array.from(files);
     addFilesToLotWithMode(
-      activeIdx < 0 ? 0 : activeIdx,
+      activeIdx,
       incoming,
       undefined,
       true
@@ -523,15 +654,23 @@ export default function MixedSection({
 
   // Manual upload for Videos (report-only)
   function onManualUploadVideo(files: FileList | null) {
-    if (activeIdx < 0) createLot();
     if (!files) return;
+    if (!allowVideo || activeIdx < 0 || !lotsRef.current[activeIdx]?.mode) {
+      toast.warn("Create a lot and select its mode before adding video.");
+      return;
+    }
     const incoming = Array.from(files);
-    addVideosToLot(activeIdx < 0 ? 0 : activeIdx, incoming);
+    addVideosToLot(activeIdx, incoming);
     if (videoUploadInputRef.current) videoUploadInputRef.current.value = "";
   }
 
   // Camera overlay logic
   async function openCamera() {
+    const activeLot = lotsRef.current[activeIdx];
+    if (!activeLot || !activeLot.mode) {
+      toast.warn("Create a lot and select its mode before opening the camera.");
+      return;
+    }
     try {
       setCameraError(null);
       setZoom(1);
@@ -741,12 +880,6 @@ export default function MixedSection({
         }
       } catch {}
 
-      // After camera is running, ensure destination lot: if none, create; if exists, advance to next
-      if (activeIdx < 0) {
-        createLot();
-      } else {
-        goNextLot();
-      }
     } catch (e: any) {
       setCameraError(e?.message || "Unable to access camera.");
       toast.error(e?.message || "Unable to access camera.");
@@ -1522,405 +1655,500 @@ export default function MixedSection({
     setActiveIdx((i) => Math.max(0, i - 1));
   }
   function goNextLot() {
-    setLots((prev) => {
-      if (activeIdx >= prev.length - 1) {
-        const id = `lot-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 7)}`;
-        const next = [
-          ...prev,
-          { id, files: [], extraFiles: [], coverIndex: 0 } as MixedLot,
-        ];
-        setActiveIdx(next.length - 1);
-        return next;
-      } else {
-        const nextIdx = Math.min(activeIdx + 1, prev.length - 1);
-        setActiveIdx(nextIdx);
-        return prev;
-      }
-    });
+    setActiveIdx((current) =>
+      Math.min(Math.max(0, lotsRef.current.length - 1), current + 1)
+    );
   }
 
-  function handleCapture(mode: MixedMode, isExtra: boolean = false) {
+  function handleCapture(_mode: MixedMode, isExtra: boolean = false) {
     const idx = activeIdx < 0 ? 0 : activeIdx;
     const lot = lots[idx];
-    if (!lot) return;
-    if (!isExtra && lot.mode && lot.mode !== mode) {
-      toast.warn(
-        `This lot is already set to ${lot.mode.replace(
-          "_",
-          " "
-        )}. Go to next lot to capture a different mode.`
-      );
+    if (!lot?.mode) {
+      toast.warn("Select a mode for this lot before capturing photos.");
       return;
     }
     try {
-      playCaptureSound(mode, isExtra);
+      playCaptureSound(lot.mode, isExtra);
     } catch {}
-    captureFromStream(mode, isExtra);
+    captureFromStream(lot.mode, isExtra);
   }
 
-  const totalImages = lots.reduce((s, l) => s + l.files.length, 0);
-
+  const totals = useMemo(() => {
+    let main = 0;
+    let extra = 0;
+    let videos = 0;
+    let bytes = 0;
+    for (const lot of lots) {
+      main += lot.files.length;
+      extra += (lot.extraFiles || []).length;
+      if (allowVideo) videos += (lot.videoFiles || []).length;
+      for (const file of lot.files) bytes += file.size;
+      for (const file of lot.extraFiles || []) bytes += file.size;
+      if (allowVideo) {
+        for (const file of lot.videoFiles || []) bytes += file.size;
+      }
+    }
+    return { main, extra, videos, bytes };
+  }, [allowVideo, lots]);
+  const activeLot = activeIdx >= 0 ? lots[activeIdx] : undefined;
+  const activeLotHasMode = Boolean(activeLot?.mode);
   return (
-    <div className="min-w-0 space-y-4 overflow-x-hidden">
-      {/* Toolbar */}
-      <div className="grid min-w-0 grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-center">
+    <div className="@container min-w-0 space-y-4 overflow-x-hidden text-[var(--app-text)]">
+      <div className="flex min-w-0 flex-col gap-3 @min-[560px]:flex-row @min-[560px]:items-center @min-[560px]:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--app-text-muted)]">
+          <span>{lots.length} {lots.length === 1 ? "lot" : "lots"}</span>
+          <span>{totals.main} main</span>
+          <span>{totals.extra} report-only</span>
+          {allowVideo ? <span>{totals.videos} video</span> : null}
+          {totals.bytes > 0 ? <span>{formatFileSize(totals.bytes)}</span> : null}
+        </div>
         <button
           type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-gray-900 to-black px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
           onClick={createLot}
+          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--app-text)] px-4 py-2.5 text-sm font-semibold text-[var(--app-panel)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 @min-[560px]:w-auto"
         >
-          <Plus className="h-4 w-4" /> New Lot
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          New lot
         </button>
-        <button
-          type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
-          onClick={openCamera}
-        >
-          <Camera className="h-4 w-4" /> Open Camera
-        </button>
-        <button
-          type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow sm:w-auto sm:justify-start"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4" /> Manual Upload
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={IMAGE_UPLOAD_ACCEPT}
-          multiple
-          className="sr-only"
-          onChange={(e) => onManualUpload(e.target.files)}
-        />
-        <button
-          type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
-          onClick={() => extraFileInputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4" /> Upload Extra
-        </button>
-        <input
-          ref={extraFileInputRef}
-          type="file"
-          accept={IMAGE_UPLOAD_ACCEPT}
-          multiple
-          className="sr-only"
-          onChange={(e) => onManualUploadExtra(e.target.files)}
-        />
-        <button
-          type="button"
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow sm:w-auto sm:justify-start"
-          onClick={() => videoUploadInputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4" /> Upload Video
-        </button>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={IMAGE_UPLOAD_ACCEPT}
+        multiple
+        className="sr-only"
+        aria-label="Add main photos"
+        onChange={(event) => onManualUpload(event.target.files)}
+      />
+      <input
+        ref={extraFileInputRef}
+        type="file"
+        accept={IMAGE_UPLOAD_ACCEPT}
+        multiple
+        className="sr-only"
+        aria-label="Add report-only photos"
+        onChange={(event) => onManualUploadExtra(event.target.files)}
+      />
+      {allowVideo ? (
         <input
           ref={videoUploadInputRef}
           type="file"
           accept="video/*"
           multiple
           className="sr-only"
-          onChange={(e) => onManualUploadVideo(e.target.files)}
+          aria-label="Add report-only videos"
+          onChange={(event) => onManualUploadVideo(event.target.files)}
         />
-        <div className="col-span-full flex w-full flex-col gap-0.5 rounded-xl border border-gray-200 bg-white/75 px-3 py-2 text-xs text-gray-600 shadow-sm sm:w-auto sm:flex-row sm:gap-3 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
-          <span>Total: {totalImages} image(s)</span>
-          {totalImages > 0 && (
-            <>
-              <span className="hidden sm:inline">•</span>
-              <span className="font-medium text-rose-600">
-                Size: {formatFileSize(getTotalSize())}
-              </span>
-              <span className="hidden sm:inline">•</span>
-              <span className="text-amber-600">
-                Est. upload: {getEstimatedUploadTime(getTotalSize())}
-              </span>
-            </>
-          )}
-        </div>
-        {actionButtons && (
-          <>
-            <div className="hidden sm:block w-px h-6 bg-gray-300" />
-            <div className="col-span-full w-full sm:w-auto">{actionButtons}</div>
-          </>
-        )}
-      </div>
+      ) : null}
 
-      {/* Lots selector */}
-      {lots.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <div className="-mx-1 flex min-w-0 items-center gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]">
-            {lots.map((lot, i) => (
-              <button
-                key={lot.id}
-                type="button"
-                onClick={() => setActiveIdx(i)}
-                className={`min-w-[120px] max-w-[170px] shrink-0 rounded-xl border px-3 py-2 text-left text-xs shadow ${
-                  i === activeIdx
-                    ? "border-rose-300 bg-rose-50"
-                    : "border-gray-200 bg-white"
-                }`}
-              >
-                <div className="truncate font-semibold">Lot {i + 1}</div>
-                <div className="truncate text-[11px] text-gray-600">
-                  {lot.mode ? lot.mode.replace("_", " ") : "Select mode"}
-                </div>
-                <div className="truncate text-[11px] text-gray-600">
-                  Main: {lot.files.length} | Extra:{" "}
-                  {lot.extraFiles?.length || 0} | Video:{" "}
-                  {lot.videoFiles?.length || 0}
-                </div>
-              </button>
-            ))}
+      {lots.length === 0 ? (
+        <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--app-border)] bg-[var(--app-panel-alt)] px-5 py-8 text-center">
+          <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--app-accent-soft)] text-[var(--app-accent)]">
+            <FileImage className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <p className="text-sm font-semibold text-[var(--app-text)]">Create your first lot</p>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--app-text-muted)]">
+            Add a lot, choose how its photos should be analyzed, then upload files or use the camera.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 @min-[720px]:hidden">
+            <button
+              type="button"
+              onClick={goPrevLot}
+              disabled={activeIdx <= 0}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text)] transition hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Previous lot"
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <label className="sr-only" htmlFor="mixed-lot-select">Active lot</label>
+            <select
+              id="mixed-lot-select"
+              value={Math.max(0, activeIdx)}
+              onChange={(event) => setActiveIdx(Number(event.target.value))}
+              className="min-h-11 min-w-0 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-3 text-sm font-semibold text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-soft)]"
+            >
+              {lots.map((lot, index) => (
+                <option key={lot.id} value={index}>
+                  Lot {index + 1} · {getModeLabel(lot.mode)} · {getLotPhotoCount(lot)} photos
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={goNextLot}
+              disabled={activeIdx >= lots.length - 1}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text)] transition hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Next lot"
+            >
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
 
-          {/* Active lot panel */}
-          {activeIdx >= 0 && lots[activeIdx] && (
-            <div className="min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm font-semibold text-gray-900">
-                  Lot {activeIdx + 1}
-                </div>
-                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => downloadLotZip(activeIdx)}
-                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-gray-50"
-                    title="Download this lot as ZIP"
-                  >
-                    <Download className="h-4 w-4" /> Download ZIP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeLot(activeIdx)}
-                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" /> Remove Lot
-                  </button>
-                </div>
+          <div className="grid min-w-0 gap-4 @min-[720px]:grid-cols-[14rem_minmax(0,1fr)]">
+            <aside className="hidden min-w-0 border-r border-[var(--app-border)] pr-4 @min-[720px]:block">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-muted)]">Lots</span>
+                <span className="text-xs tabular-nums text-[var(--app-text-muted)]">{activeIdx + 1}/{lots.length}</span>
               </div>
-
-              {!lots[activeIdx]?.mode && (
-                <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
-                  <span className="font-medium">Required:</span> Select a mode
-                  for this lot
-                </div>
-              )}
-              {(lots[activeIdx]?.files?.length ?? 0) === 0 && (
-                <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
-                  <span className="font-medium">Required:</span> Please Upload
-                  Images
-                </div>
-              )}
-
-              {/* Mode selection */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(["single_lot", "per_item", "per_photo"] as MixedMode[]).map(
-                  (m) => {
-                    const sel = lots[activeIdx]?.mode;
-                    const disabled =
-                      !!sel &&
-                      sel !== m &&
-                      (lots[activeIdx]?.files.length ?? 0) > 0;
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setLotMode(activeIdx, m)}
-                        disabled={disabled}
-                        className={`rounded-xl border px-3 py-1.5 text-xs shadow ${
-                          sel === m
-                            ? "border-rose-300 bg-rose-50"
-                            : "border-gray-200 bg-white"
-                        } ${disabled ? "opacity-60" : ""}`}
-                      >
-                        {m === "single_lot"
-                          ? "Bundle"
-                          : m === "per_item"
-                          ? "Per Item"
-                          : "Per Photo"}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-
-              {/* Images grid (main images for processing) */}
-              <div className="mt-3 grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
-                {lots[activeIdx].files.map((f, i) => {
-                  const url = URL.createObjectURL(f);
-                  const isCover = lots[activeIdx].coverIndex === i;
-                  const key = getFileKey(f);
-                  const annCount = (lots[activeIdx].annotations?.[key] || [])
-                    .length;
+              <div role="tablist" aria-label="Lots" aria-orientation="vertical" className="max-h-[34rem] space-y-1 overflow-y-auto pr-1">
+                {lots.map((lot, index) => {
+                  const selected = index === activeIdx;
                   return (
-                    <div
-                      key={i}
-                      className="relative group rounded-xl overflow-hidden border border-gray-200"
+                    <button
+                      key={lot.id}
+                      id={`mixed-lot-tab-${lot.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={`mixed-lot-panel-${lot.id}`}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setActiveIdx(index)}
+                      className={`min-h-14 w-full rounded-xl border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
+                        selected
+                          ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)]"
+                          : "border-transparent hover:border-[var(--app-border)] hover:bg-[var(--app-panel-alt)]"
+                      }`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={url}
-                        alt={f.name}
-                        className="h-32 w-full object-cover sm:h-28"
-                        onLoad={() => URL.revokeObjectURL(url)}
-                      />
-                      {/* File size badge */}
-                      <div className="absolute right-1 bottom-10 rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white shadow">
-                        {formatFileSize(f.size)}
-                      </div>
-                      {isCover && (
-                        <div className="absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white shadow">
-                          Cover
-                        </div>
-                      )}
-                      {annCount > 0 && (
-                        <div className="absolute right-1 top-1 rounded bg-red-600/80 px-1.5 py-0.5 text-[10px] text-white shadow">
-                          {annCount} focus
-                        </div>
-                      )}
-                      <div className="absolute inset-x-1 bottom-1 grid grid-cols-3 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-                        <button
-                          type="button"
-                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] shadow"
-                          onClick={() => setCover(activeIdx, i)}
-                          title="Set Cover"
-                        >
-                          Set Cover
-                        </button>
-                        <button
-                          type="button"
-                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] shadow"
-                          onClick={() => openEditor(activeIdx, i)}
-                          title="Focus / crop"
-                        >
-                          Focus
-                        </button>
-                        <button
-                          type="button"
-                          className="truncate rounded bg-white/95 px-1 py-1 text-[9px] text-red-600 shadow"
-                          onClick={() => removeImage(activeIdx, i)}
-                          title="Remove"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-[var(--app-text)]">Lot {index + 1}</span>
+                        <span className="text-[11px] tabular-nums text-[var(--app-text-muted)]">{getLotPhotoCount(lot)}</span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-[var(--app-text-muted)]">{getModeLabel(lot.mode)}</span>
+                    </button>
                   );
                 })}
               </div>
+            </aside>
 
-              {/* Extra Images (Report Only) with divider */}
-              {(lots[activeIdx]?.extraFiles?.length ?? 0) > 0 && (
-                <div className="mt-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-gray-200" />
-                    <div className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                      Extra Images (Report Only)
-                    </div>
-                    <div className="h-px flex-1 bg-gray-200" />
+            {activeLot ? (
+              <section
+                id={`mixed-lot-panel-${activeLot.id}`}
+                role="tabpanel"
+                aria-labelledby={`mixed-lot-tab-${activeLot.id}`}
+                className="min-w-0"
+              >
+                <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--app-border)] pb-4 @min-[560px]:flex-row @min-[560px]:items-start @min-[560px]:justify-between">
+                  <div className="min-w-0">
+                    <h4 className="text-base font-semibold text-[var(--app-text)]">Lot {activeIdx + 1}</h4>
+                    <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
+                      {activeLot.files.length} main · {(activeLot.extraFiles || []).length} report-only
+                      {allowVideo ? ` · ${(activeLot.videoFiles || []).length} video` : ""}
+                    </p>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4">
-                    {lots[activeIdx].extraFiles.map((f, i) => {
-                      const url = URL.createObjectURL(f);
+                  <div className="flex w-full items-center gap-2 @min-[560px]:w-auto">
+                    <button
+                      type="button"
+                      disabled={!activeLotHasMode}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--app-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 @min-[560px]:flex-none"
+                    >
+                      <Upload className="h-4 w-4" aria-hidden="true" /> Add photos
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!activeLotHasMode}
+                      onClick={openCamera}
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-2.5 text-sm font-semibold text-[var(--app-text)] transition hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-45 @min-[560px]:flex-none"
+                    >
+                      <Camera className="h-4 w-4" aria-hidden="true" /> Camera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => setMoreAnchor(event.currentTarget)}
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text)] transition hover:bg-[var(--app-panel-alt)]"
+                      aria-label={`More actions for lot ${activeIdx + 1}`}
+                      aria-haspopup="menu"
+                      aria-expanded={Boolean(moreAnchor)}
+                    >
+                      <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+
+                <fieldset className="mt-4">
+                  <legend className="text-sm font-semibold text-[var(--app-text)]">
+                    Analysis mode <span className="text-[var(--app-accent)]" aria-hidden="true">*</span>
+                  </legend>
+                  <p className="mt-1 text-xs leading-5 text-[var(--app-text-muted)]">
+                    Choose how the main photos in this lot should be interpreted.
+                  </p>
+                  <div role="radiogroup" className="mt-3 grid gap-2 @min-[560px]:grid-cols-3">
+                    {MODE_OPTIONS.map((option) => {
+                      const checked = activeLot.mode === option.value;
+                      const disabled = Boolean(activeLot.mode && !checked && activeLot.files.length > 0);
                       return (
-                        <div
-                          key={i}
-                          className="relative group rounded-xl overflow-hidden border border-blue-200"
+                        <label
+                          key={option.value}
+                          className={`relative min-h-16 cursor-pointer rounded-xl border px-3 py-2.5 transition ${
+                            checked
+                              ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)]"
+                              : "border-[var(--app-border)] bg-[var(--app-panel)] hover:bg-[var(--app-panel-alt)]"
+                          } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
                         >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={url}
-                            alt={f.name}
-                            className="h-32 w-full object-cover sm:h-28"
-                            onLoad={() => URL.revokeObjectURL(url)}
+                          <input
+                            type="radio"
+                            name={`mixed-mode-${activeLot.id}`}
+                            value={option.value}
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => setLotMode(activeIdx, option.value)}
+                            className="sr-only"
                           />
-                          <div className="absolute left-1 top-1 rounded bg-blue-600/80 px-1.5 py-0.5 text-[10px] text-white shadow">
-                            Extra
-                          </div>
-                          {/* File size badge */}
-                          <div className="absolute right-1 bottom-10 rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-white shadow">
-                            {formatFileSize(f.size)}
-                          </div>
-                          <div className="absolute inset-x-1 bottom-1 grid grid-cols-1 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
-                            <button
-                              type="button"
-                              className="truncate rounded bg-white/95 px-1 py-1 text-[9px] text-red-600 shadow"
-                              onClick={() => removeExtraImage(activeIdx, i)}
-                              title="Remove"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
+                          <span className="flex items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
+                            <span className={`h-3.5 w-3.5 rounded-full border ${checked ? "border-[5px] border-[var(--app-accent)]" : "border-[var(--app-text-muted)]"}`} aria-hidden="true" />
+                            {option.label}
+                          </span>
+                          <span className="mt-1 block pl-[22px] text-[11px] leading-4 text-[var(--app-text-muted)]">{option.description}</span>
+                        </label>
                       );
                     })}
                   </div>
-                </div>
-              )}
+                  {!activeLot.mode ? (
+                    <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300" role="status">
+                      Select a mode to enable photo and camera actions.
+                    </p>
+                  ) : null}
+                </fieldset>
 
-              {/* Videos (Report Only) with divider */}
-              {(lots[activeIdx]?.videoFiles?.length ?? 0) > 0 && (
-                <div className="mt-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-gray-200" />
-                    <div className="text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                      Videos (Report Only)
+                {analysisImageLimit && activeLot.files.length > analysisImageLimit ? (
+                  <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-200" role="note">
+                    Only the first {analysisImageLimit} main photos are analyzed. All {activeLot.files.length} main photos remain included in the report.
+                  </div>
+                ) : null}
+
+                <div className="mt-5 space-y-6">
+                  <section aria-labelledby={`main-media-${activeLot.id}`}>
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <h5 id={`main-media-${activeLot.id}`} className="text-sm font-semibold text-[var(--app-text)]">Main photos</h5>
+                        <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">Used for analysis and included in the report.</p>
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-[var(--app-text-muted)]">{activeLot.files.length}</span>
                     </div>
-                    <div className="h-px flex-1 bg-gray-200" />
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {lots[activeIdx].videoFiles!.map((f, i) => {
-                      const url = URL.createObjectURL(f);
-                      return (
-                        <div
-                          key={i}
-                          className="relative group rounded-xl overflow-hidden border border-indigo-200"
-                          onClick={(e) => {
-                            const video = e.currentTarget.querySelector(
-                              "video"
-                            ) as HTMLVideoElement | null;
-                            video?.play?.();
-                          }}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <video
-                            src={url}
-                            controls
-                            className="h-36 w-full object-cover bg-black"
-                            onLoadedData={() => URL.revokeObjectURL(url)}
-                          />
-                          <div className="absolute left-1 top-1 rounded bg-indigo-600/80 px-1.5 py-0.5 text-[10px] text-white shadow">
-                            Video
-                          </div>
-                          <div className="absolute inset-x-0 bottom-1 flex justify-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition">
-                            <button
-                              type="button"
-                              className="rounded bg-white/90 px-2 py-0.5 text-[10px] shadow text-red-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeVideo(activeIdx, i);
-                              }}
-                            >
-                              Remove
-                            </button>
-                          </div>
+                    {activeLot.files.length ? (
+                      <div className="mt-3 grid grid-cols-2 gap-3 @min-[520px]:grid-cols-3 @min-[900px]:grid-cols-4">
+                        {activeLot.files.map((file, index) => {
+                          const fileKey = getMixedFileKey(file);
+                          return (
+                            <ImageMediaCard
+                              key={fileKey}
+                              file={file}
+                              kind="main"
+                              isCover={activeLot.coverIndex === index}
+                              annotationCount={(activeLot.annotations?.[fileKey] || []).length}
+                              onSetCover={() => setCover(activeIdx, index)}
+                              onEditFocus={() => openEditor(activeIdx, index)}
+                              onRemove={() => removeImage(activeIdx, index)}
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!activeLotHasMode}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="mt-3 flex min-h-32 w-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--app-border)] bg-[var(--app-panel-alt)] px-4 text-center text-[var(--app-text-muted)] transition hover:border-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-55"
+                      >
+                        <Upload className="mb-2 h-5 w-5" aria-hidden="true" />
+                        <span className="text-sm font-semibold text-[var(--app-text)]">Add main photos</span>
+                        <span className="mt-1 text-xs">Choose a mode first, then upload or use the camera.</span>
+                      </button>
+                    )}
+                  </section>
+
+                  {(activeLot.extraFiles || []).length ? (
+                    <section aria-labelledby={`extra-media-${activeLot.id}`}>
+                      <div className="flex items-end justify-between gap-3 border-t border-[var(--app-border)] pt-5">
+                        <div>
+                          <h5 id={`extra-media-${activeLot.id}`} className="text-sm font-semibold text-[var(--app-text)]">Report-only photos</h5>
+                          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">Included in the final report without analysis.</p>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <span className="shrink-0 text-xs tabular-nums text-[var(--app-text-muted)]">{activeLot.extraFiles.length}</span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 @min-[520px]:grid-cols-3 @min-[900px]:grid-cols-4">
+                        {activeLot.extraFiles.map((file, index) => (
+                          <ImageMediaCard
+                            key={getMixedFileKey(file)}
+                            file={file}
+                            kind="extra"
+                            onRemove={() => removeExtraImage(activeIdx, index)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {allowVideo && (activeLot.videoFiles || []).length ? (
+                    <section aria-labelledby={`video-media-${activeLot.id}`}>
+                      <div className="flex items-end justify-between gap-3 border-t border-[var(--app-border)] pt-5">
+                        <div>
+                          <h5 id={`video-media-${activeLot.id}`} className="text-sm font-semibold text-[var(--app-text)]">Report-only videos</h5>
+                          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">Included with the report and original files.</p>
+                        </div>
+                        <span className="shrink-0 text-xs tabular-nums text-[var(--app-text-muted)]">{activeLot.videoFiles?.length || 0}</span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 @min-[520px]:grid-cols-2 @min-[900px]:grid-cols-3">
+                        {(activeLot.videoFiles || []).map((file, index) => (
+                          <VideoMediaCard key={getMixedFileKey(file)} file={file} onRemove={() => removeVideo(activeIdx, index)} />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </section>
+            ) : null}
+          </div>
+        </>
       )}
 
-      {/* Camera Overlay (portal) */}
-      {cameraOpen &&
-        createPortal(
+      <Menu
+        anchorEl={moreAnchor}
+        open={Boolean(moreAnchor)}
+        onClose={() => setMoreAnchor(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 0.75,
+              minWidth: 220,
+              border: "1px solid var(--app-border)",
+              bgcolor: "var(--app-panel)",
+              color: "var(--app-text)",
+              boxShadow: "var(--app-shadow-card)",
+            },
+          },
+        }}
+      >
+        <MenuItem
+          disabled={!activeLotHasMode}
+          onClick={() => {
+            setMoreAnchor(null);
+            extraFileInputRef.current?.click();
+          }}
+          sx={{ minHeight: 44 }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}><FileImage size={18} /></ListItemIcon>
+          Add report-only photos
+        </MenuItem>
+        {allowVideo ? (
+          <MenuItem
+            disabled={!activeLotHasMode}
+            onClick={() => {
+              setMoreAnchor(null);
+              videoUploadInputRef.current?.click();
+            }}
+            sx={{ minHeight: 44 }}
+          >
+            <ListItemIcon sx={{ color: "inherit" }}><Video size={18} /></ListItemIcon>
+            Add video
+          </MenuItem>
+        ) : null}
+        <MenuItem
+          disabled={!activeLot || getLotPhotoCount(activeLot) + (activeLot.videoFiles?.length || 0) === 0}
+          onClick={() => {
+            setMoreAnchor(null);
+            if (activeIdx >= 0) void downloadLotZip(activeIdx);
+          }}
+          sx={{ minHeight: 44 }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}><Download size={18} /></ListItemIcon>
+          Download lot ZIP
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setMoreAnchor(null);
+            setRemoveLotPending(activeIdx);
+          }}
+          sx={{ minHeight: 44, color: "error.main" }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}><Trash2 size={18} /></ListItemIcon>
+          Remove lot
+        </MenuItem>
+      </Menu>
+
+      <Dialog
+        open={removeLotPending !== null}
+        onClose={() => setRemoveLotPending(null)}
+        aria-labelledby="remove-lot-title"
+        slotProps={{
+          paper: {
+            sx: {
+              border: "1px solid var(--app-border)",
+              bgcolor: "var(--app-panel)",
+              color: "var(--app-text)",
+              boxShadow: "var(--app-shadow-modal)",
+            },
+          },
+        }}
+      >
+        <DialogTitle id="remove-lot-title">Remove this lot?</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ color: "var(--app-text-muted)" }}>
+            Its photos, videos, cover choice, and focus areas will be removed. This cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRemoveLotPending(null)} sx={{ color: "var(--app-text)" }}>Keep lot</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              if (removeLotPending !== null) removeLot(removeLotPending);
+            }}
+          >
+            Remove lot
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {removedMedia ? (
+        <div
+          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[95] mx-auto flex min-h-12 max-w-sm items-center justify-between gap-3 rounded-xl bg-[var(--app-text)] px-3 py-2 text-sm text-[var(--app-panel)] shadow-[var(--app-shadow-modal)]"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="min-w-0 truncate">Removed {removedMedia.file.name}</span>
+          <button
+            type="button"
+            onClick={undoMediaRemoval}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 font-semibold text-[var(--app-accent)] hover:bg-[var(--app-panel-alt)]"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" /> Undo
+          </button>
+        </div>
+      ) : null}
+
+      {actionButtons ? (
+        <div className="border-t border-[var(--app-border)] pt-4">{actionButtons}</div>
+      ) : null}
+
+
+      {/* Camera dialog */}
+      {cameraOpen ? (
+        <Dialog
+          open
+          fullScreen
+          onClose={(_event, reason) => {
+            if (reason === "escapeKeyDown") void finishAndClose();
+          }}
+          aria-labelledby="mixed-camera-title"
+          slotProps={{
+            paper: {
+              sx: {
+                m: 0,
+                bgcolor: "#000",
+                overflow: "hidden",
+              },
+            },
+          }}
+        >
+          <DialogTitle id="mixed-camera-title" className="sr-only">
+            Capture photos for lot {activeIdx + 1}
+          </DialogTitle>
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 overflow-hidden touch-none overscroll-contain select-none">
             <div className="relative w-full h-full max-w-none max-h-full overflow-hidden flex flex-col rounded-none border-0 bg-black/30 ring-0 shadow-none">
               <div
@@ -2766,7 +2994,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("single_lot")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(190,18,60,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.25)] hover:from-rose-400/60 hover:to-rose-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
                         title="Capture - Bundle"
                       >
                         <Camera className="h-3 w-3" />
@@ -2775,7 +3003,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("single_lot", true)}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(29,78,216,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.25)] hover:from-blue-400/60 hover:to-blue-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Bundle Extra (Report Only)"
                       >
                         <span className="whitespace-nowrap">Extra</span>
@@ -2785,7 +3013,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_item")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(190,18,60,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.25)] hover:from-rose-400/60 hover:to-rose-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
                         title="Capture - Item"
                       >
                         <Camera className="h-3 w-3" />
@@ -2794,7 +3022,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_item", true)}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(29,78,216,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.25)] hover:from-blue-400/60 hover:to-blue-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Item Extra (Report Only)"
                       >
                         <span className="whitespace-nowrap">Extra</span>
@@ -2804,7 +3032,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_photo")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(190,18,60,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.25)] hover:from-rose-400/60 hover:to-rose-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
                         title="Capture - Photo"
                       >
                         <Camera className="h-3 w-3" />
@@ -2813,7 +3041,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_photo", true)}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(29,78,216,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.25)] hover:from-blue-400/60 hover:to-blue-600/60"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Photo Extra (Report Only)"
                       >
                         <span className="whitespace-nowrap">Extra</span>
@@ -2821,6 +3049,7 @@ export default function MixedSection({
                     </div>
 
                     {/* Record button */}
+                    {allowVideo ? (
                     <button
                       type="button"
                       disabled={!lots[activeIdx]?.mode}
@@ -2851,6 +3080,7 @@ export default function MixedSection({
                     >
                       {isRecording ? "Stop" : "Record"}
                     </button>
+                    ) : null}
 
                     {/* Previous/Next navigation buttons 1-50 */}
                     <div className="flex items-stretch gap-0.5 flex-shrink-0">
@@ -2867,7 +3097,8 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={goNextLot}
-                        className="h-8 flex-1 inline-flex flex-col items-center justify-center gap-0 rounded-md bg-green-600/60 px-1 text-[9px] font-semibold text-white ring-1 ring-white/10 hover:bg-green-500/60 cursor-pointer"
+                        disabled={activeIdx >= lots.length - 1}
+                        className="h-8 flex-1 inline-flex flex-col items-center justify-center gap-0 rounded-md bg-green-600/60 px-1 text-[9px] font-semibold text-white ring-1 ring-white/10 hover:bg-green-500/60 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                         aria-label="Next lot"
                       >
                         <span className="leading-none">Next</span>
@@ -2879,7 +3110,7 @@ export default function MixedSection({
                     <button
                       type="button"
                       onClick={finishAndClose}
-                      className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-white shadow-[0_4px_0_0_rgba(190,18,60,0.25)] ring-2 ring-rose-300/30 hover:from-rose-400/60 hover:to-rose-600/60 active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.25)] focus:outline-none cursor-pointer flex-shrink-0"
+                      className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-rose-600/80 text-white ring-2 ring-rose-300/30 focus:outline-none cursor-pointer flex-shrink-0"
                       aria-label="Done"
                       title="Done"
                     >
@@ -2952,7 +3183,7 @@ export default function MixedSection({
                         <button
                           type="button"
                           onClick={finishAndClose}
-                          className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_6px_0_0_rgba(190,18,60,0.45)] ring-2 ring-rose-300/60 hover:from-rose-400 hover:to-rose-600 active:translate-y-0.5 active:shadow-[0_3px_0_0_rgba(190,18,60,0.45)] focus:outline-none cursor-pointer"
+                          className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-2xl bg-rose-600 text-white ring-2 ring-rose-300/60 focus:outline-none cursor-pointer"
                           aria-label="Done"
                           title="Done"
                         >
@@ -2961,7 +3192,8 @@ export default function MixedSection({
                         <button
                           type="button"
                           onClick={goNextLot}
-                          className="h-8 w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-green-600 px-2 text-[11px] font-bold text-white ring-1 ring-white/10 hover:bg-green-500 cursor-pointer"
+                          disabled={activeIdx >= lots.length - 1}
+                          className="h-8 w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-green-600 px-2 text-[11px] font-bold text-white ring-1 ring-white/10 hover:bg-green-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                           aria-label="Next lot"
                         >
                           <span className="text-[11px]">Next Lot</span>
@@ -2969,12 +3201,12 @@ export default function MixedSection({
                         </button>
                       </div>
                       {/* Row 2: Capture buttons - bottom for portrait */}
-                      <div className="mt-2 grid grid-cols-4 gap-2 w-full">
+                      <div className={`mt-2 grid gap-2 w-full ${allowVideo ? "grid-cols-4" : "grid-cols-3"}`}>
                         <div className="flex flex-col gap-1">
                           <button
                             type="button"
                             onClick={() => handleCapture("single_lot")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-rose-500 to-rose-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(190,18,60,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.45)] hover:from-rose-400 hover:to-rose-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
                             title="Capture - Bundle"
                           >
                             <Camera className="h-4 w-4" /> Bundle
@@ -2982,7 +3214,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("single_lot", true)}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(29,78,216,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.45)] hover:from-blue-400 hover:to-blue-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Bundle Extra (Report Only)"
                           >
                             + Extra
@@ -2992,7 +3224,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_item")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-rose-500 to-rose-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(190,18,60,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.45)] hover:from-rose-400 hover:to-rose-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
                             title="Capture - Item"
                           >
                             <Camera className="h-4 w-4" /> Item
@@ -3000,7 +3232,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_item", true)}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(29,78,216,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.45)] hover:from-blue-400 hover:to-blue-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Item Extra (Report Only)"
                           >
                             + Extra
@@ -3010,7 +3242,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_photo")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-gradient-to-b from-rose-500 to-rose-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(190,18,60,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.45)] hover:from-rose-400 hover:to-rose-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
                             title="Capture - Photo"
                           >
                             <Camera className="h-4 w-4" /> Photo
@@ -3018,12 +3250,13 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_photo", true)}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-2 text-[11px] font-bold text-white shadow-[0_3px_0_0_rgba(29,78,216,0.45)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.45)] hover:from-blue-400 hover:to-blue-600"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Photo Extra (Report Only)"
                           >
                             + Extra
                           </button>
                         </div>
+                        {allowVideo ? (
                         <div className="flex flex-col gap-1">
                           <button
                             type="button"
@@ -3058,6 +3291,7 @@ export default function MixedSection({
                             {isRecording ? "Stop" : "Record"}
                           </button>
                         </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -3073,9 +3307,9 @@ export default function MixedSection({
                 <canvas ref={canvasRef} className="hidden" />
               </div>
             </div>
-          </div>,
-          document.body
-        )}
+          </div>
+        </Dialog>
+      ) : null}
       {editing && (
         <ImageAnnotator
           imageUrl={editing.url}
@@ -3083,7 +3317,7 @@ export default function MixedSection({
             const lot = lots[editing.lotIdx];
             const file = lot?.files?.[editing.imgIdx];
             if (!lot || !file) return [] as AnnBox[];
-            const key = getFileKey(file);
+            const key = getMixedFileKey(file);
             return (lot.annotations?.[key] || []) as AnnBox[];
           })()}
           onSave={handleSaveAnnotations}

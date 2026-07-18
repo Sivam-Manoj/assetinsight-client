@@ -1,29 +1,63 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import dynamic from "next/dynamic";
+import {
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+} from "@mui/material";
+import {
+  MoreHorizontal,
+  RotateCcw,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { toast } from "react-toastify";
-import { Check, RotateCcw, Save, X } from "lucide-react";
 import API from "@/lib/api";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
-import { uploadReportFilesDirectToR2, type DirectUploadFile } from "@/services/directUpload";
+import { useAuthContext } from "@/context/AuthContext";
+import {
+  uploadReportFilesDirectToR2,
+  type DirectUploadFile,
+} from "@/services/directUpload";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
+import type { MixedLot } from "./mixed/types";
+import { buildMixedFocusBoxes } from "./mixed/focusBoxes";
+import {
+  DraftEnvelopeError,
+  getScopedDraftKey,
+  parseScopedDraftEnvelope,
+} from "./drafts/storage";
+import {
+  ConfirmDialog,
+  FormActionBar,
+  FormAlert,
+  FormField,
+  FormSection,
+  FormSwitch,
+  formClassNames,
+  formControlClass,
+  formSelectClass,
+  iconButtonClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+  type DraftStatus,
+} from "./ui/FormUI";
 
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
 });
-
-type MixedLot = {
-  id: string;
-  files: File[];
-  extraFiles: File[];
-  videoFiles?: File[];
-  coverIndex: number;
-  mode?: "single_lot" | "per_item" | "per_photo";
-};
 
 type ValuationMethod = "FML" | "TKV" | "OLV" | "FLV";
 const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
@@ -31,265 +65,205 @@ const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
 type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
+  onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
 };
 
-const isoDate = (d: Date) => {
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
+type DraftSnapshot = {
+  contractNo: string;
+  salesDate: string;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  language: "en" | "fr" | "es";
+  currency: string;
+  bankPhotosEnabled: boolean;
+  clientSubmissionId: string | null;
+  lots: MixedLot[];
 };
 
-// Auto-save draft storage keys
-const DRAFT_KEY = "cv_lotlisting_draft";
-const DRAFT_IMAGES_KEY = "cv_lotlisting_draft_images";
-
-// Type for localStorage image data (base64)
-type LocalDraftImage = {
+type SerializedDraftImage = {
   lotId: string;
-  type: "main" | "extra";
+  role: "main" | "extra";
   index: number;
   dataUrl: string;
   name: string;
   mimeType: string;
+  size: number;
+  lastModified: number;
 };
 
-export default function LotListingForm({ onSuccess, onCancel }: Props) {
+type SerializedDraftLot = {
+  id: string;
+  coverIndex: number;
+  mode?: MixedLot["mode"];
+  annotations?: MixedLot["annotations"];
+  mainCount: number;
+  extraCount: number;
+};
+
+type LotListingDraftEnvelope = {
+  version: 2;
+  kind: "lot-listing";
+  userId: string;
+  revision: number;
+  savedAt: string;
+  data: Omit<DraftSnapshot, "lots"> & {
+    lots: SerializedDraftLot[];
+  };
+  media: SerializedDraftImage[];
+};
+
+type DraftIssue = {
+  tone: "warning" | "error";
+  title: string;
+  message: string;
+};
+
+const isoDate = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+};
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () =>
+      reject(reader.error || new Error("A media file could not be read."));
+    reader.readAsDataURL(file);
+  });
+
+async function dataUrlToFile(image: SerializedDraftImage): Promise<File> {
+  const response = await fetch(image.dataUrl);
+  if (!response.ok) throw new Error("Draft media could not be restored.");
+  const blob = await response.blob();
+  return new File([blob], image.name, {
+    type: image.mimeType || blob.type,
+    lastModified: image.lastModified,
+  });
+}
+
+function draftFailureGuidance(error: unknown): DraftIssue {
+  const name =
+    error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name || "")
+      : "";
+
+  if (name === "QuotaExceededError") {
+    return {
+      tone: "error",
+      title: "Draft storage is full",
+      message:
+        "Your previous draft is still intact. Remove unneeded browser data or reduce the media in this listing, then save again.",
+    };
+  }
+
+  if (name === "SecurityError") {
+    return {
+      tone: "error",
+      title: "Draft storage is unavailable",
+      message:
+        "This browser is blocking local storage. Allow site storage or use a regular browsing window before closing this form.",
+    };
+  }
+
+  return {
+    tone: "warning",
+    title: "Draft media was not fully saved",
+    message:
+      "Your previous valid draft was preserved. Keep this form open and try Save draft again.",
+  };
+}
+
+export default function LotListingForm({
+  onSuccess,
+  onCancel: _onCancel,
+  onDraftStatusChange,
+}: Props) {
+  const { user } = useAuthContext();
+  const userId = user?._id || null;
+  const draftKey = useMemo(
+    () => getScopedDraftKey(userId, "lot-listing"),
+    [userId]
+  );
+
   const [mixedLots, setMixedLots] = useState<MixedLot[]>([]);
   const [contractNo, setContractNo] = useState("");
   const [salesDate, setSalesDate] = useState(isoDate(new Date()));
-  const [location, setLocation] = useState<string>(CURRENT_BROWSER_LOCATION_LABEL);
+  const [location, setLocation] = useState(CURRENT_BROWSER_LOCATION_LABEL);
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
-  const [locationStatus, setLocationStatus] = useState("Detecting current location...");
+  const [locationStatus, setLocationStatus] = useState(
+    "Detecting current location..."
+  );
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
-  const [currencyTouched, setCurrencyTouched] = useState(false);
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
 
+  const [openSections, setOpenSections] = useState({
+    details: true,
+    media: true,
+  });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // Progress UI state
-  const PROG_WEIGHTS = {
-    client_upload: 0.25,
-    r2_upload: 0.15,
-    ai_analysis: 0.35,
-    generate_files: 0.2,
-    finalize: 0.05,
-  } as const;
-  const STEPS = [
-    { key: "client_upload", label: "Uploading images" },
-    { key: "r2_upload", label: "Storing images" },
-    { key: "ai_analysis", label: "Analyzing images" },
-    { key: "generate_files", label: "Generating files" },
-    { key: "finalize", label: "Finalizing" },
-  ] as const;
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [progressPhase, setProgressPhase] = useState<
-    "idle" | "upload" | "processing" | "done" | "error"
-  >("idle");
-  const [stepStates, setStepStates] = useState<
-    Record<string, "pending" | "active" | "done">
-  >(() => Object.fromEntries(STEPS.map((s) => [s.key, "pending"])));
-  const pollIntervalRef = useRef<any>(null);
-  const jobIdRef = useRef<string | null>(null);
-  const forceNewSubmissionRef = useRef(false);
-  const [activeReportConflict, setActiveReportConflict] = useState(false);
-
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
     totalSize: number;
     uploadedBytes: number;
-    startTime: number;
   } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [activeReportConflict, setActiveReportConflict] = useState(false);
 
-  // Draft auto-save state
   const [hasDraft, setHasDraft] = useState(false);
-  const autoSaveTimeoutRef = useRef<any>(null);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const [draftIssue, setDraftIssue] = useState<DraftIssue | null>(null);
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    "clear" | "discard" | null
+  >(null);
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
 
-  // Convert File to base64 data URL for localStorage
-  const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const jobIdRef = useRef<string | null>(null);
+  const forceNewSubmissionRef = useRef(false);
+  const submitLockRef = useRef(false);
+  const reportEventSentRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveBlockedRef = useRef(false);
+  const requestedRevisionRef = useRef(0);
+  const committedRevisionRef = useRef(0);
+  const saveFlightRef = useRef<Promise<boolean> | null>(null);
+  const snapshotRef = useRef<DraftSnapshot | null>(null);
+  const statusCallbackRef = useRef(onDraftStatusChange);
+
+  useEffect(() => {
+    statusCallbackRef.current = onDraftStatusChange;
+  }, [onDraftStatusChange]);
+
+  const reportDraftStatus = useCallback(
+    (status: DraftStatus, label?: string) => {
+      statusCallbackRef.current?.(status, label);
+    },
+    []
+  );
+
+  snapshotRef.current = {
+    contractNo,
+    salesDate,
+    location,
+    latitude,
+    longitude,
+    language,
+    currency,
+    bankPhotosEnabled,
+    clientSubmissionId: jobIdRef.current,
+    lots: mixedLots,
   };
-
-  // Convert base64 data URL back to File
-  const dataUrlToFile = async (dataUrl: string, name: string, mimeType: string): Promise<File> => {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    return new File([blob], name, { type: mimeType || blob.type });
-  };
-
-  // Auto-save draft to localStorage
-  const autoSaveDraft = useCallback(async () => {
-    if (submitting || mixedLots.length === 0) return;
-
-    try {
-      jobIdRef.current ||= `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      // Save form data
-      const formData = {
-        clientSubmissionId: jobIdRef.current,
-        contractNo,
-        salesDate,
-        location,
-        latitude,
-        longitude,
-        language,
-        currency,
-        selectedValuationMethods: LOT_LISTING_VALUATION_METHODS,
-        bankPhotosEnabled,
-        lots: mixedLots.map((lot) => ({
-          id: lot.id,
-          coverIndex: lot.coverIndex,
-          mode: lot.mode,
-          fileCount: lot.files.length,
-          extraFileCount: lot.extraFiles.length,
-        })),
-        savedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(formData));
-
-      // Convert images to base64 for localStorage
-      const localImages: LocalDraftImage[] = [];
-      for (const lot of mixedLots) {
-        for (let i = 0; i < lot.files.length; i++) {
-          const file = lot.files[i];
-          try {
-            const dataUrl = await fileToDataUrl(file);
-            localImages.push({
-              lotId: lot.id,
-              type: "main",
-              index: i,
-              dataUrl,
-              name: file.name,
-              mimeType: file.type,
-            });
-          } catch (e) {
-            console.warn("Failed to convert file to base64:", file.name);
-          }
-        }
-        for (let i = 0; i < lot.extraFiles.length; i++) {
-          const file = lot.extraFiles[i];
-          try {
-            const dataUrl = await fileToDataUrl(file);
-            localImages.push({
-              lotId: lot.id,
-              type: "extra",
-              index: i,
-              dataUrl,
-              name: file.name,
-              mimeType: file.type,
-            });
-          } catch (e) {
-            console.warn("Failed to convert extra file to base64:", file.name);
-          }
-        }
-      }
-      localStorage.setItem(DRAFT_IMAGES_KEY, JSON.stringify(localImages));
-      setHasDraft(true);
-      console.log(`[LotListing Draft] Saved ${localImages.length} images`);
-    } catch (e) {
-      console.warn("[LotListing Draft] Save failed:", e);
-    }
-  }, [submitting, mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency, bankPhotosEnabled]);
-
-  // Restore draft from localStorage
-  const restoreDraft = useCallback(async () => {
-    try {
-      const savedData = localStorage.getItem(DRAFT_KEY);
-      const savedImages = localStorage.getItem(DRAFT_IMAGES_KEY);
-
-      if (!savedData || !savedImages) return false;
-
-      const formData = JSON.parse(savedData);
-      const images: LocalDraftImage[] = JSON.parse(savedImages);
-
-      if (images.length === 0) return false;
-
-      // Restore form fields
-      if (formData.clientSubmissionId) jobIdRef.current = String(formData.clientSubmissionId);
-      if (formData.contractNo) setContractNo(formData.contractNo);
-      if (formData.salesDate) setSalesDate(formData.salesDate);
-      if (formData.location) setLocation(formData.location);
-      if (isValidBrowserCoordinates(formData.latitude, formData.longitude)) {
-        setLatitude(Number(formData.latitude));
-        setLongitude(Number(formData.longitude));
-        setLocationStatus("Current location detected");
-      }
-      if (formData.language) setLanguage(formData.language);
-      if (formData.currency) setCurrency(formData.currency);
-      if (typeof formData.bankPhotosEnabled === "boolean") {
-        setBankPhotosEnabled(formData.bankPhotosEnabled);
-      }
-
-      // Reconstruct lots with files
-      const restoredLots: MixedLot[] = [];
-      for (const lotData of formData.lots || []) {
-        const mainFiles: File[] = [];
-        const extraFiles: File[] = [];
-
-        // Restore main files
-        const mainImages = images.filter((img) => img.lotId === lotData.id && img.type === "main");
-        for (const img of mainImages.sort((a, b) => a.index - b.index)) {
-          try {
-            const file = await dataUrlToFile(img.dataUrl, img.name, img.mimeType);
-            mainFiles.push(file);
-          } catch (e) {
-            console.warn("Failed to restore image:", img.name);
-          }
-        }
-
-        // Restore extra files
-        const extraImages = images.filter((img) => img.lotId === lotData.id && img.type === "extra");
-        for (const img of extraImages.sort((a, b) => a.index - b.index)) {
-          try {
-            const file = await dataUrlToFile(img.dataUrl, img.name, img.mimeType);
-            extraFiles.push(file);
-          } catch (e) {
-            console.warn("Failed to restore extra image:", img.name);
-          }
-        }
-
-        if (mainFiles.length > 0 || extraFiles.length > 0) {
-          restoredLots.push({
-            id: lotData.id,
-            files: mainFiles,
-            extraFiles,
-            coverIndex: lotData.coverIndex || 0,
-            mode: lotData.mode,
-          });
-        }
-      }
-
-      if (restoredLots.length > 0) {
-        setMixedLots(restoredLots);
-        setHasDraft(true);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error("[LotListing Draft] Restore failed:", e);
-      return false;
-    }
-  }, []);
-
-  // Clear draft from localStorage
-  const clearDraft = useCallback(() => {
-    try {
-      localStorage.removeItem(DRAFT_KEY);
-      localStorage.removeItem(DRAFT_IMAGES_KEY);
-      setHasDraft(false);
-      console.log("[LotListing Draft] Cleared");
-    } catch (e) {
-      console.warn("[LotListing Draft] Clear failed:", e);
-    }
-  }, []);
 
   const requestCurrentLocation = useCallback(() => {
+    setLatitude(null);
+    setLongitude(null);
+
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setLocationStatus("Browser location access is unavailable");
       return;
@@ -297,14 +271,18 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
 
     setLocationStatus("Detecting current location...");
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords || ({} as any);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      (position) => {
+        const nextLatitude = position.coords?.latitude;
+        const nextLongitude = position.coords?.longitude;
+        if (
+          !Number.isFinite(nextLatitude) ||
+          !Number.isFinite(nextLongitude)
+        ) {
           setLocationStatus("Latitude/Longitude not detected");
           return;
         }
-        setLatitude(latitude);
-        setLongitude(longitude);
+        setLatitude(nextLatitude);
+        setLongitude(nextLongitude);
         setLocation(CURRENT_BROWSER_LOCATION_LABEL);
         setLocationStatus("Current location detected");
       },
@@ -319,213 +297,516 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
     requestCurrentLocation();
   }, [requestCurrentLocation]);
 
-  // Check for existing draft on mount
-  useEffect(() => {
-    const checkDraft = async () => {
-      try {
-        const localData = localStorage.getItem(DRAFT_KEY);
-        const localImages = localStorage.getItem(DRAFT_IMAGES_KEY);
-        if (localData && localImages) {
-          const images = JSON.parse(localImages);
-          if (images.length > 0) {
-            setHasDraft(true);
-          }
+  const buildDraftEnvelope = useCallback(
+    async (
+      snapshot: DraftSnapshot,
+      revision: number
+    ): Promise<LotListingDraftEnvelope> => {
+      if (!userId) throw new DOMException("No authenticated user", "SecurityError");
+
+      const media: SerializedDraftImage[] = [];
+      for (const lot of snapshot.lots) {
+        for (let index = 0; index < lot.files.length; index += 1) {
+          const file = lot.files[index];
+          media.push({
+            lotId: lot.id,
+            role: "main",
+            index,
+            dataUrl: await fileToDataUrl(file),
+            name: file.name,
+            mimeType: file.type,
+            size: file.size,
+            lastModified: file.lastModified || 0,
+          });
         }
-      } catch (e) {
-        console.warn("[LotListing Draft] Check failed:", e);
+        for (let index = 0; index < lot.extraFiles.length; index += 1) {
+          const file = lot.extraFiles[index];
+          media.push({
+            lotId: lot.id,
+            role: "extra",
+            index,
+            dataUrl: await fileToDataUrl(file),
+            name: file.name,
+            mimeType: file.type,
+            size: file.size,
+            lastModified: file.lastModified || 0,
+          });
+        }
       }
-    };
-    checkDraft();
-  }, []);
 
-  // Auto-save when lots or form data changes (debounced)
-  useEffect(() => {
-    if (mixedLots.length === 0) return;
-    if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveDraft();
+      return {
+        version: 2,
+        kind: "lot-listing",
+        userId,
+        revision,
+        savedAt: new Date().toISOString(),
+        data: {
+          contractNo: snapshot.contractNo,
+          salesDate: snapshot.salesDate,
+          location: snapshot.location,
+          latitude: snapshot.latitude,
+          longitude: snapshot.longitude,
+          language: snapshot.language,
+          currency: snapshot.currency,
+          bankPhotosEnabled: snapshot.bankPhotosEnabled,
+          clientSubmissionId: snapshot.clientSubmissionId,
+          lots: snapshot.lots.map((lot) => ({
+            id: lot.id,
+            coverIndex: lot.coverIndex,
+            mode: lot.mode,
+            annotations: lot.annotations,
+            mainCount: lot.files.length,
+            extraCount: lot.extraFiles.length,
+          })),
+        },
+        media,
+      };
+    },
+    [userId]
+  );
+
+  const flushDraft = useCallback(async (): Promise<boolean> => {
+    if (!draftKey || !userId || autosaveBlockedRef.current) return false;
+    if (saveFlightRef.current) return saveFlightRef.current;
+
+    let task: Promise<boolean>;
+    task = (async () => {
+      let committed = false;
+
+      while (
+        !autosaveBlockedRef.current &&
+        committedRevisionRef.current < requestedRevisionRef.current
+      ) {
+        const revision = requestedRevisionRef.current;
+        const snapshot = snapshotRef.current;
+        if (!snapshot) break;
+
+        reportDraftStatus("saving", "Saving draft...");
+        try {
+          const envelope = await buildDraftEnvelope(snapshot, revision);
+          if (autosaveBlockedRef.current) break;
+          localStorage.setItem(draftKey, JSON.stringify(envelope));
+          committedRevisionRef.current = revision;
+          committed = true;
+          setHasDraft(true);
+          setShowDraftBanner(false);
+          setDraftIssue(null);
+
+          if (revision === requestedRevisionRef.current) {
+            reportDraftStatus(
+              "saved",
+              "Saved " +
+                new Intl.DateTimeFormat(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                }).format(new Date())
+            );
+          }
+        } catch (saveError) {
+          const issue = draftFailureGuidance(saveError);
+          setDraftIssue(issue);
+          reportDraftStatus(
+            issue.tone === "warning" ? "partial" : "error",
+            issue.title
+          );
+          break;
+        }
+      }
+
+      return committed;
+    })();
+
+    saveFlightRef.current = task;
+    try {
+      return await task;
+    } finally {
+      if (saveFlightRef.current === task) saveFlightRef.current = null;
+    }
+  }, [buildDraftEnvelope, draftKey, reportDraftStatus, userId]);
+
+  const markDirty = useCallback(() => {
+    if (autosaveBlockedRef.current) return;
+    requestedRevisionRef.current += 1;
+    reportDraftStatus("dirty");
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void flushDraft();
     }, 2000);
-    return () => {
-      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
-    };
-  }, [mixedLots, contractNo, salesDate, location, latitude, longitude, language, currency, autoSaveDraft]);
+  }, [flushDraft, reportDraftStatus]);
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
-  const getTimeRemaining = (): string => {
-    if (!uploadStats || uploadStats.uploadedBytes === 0) return "Calculating...";
-    const elapsed = (Date.now() - uploadStats.startTime) / 1000;
-    const speed = uploadStats.uploadedBytes / elapsed;
-    const remaining = uploadStats.totalSize - uploadStats.uploadedBytes;
-    const secondsLeft = Math.ceil(remaining / speed);
-    if (secondsLeft < 60) return `~${secondsLeft}s remaining`;
-    const minutes = Math.floor(secondsLeft / 60);
-    const secs = secondsLeft % 60;
-    return `~${minutes}m ${secs}s remaining`;
-  };
+  useEffect(
+    () => () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    },
+    []
+  );
 
   useEffect(() => {
-    if (progressPhase === "idle") return;
-    setStepStates((prev) => {
-      const next = { ...prev } as Record<string, "pending" | "active" | "done">;
-      for (const s of STEPS) next[s.key] = "pending";
-      const p = progressPercent;
-      if (p < 25) {
-        next.client_upload = "active";
-      } else if (p < 40) {
-        next.client_upload = "done";
-        next.r2_upload = "active";
-      } else if (p < 75) {
-        next.client_upload = "done";
-        next.r2_upload = "done";
-        next.ai_analysis = "active";
-      } else if (p < 95) {
-        next.client_upload = "done";
-        next.r2_upload = "done";
-        next.ai_analysis = "done";
-        next.generate_files = "active";
-      } else if (p < 100) {
-        next.client_upload = "done";
-        next.r2_upload = "done";
-        next.ai_analysis = "done";
-        next.generate_files = "done";
-        next.finalize = "active";
-      } else {
-        for (const s of STEPS) next[s.key] = "done";
+    if (!draftKey || !userId) return;
+
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const envelope = parseScopedDraftEnvelope<LotListingDraftEnvelope>(raw, {
+        userId,
+        kind: "lot-listing",
+      });
+      if (
+        envelope.version !== 2 ||
+        envelope.kind !== "lot-listing" ||
+        envelope.userId !== userId ||
+        !envelope.data ||
+        !Array.isArray(envelope.media)
+      ) {
+        setHasDraft(true);
+        setShowDraftBanner(false);
+        setDraftIssue({
+          tone: "warning",
+          title: "This draft cannot be restored",
+          message:
+            "It was created by an unsupported form version. Discard it when you are ready to start a new draft.",
+        });
+        reportDraftStatus("error", "Draft needs attention");
+        return;
       }
+
+      setHasDraft(true);
+      setShowDraftBanner(true);
+      requestedRevisionRef.current = Number(envelope.revision) || 0;
+      committedRevisionRef.current = requestedRevisionRef.current;
+      reportDraftStatus("saved", "Saved draft available");
+    } catch (checkError) {
+      const unsupported =
+        checkError instanceof DraftEnvelopeError &&
+        checkError.code === "unsupported-version";
+      setHasDraft(true);
+      setShowDraftBanner(false);
+      setDraftIssue({
+        tone: unsupported ? "warning" : "error",
+        title: unsupported
+          ? "This draft cannot be restored"
+          : "Saved draft is damaged",
+        message: unsupported
+          ? "It was created by an unsupported form version. Discard it when you are ready to start a new draft."
+          : "The stored draft could not be read. Discard it to continue without changing any legacy drafts.",
+      });
+      reportDraftStatus(
+        "error",
+        unsupported ? "Draft version is unsupported" : "Draft is unreadable"
+      );
+    }
+  }, [draftKey, reportDraftStatus, userId]);
+
+  const clearFieldError = (field: string) => {
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
       return next;
     });
-  }, [progressPercent, progressPhase]);
+  };
 
-  useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, []);
+  const handleLotsChange = useCallback(
+    (lots: MixedLot[]) => {
+      setMixedLots(lots);
+      clearFieldError("media");
+      markDirty();
+    },
+    [markDirty]
+  );
 
-  const clearError = (k: string) =>
-    setErrors((prev) => {
-      const { [k]: _, ...rest } = prev;
-      return rest;
-    });
+  const restoreDraft = useCallback(async () => {
+    if (!draftKey || !userId) return;
+    setRestoringDraft(true);
+    setDraftIssue(null);
 
-  function validateForm(): boolean {
-    const e: Record<string, string> = {};
-    if (!contractNo.trim()) e.contractNo = "Required";
-    if (!currency || !/^[A-Z]{3}$/.test(currency))
-      e.currency = "Use 3-letter code (e.g., CAD)";
-    setErrors(e);
-    if (Object.keys(e).length > 0) {
-      toast.error("Please fix required fields");
-      return false;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) throw new Error("The saved draft is no longer available.");
+      const envelope = parseScopedDraftEnvelope<LotListingDraftEnvelope>(raw, {
+        userId,
+        kind: "lot-listing",
+      });
+      if (
+        envelope.version !== 2 ||
+        envelope.kind !== "lot-listing" ||
+        envelope.userId !== userId ||
+        !envelope.data ||
+        !Array.isArray(envelope.data.lots) ||
+        !Array.isArray(envelope.media)
+      ) {
+        throw new Error("This draft belongs to an unsupported form version.");
+      }
+
+      let failedMedia = 0;
+      const restoredLots: MixedLot[] = [];
+
+      for (const lotData of envelope.data.lots) {
+        const restoreRole = async (role: "main" | "extra") => {
+          const files: File[] = [];
+          const entries = envelope.media
+            .filter(
+              (item) => item.lotId === lotData.id && item.role === role
+            )
+            .sort((a, b) => a.index - b.index);
+
+          for (const entry of entries) {
+            try {
+              files.push(await dataUrlToFile(entry));
+            } catch {
+              failedMedia += 1;
+            }
+          }
+          return files;
+        };
+
+        const files = await restoreRole("main");
+        const extraFiles = await restoreRole("extra");
+        restoredLots.push({
+          id: lotData.id,
+          files,
+          extraFiles,
+          coverIndex: Math.max(
+            0,
+            Math.min(files.length - 1, Number(lotData.coverIndex) || 0)
+          ),
+          mode: lotData.mode,
+          annotations: lotData.annotations || {},
+        });
+      }
+
+      const data = envelope.data;
+      setContractNo(data.contractNo || "");
+      setSalesDate(data.salesDate || isoDate(new Date()));
+      setLocation(data.location || CURRENT_BROWSER_LOCATION_LABEL);
+      if (isValidBrowserCoordinates(data.latitude, data.longitude)) {
+        setLatitude(Number(data.latitude));
+        setLongitude(Number(data.longitude));
+        setLocationStatus("Current location restored from draft");
+      } else {
+        setLatitude(null);
+        setLongitude(null);
+        requestCurrentLocation();
+      }
+      setLanguage(data.language || "en");
+      setCurrency(data.currency || "CAD");
+      setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
+      setMixedLots(restoredLots);
+      jobIdRef.current = data.clientSubmissionId || null;
+      requestedRevisionRef.current = Number(envelope.revision) || 0;
+      committedRevisionRef.current = requestedRevisionRef.current;
+      setShowDraftBanner(false);
+      setHasDraft(true);
+
+      if (failedMedia > 0) {
+        setDraftIssue({
+          tone: "warning",
+          title: "Some draft media could not be restored",
+          message:
+            String(failedMedia) +
+            " file" +
+            (failedMedia === 1 ? " was" : "s were") +
+            " skipped. Review each lot before submitting.",
+        });
+        reportDraftStatus("partial", "Draft restored with missing media");
+      } else {
+        reportDraftStatus("saved", "Draft restored");
+      }
+      toast.success("Draft restored");
+    } catch (restoreError) {
+      const message =
+        restoreError instanceof Error
+          ? restoreError.message
+          : "The saved draft could not be restored.";
+      setDraftIssue({
+        tone: "error",
+        title: "Draft restore failed",
+        message,
+      });
+      reportDraftStatus("error", "Draft restore failed");
+      toast.error(message);
+    } finally {
+      setRestoringDraft(false);
     }
-    return true;
-  }
+  }, [draftKey, reportDraftStatus, requestCurrentLocation, userId]);
 
-  function clearForm(showToast = true) {
+  const deleteStoredDraft = useCallback(async () => {
+    autosaveBlockedRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    await saveFlightRef.current;
+    if (draftKey) localStorage.removeItem(draftKey);
+    requestedRevisionRef.current = 0;
+    committedRevisionRef.current = 0;
+    setHasDraft(false);
+    setShowDraftBanner(false);
+    setDraftIssue(null);
+  }, [draftKey]);
+
+  const resetFormState = useCallback(() => {
     setMixedLots([]);
     setContractNo("");
     setSalesDate(isoDate(new Date()));
     setLocation(CURRENT_BROWSER_LOCATION_LABEL);
+    setLatitude(null);
+    setLongitude(null);
+    setLocationStatus("Detecting current location...");
     setLanguage("en");
     setCurrency("CAD");
     setBankPhotosEnabled(false);
-    setCurrencyTouched(false);
     setError(null);
-    setProgressPhase("idle");
-    setProgressPercent(0);
-    setStepStates(() => Object.fromEntries(STEPS.map((s) => [s.key, "pending"])) as any);
+    setErrors({});
+    setUploadPercent(0);
     setUploadStats(null);
+    setOpenSections({ details: true, media: true });
     jobIdRef.current = null;
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-    clearDraft();
-    if (showToast) toast.info("Form cleared.");
-  }
+    forceNewSubmissionRef.current = false;
+    requestCurrentLocation();
+  }, [requestCurrentLocation]);
 
-  // Handle restore draft button click
-  const handleRestoreDraft = async () => {
-    const restored = await restoreDraft();
-    if (restored) {
-      const savedData = localStorage.getItem(DRAFT_KEY);
-      const savedImages = localStorage.getItem(DRAFT_IMAGES_KEY);
-      const imageCount = savedImages ? JSON.parse(savedImages).length : 0;
-      toast.success(`Draft restored: ${imageCount} images`);
-    } else {
-      toast.error("Failed to restore draft");
-    }
-  };
-
-  const handleSaveDraft = async () => {
-    const hasImages = mixedLots.some(
-      (lot) => lot.files.length > 0 || lot.extraFiles.length > 0
-    );
-    if (!hasImages) {
-      toast.info("Add at least one lot image before saving a draft.");
-      return;
-    }
-    await autoSaveDraft();
-    toast.success("Draft saved");
-  };
-
-  async function onSubmit(e?: React.FormEvent) {
-    e?.preventDefault();
-
-    if (!validateForm()) {
-      setError("Please fix required fields.");
-      return;
-    }
-
-    const total = mixedLots.reduce((s, l) => s + l.files.length, 0);
-    if (total === 0) {
-      const msg = "Please add at least one image.";
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
-
-    const perLotOk = mixedLots.every((l) => l.files.length > 0 && !!l.mode);
-    if (!perLotOk) {
-      const msg = "Each lot must have at least 1 image and a selected mode.";
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
-
+  const handleConfirmedAction = useCallback(async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
     try {
-      setSubmitting(true);
-      setError(null);
-      setProgressPhase("upload");
-      setProgressPercent(0);
-      setStepStates(() => ({
-        client_upload: "active",
-        r2_upload: "pending",
-        ai_analysis: "pending",
-        generate_files: "pending",
-        finalize: "pending",
-      }));
+      await deleteStoredDraft();
+      if (action === "clear") {
+        resetFormState();
+        reportDraftStatus("dirty", "No draft saved");
+        toast.info("Lot listing cleared.");
+      } else {
+        reportDraftStatus("dirty", "Draft discarded");
+        toast.info("Saved draft discarded.");
+      }
+    } catch (deleteError) {
+      const issue = draftFailureGuidance(deleteError);
+      setDraftIssue(issue);
+      reportDraftStatus("error", "Draft could not be removed");
+    } finally {
+      autosaveBlockedRef.current = false;
+    }
+  }, [
+    confirmAction,
+    deleteStoredDraft,
+    reportDraftStatus,
+    resetFormState,
+  ]);
 
-      const filesToSend = mixedLots.flatMap((l) => [...l.files, ...(l.extraFiles || [])]);
-      const totalSize = filesToSend.reduce((s, f) => s + f.size, 0);
+  const handleSaveDraft = useCallback(async () => {
+    requestedRevisionRef.current += 1;
+    const committed = await flushDraft();
+    if (committed) toast.success("Draft saved");
+  }, [flushDraft]);
+
+  const validateForm = useCallback(() => {
+    const nextErrors: Record<string, string> = {};
+    if (!contractNo.trim()) {
+      nextErrors.contractNo = "Enter a contract number.";
+    }
+    if (!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())) {
+      nextErrors.currency = "Use a three-letter currency code such as CAD.";
+    }
+
+    const hasMainImages = mixedLots.some((lot) => lot.files.length > 0);
+    const everyLotReady =
+      mixedLots.length > 0 &&
+      mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
+    if (!hasMainImages) {
+      nextErrors.media = "Add at least one main photo.";
+    } else if (!everyLotReady) {
+      nextErrors.media =
+        "Every lot needs a main photo and a Bundle, Per Item, or Per Photo mode.";
+    }
+
+    setErrors(nextErrors);
+    if (nextErrors.contractNo || nextErrors.currency) {
+      setOpenSections((current) => ({ ...current, details: true }));
+    }
+    if (nextErrors.media) {
+      setOpenSections((current) => ({ ...current, media: true }));
+    }
+
+    return Object.keys(nextErrors).length === 0;
+  }, [contractNo, currency, mixedLots]);
+
+  const resumeDraftAfterFailure = useCallback(async () => {
+    autosaveBlockedRef.current = false;
+    requestedRevisionRef.current += 1;
+    await flushDraft();
+  }, [flushDraft]);
+
+  const clearAcceptedDraft = useCallback(async () => {
+    autosaveBlockedRef.current = true;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    await saveFlightRef.current;
+    if (draftKey) localStorage.removeItem(draftKey);
+    requestedRevisionRef.current = 0;
+    committedRevisionRef.current = 0;
+    setHasDraft(false);
+    setShowDraftBanner(false);
+    setDraftIssue(null);
+    resetFormState();
+    autosaveBlockedRef.current = false;
+  }, [draftKey, resetFormState]);
+
+  const dispatchReportCreated = useCallback(() => {
+    if (reportEventSentRef.current || typeof window === "undefined") return;
+    reportEventSentRef.current = true;
+    window.dispatchEvent(new Event("cv:report-created"));
+  }, []);
+
+  const onSubmit = useCallback(
+    async (event?: React.FormEvent) => {
+      event?.preventDefault();
+      if (submitLockRef.current) return;
+      setError(null);
+
+      if (!validateForm()) {
+        const message = "Review the highlighted fields before submitting.";
+        setError(message);
+        toast.error(message);
+        return;
+      }
+
+      submitLockRef.current = true;
+      reportEventSentRef.current = false;
+      autosaveBlockedRef.current = true;
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+
+      const lotsForSubmission = mixedLots;
+      const filesToSend = lotsForSubmission.flatMap((lot) => [
+        ...lot.files,
+        ...lot.extraFiles,
+      ]);
+      const totalSize = filesToSend.reduce((sum, file) => sum + file.size, 0);
+
+      setSubmitting(true);
+      setUploadPercent(0);
       setUploadStats({
         totalFiles: filesToSend.length,
         totalSize,
         uploadedBytes: 0,
-        startTime: Date.now(),
       });
 
       const jobId =
         jobIdRef.current ||
-        (typeof crypto !== "undefined" && (crypto as any)?.randomUUID
-          ? (crypto as any).randomUUID()
-          : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : "ll-" +
+            Date.now() +
+            "-" +
+            Math.random().toString(36).slice(2, 9));
       jobIdRef.current = jobId;
+
+      const focusBoxes = buildMixedFocusBoxes(lotsForSubmission);
 
       const details = {
         contract_no: contractNo.trim(),
@@ -538,407 +819,561 @@ export default function LotListingForm({ onSuccess, onCancel }: Props) {
             }
           : {}),
         language,
-        currency,
+        currency: currency.trim().toUpperCase(),
         valuation_methods: LOT_LISTING_VALUATION_METHODS,
         include_damage_analysis: true,
         bank_photos_enabled: bankPhotosEnabled,
         progress_id: jobId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
-        mixed_lots: mixedLots.map((l) => ({
-          count: l.files.length,
-          extra_count: (l.extraFiles || []).length,
-          cover_index: Math.max(0, Math.min(l.files.length - 1, l.coverIndex || 0)),
-          mode: l.mode!,
+        mixed_lots: lotsForSubmission.map((lot) => ({
+          count: lot.files.length,
+          extra_count: lot.extraFiles.length,
+          cover_index: Math.max(
+            0,
+            Math.min(lot.files.length - 1, lot.coverIndex || 0)
+          ),
+          mode: lot.mode,
         })),
+        ...(focusBoxes.length > 0 ? { focus_boxes: focusBoxes } : {}),
       };
 
-      let response: any;
-      try {
-        const directFiles: DirectUploadFile[] = [];
-        mixedLots.forEach((lot, lotIndex) => {
-          lot.files.forEach((file, imageIndex) => {
-            directFiles.push({
-              file,
-              fieldname: "images",
-              lotIndex,
-              imageIndex,
-              role: "main",
-            });
-          });
-          (lot.extraFiles || []).forEach((file, imageIndex) => {
-            directFiles.push({
-              file,
-              fieldname: "images",
-              lotIndex,
-              imageIndex,
-              role: "extra",
-            });
-          });
-        });
-        const data = await uploadReportFilesDirectToR2({
-          endpoint: "/lot-listing",
-          details,
-          files: directFiles,
-          onUploadProgress: (fraction) => {
-            const pct = Math.max(0, Math.min(1, fraction));
-            const weighted = pct * PROG_WEIGHTS.client_upload * 100;
-            setProgressPhase("upload");
-            setProgressPercent((prev) => (weighted > prev ? weighted : prev));
-            setUploadStats((prev) =>
-              prev ? { ...prev, uploadedBytes: Math.floor(pct * prev.totalSize) } : null
-            );
-          },
-        });
-        response = { data };
-      } catch (directError: any) {
-        const status = Number(directError?.response?.status || 0);
-        if (![404, 405, 501].includes(status)) throw directError;
-        console.warn("[LotListingForm] Direct upload is unsupported; using legacy multipart upload.");
-        const formData = new FormData();
-        filesToSend.forEach((file) => {
-          formData.append("images", file);
-        });
-        formData.append("details", JSON.stringify(details));
-        response = await API.post("/lot-listing", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-          onUploadProgress: (progressEvent: any) => {
-            const pct = progressEvent.total
-              ? Math.max(0, Math.min(1, progressEvent.loaded / progressEvent.total))
-              : 0;
-            const weighted = pct * PROG_WEIGHTS.client_upload * 100;
-            setProgressPhase("upload");
-            setProgressPercent((prev) => (weighted > prev ? weighted : prev));
-            setUploadStats((prev) =>
-              prev ? { ...prev, uploadedBytes: Math.floor(pct * prev.totalSize) } : null
-            );
-          },
-        });
-      }
+      const updateUploadProgress = (fraction: number) => {
+        const clamped = Math.max(0, Math.min(1, fraction));
+        setUploadPercent((current) =>
+          Math.max(current, Math.round(clamped * 100))
+        );
+        setUploadStats((current) =>
+          current
+            ? {
+                ...current,
+                uploadedBytes: Math.floor(clamped * current.totalSize),
+              }
+            : current
+        );
+      };
 
-      const msg =
-        response?.data?.message ||
-        "Your lot listing is being processed. You will receive an email when the preview is ready.";
-      setProgressPercent(100);
-      setProgressPhase("done");
-      toast.info(msg);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("cv:report-created"));
-      }
-      clearForm(false);
-      forceNewSubmissionRef.current = false;
-      setSubmitting(false);
-      onSuccess?.(msg);
-    } catch (err: any) {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      setProgressPhase("error");
-      if (err?.response?.status === 409 && err?.response?.data?.code === "ACTIVE_REPORT_EXISTS") {
+      try {
+        let responseData: Record<string, unknown>;
+        try {
+          const directFiles: DirectUploadFile[] = [];
+          lotsForSubmission.forEach((lot, lotIndex) => {
+            lot.files.forEach((file, imageIndex) => {
+              directFiles.push({
+                file,
+                fieldname: "images",
+                lotIndex,
+                imageIndex,
+                role: "main",
+              });
+            });
+            lot.extraFiles.forEach((file, imageIndex) => {
+              directFiles.push({
+                file,
+                fieldname: "images",
+                lotIndex,
+                imageIndex,
+                role: "extra",
+              });
+            });
+          });
+
+          responseData = await uploadReportFilesDirectToR2({
+            endpoint: "/lot-listing",
+            details,
+            files: directFiles,
+            onUploadProgress: updateUploadProgress,
+          });
+        } catch (directError: any) {
+          const status = Number(directError?.response?.status || 0);
+          if (![404, 405, 501].includes(status)) throw directError;
+
+          const formData = new FormData();
+          filesToSend.forEach((file) => formData.append("images", file));
+          formData.append("details", JSON.stringify(details));
+          const response = await API.post("/lot-listing", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+            onUploadProgress: (progressEvent: {
+              loaded: number;
+              total?: number;
+            }) => {
+              updateUploadProgress(
+                progressEvent.total
+                  ? progressEvent.loaded / progressEvent.total
+                  : 0
+              );
+            },
+          });
+          responseData = response.data;
+        }
+
+        updateUploadProgress(1);
+        const acceptedMessage =
+          "Submission accepted — processing continues in My Reports.";
+        await clearAcceptedDraft();
+        forceNewSubmissionRef.current = false;
+        dispatchReportCreated();
+        toast.success(acceptedMessage);
+        onSuccess?.(acceptedMessage);
+        void responseData;
+      } catch (submitError: any) {
+        const isConflict =
+          submitError?.response?.status === 409 &&
+          submitError?.response?.data?.code === "ACTIVE_REPORT_EXISTS";
         setSubmitting(false);
-        setActiveReportConflict(true);
+        submitLockRef.current = false;
+        await resumeDraftAfterFailure();
+
+        if (isConflict) {
+          setActiveReportConflict(true);
+          return;
+        }
+
+        const message =
+          submitError?.response?.data?.message ||
+          submitError?.message ||
+          "Failed to create lot listing.";
+        setError(message);
+        toast.error(message);
         return;
       }
-      const msg =
-        err?.response?.data?.message || err?.message || "Failed to create lot listing";
-      setError(msg);
-      toast.error(msg);
+
       setSubmitting(false);
-    }
-  }
+      submitLockRef.current = false;
+    },
+    [
+      bankPhotosEnabled,
+      clearAcceptedDraft,
+      contractNo,
+      currency,
+      dispatchReportCreated,
+      language,
+      latitude,
+      location,
+      longitude,
+      mixedLots,
+      onSuccess,
+      resumeDraftAfterFailure,
+      salesDate,
+      validateForm,
+    ]
+  );
+
+  const totalMainPhotos = mixedLots.reduce(
+    (sum, lot) => sum + lot.files.length,
+    0
+  );
+  const totalExtraPhotos = mixedLots.reduce(
+    (sum, lot) => sum + lot.extraFiles.length,
+    0
+  );
+  const mediaSummary =
+    mixedLots.length === 0
+      ? "No lots added"
+      : mixedLots.length +
+        " " +
+        (mixedLots.length === 1 ? "lot" : "lots") +
+        " · " +
+        (totalMainPhotos + totalExtraPhotos) +
+        " photos";
+  const detailsComplete =
+    Boolean(contractNo.trim()) && /^[A-Z]{3}$/.test(currency.trim());
+  const mediaComplete =
+    mixedLots.length > 0 &&
+    mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
+  const fieldErrorCount = [errors.contractNo, errors.currency].filter(
+    Boolean
+  ).length;
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  };
 
   return (
-    <form className="flex min-h-full min-w-0 flex-col overflow-x-hidden" onSubmit={onSubmit}>
-      <div className="relative flex min-h-full min-w-0 flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+7rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-purple-100 bg-white/80 p-4 shadow-sm sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-gray-950">Lot Listing</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              Build an auction-ready lot listing with photos, values, Excel, and image downloads.
-            </p>
-          </div>
-        </div>
+    <form
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--app-panel-alt)]"
+      onSubmit={onSubmit}
+      aria-busy={submitting}
+      noValidate
+    >
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
+        <div className="mx-auto grid w-full max-w-[920px] gap-4 sm:gap-5">
+          {error ? (
+            <FormAlert tone="error" title="The listing needs attention">
+              {error}
+            </FormAlert>
+          ) : null}
 
-        {!submitting && error && (
-          <div className="rounded-xl border border-red-200/70 bg-red-50/80 p-3 text-sm text-red-700 shadow ring-1 ring-black/5 backdrop-blur">
-            {error}
-          </div>
-        )}
-
-        {submitting && (
-          <div className="mb-3">
-            <div className="w-full max-w-xl mx-auto rounded-2xl border border-purple-100/70 bg-white/80 p-4 shadow-2xl ring-1 ring-black/5 backdrop-blur">
-              <div className="mb-3 text-sm font-semibold text-gray-900">
-                Creating lot listing...
-              </div>
-              <div className="mb-4 flex items-center justify-between">
-                {STEPS.map((s, idx) => {
-                  const state = stepStates[s.key];
-                  const isDone = state === "done";
-                  const isActive = state === "active";
-                  return (
-                    <div key={s.key} className="flex flex-1 items-center">
-                      <div
-                        className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold shadow ${
-                          isDone
-                            ? "border-purple-600 bg-purple-600 text-white shadow-[0_3px_0_0_rgba(126,34,206,0.5)]"
-                            : isActive
-                            ? "border-purple-600 text-purple-600 ring-2 ring-purple-300 animate-pulse"
-                            : "border-gray-300 text-gray-400"
-                        }`}
-                        title={s.label}
-                      >
-                        {isDone ? <Check className="h-4 w-4" /> : idx + 1}
-                      </div>
-                      {idx < STEPS.length - 1 && (
-                        <div className="mx-2 h-0.5 flex-1 rounded bg-gradient-to-r from-gray-200 to-gray-100">
-                          <div
-                            className={`h-0.5 rounded ${
-                              isDone
-                                ? "bg-gradient-to-r from-purple-500 to-purple-600"
-                                : isActive
-                                ? "bg-gradient-to-r from-purple-300 to-purple-400"
-                                : "bg-transparent"
-                            }`}
-                          ></div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <div>
-                <div className="h-2 w-full overflow-hidden rounded bg-gray-200">
+          {submitting && uploadStats ? (
+            <FormAlert tone="info" title="Uploading listing media">
+              <div className="mt-2 grid gap-2">
+                <div
+                  role="progressbar"
+                  aria-label="Upload progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={uploadPercent}
+                  className="h-2 overflow-hidden rounded-full bg-[var(--app-control-border)]"
+                >
                   <div
-                    className="h-2 rounded bg-gradient-to-r from-purple-500 to-purple-600 transition-all duration-300 shadow-inner"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, progressPercent)).toFixed(0)}%`,
-                    }}
-                  ></div>
-                </div>
-                <div className="mt-2 text-xs text-gray-600">
-                  {progressPhase === "upload"
-                    ? "Uploading images..."
-                    : progressPhase === "processing"
-                    ? "Analyzing images and generating files..."
-                    : progressPhase === "done"
-                    ? "Finalizing..."
-                    : "Starting..."}
-                </div>
-
-                {progressPhase === "upload" && uploadStats && (
-                  <div className="mt-3 p-2 rounded-lg bg-gray-50 border border-gray-200">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-gray-500">Files:</span>{" "}
-                        <span className="font-medium text-gray-900">
-                          {uploadStats.totalFiles}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Total Size:</span>{" "}
-                        <span className="font-medium text-purple-600">
-                          {formatFileSize(uploadStats.totalSize)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Uploaded:</span>{" "}
-                        <span className="font-medium text-green-600">
-                          {formatFileSize(uploadStats.uploadedBytes)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Time:</span>{" "}
-                        <span className="font-medium text-amber-600">
-                          {getTimeRemaining()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!submitting && (
-          <>
-            {/* Restore Draft Banner */}
-            {hasDraft && mixedLots.length === 0 && (
-              <div className="mb-4 rounded-xl border border-purple-200 bg-purple-50/80 p-3 shadow-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <RotateCcw className="h-4 w-4 text-purple-600" />
-                    <span className="text-sm text-purple-800">
-                      You have a saved draft with images
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                    <button
-                      type="button"
-                      onClick={handleRestoreDraft}
-                      className="inline-flex min-h-9 items-center justify-center rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700"
-                    >
-                      Restore Draft
-                    </button>
-                    <button
-                      type="button"
-                      onClick={clearDraft}
-                      className="inline-flex min-h-9 items-center justify-center rounded-lg px-3 py-1.5 text-xs font-medium text-purple-600 transition hover:bg-purple-100 hover:text-purple-800"
-                    >
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Listing Details */}
-            <section className="space-y-3">
-              <h3 className="text-sm font-medium text-gray-900">Listing Details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Contract Number *</label>
-                  <input
-                    type="text"
-                    value={contractNo}
-                    onChange={(e) => {
-                      setContractNo(e.target.value);
-                      if (errors.contractNo) clearError("contractNo");
-                    }}
-                    placeholder="e.g., CTR-2024-001"
-                    className={`w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-purple-400 transition-all placeholder:text-gray-400 hover:border-gray-400 ${
-                      errors.contractNo ? "border-red-300 focus:ring-red-300" : ""
-                    }`}
+                    className="h-full rounded-full bg-[var(--app-accent)] transition-[width] duration-200"
+                    style={{ width: uploadPercent + "%" }}
                   />
-                  {errors.contractNo && (
-                    <p className="text-xs text-red-500">{errors.contractNo}</p>
-                  )}
                 </div>
+                <p className="flex flex-wrap justify-between gap-2 text-xs">
+                  <span>
+                    {uploadPercent}% · {uploadStats.totalFiles} files
+                  </span>
+                  <span>
+                    {formatFileSize(uploadStats.uploadedBytes)} of{" "}
+                    {formatFileSize(uploadStats.totalSize)}
+                  </span>
+                </p>
+              </div>
+            </FormAlert>
+          ) : null}
 
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Bank</label>
+          {draftIssue ? (
+            <FormAlert
+              tone={draftIssue.tone}
+              title={draftIssue.title}
+              onDismiss={() => setDraftIssue(null)}
+            >
+              {draftIssue.message}
+            </FormAlert>
+          ) : null}
+
+          {hasDraft && showDraftBanner ? (
+            <FormAlert tone="info" title="Continue your saved draft">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Restore the fields, lot modes, cover choices, annotations,
+                  and locally stored photos from this account&apos;s draft.
+                </span>
+                <span className="flex shrink-0 flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => setBankPhotosEnabled((value) => !value)}
-                    className={`flex w-full items-center justify-between rounded-lg border-2 px-3 py-2.5 text-sm font-semibold transition ${
-                      bankPhotosEnabled
-                        ? "border-purple-400 bg-purple-50 text-purple-700"
-                        : "border-gray-300/80 bg-white text-gray-700 hover:border-gray-400"
-                    }`}
-                    aria-pressed={bankPhotosEnabled}
+                    onClick={() => void restoreDraft()}
+                    disabled={restoringDraft}
+                    className={secondaryButtonClass}
                   >
-                    <span>Include all photos in CR</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
-                      {bankPhotosEnabled ? "On" : "Off"}
-                    </span>
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    {restoringDraft ? "Restoring..." : "Restore"}
                   </button>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Language</label>
-                  <select
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value as "en" | "fr" | "es")}
-                    className="w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-purple-400 transition-all hover:border-gray-400"
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction("discard")}
+                    className={secondaryButtonClass}
                   >
-                    <option value="en">English</option>
-                    <option value="fr">French</option>
-                    <option value="es">Spanish</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs text-gray-600">Currency *</label>
-                  <input
-                    type="text"
-                    value={currency}
-                    onChange={(e) => {
-                      setCurrency(e.target.value.toUpperCase());
-                      setCurrencyTouched(true);
-                      if (errors.currency) clearError("currency");
-                    }}
-                    placeholder="CAD"
-                    maxLength={3}
-                    className={`w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-purple-400 transition-all placeholder:text-gray-400 hover:border-gray-400 uppercase ${
-                      errors.currency ? "border-red-300 focus:ring-red-300" : ""
-                    }`}
-                  />
-                  {errors.currency && (
-                    <p className="text-xs text-red-500">{errors.currency}</p>
-                  )}
-                </div>
+                    Discard
+                  </button>
+                </span>
               </div>
-            </section>
+            </FormAlert>
+          ) : null}
 
-            {/* Lots Section with Camera */}
-            <section className="mt-4 min-w-0 space-y-3 pb-8 sm:pb-8">
-              <h3 className="text-sm font-medium text-gray-900">
-                Lots & Images
-              </h3>
+          <FormSection
+            id="lot-listing-details"
+            sectionNumber={1}
+            title="Listing Details"
+            description="Core settings used to identify and format the listing. Sales date and current location are captured automatically."
+            open={openSections.details}
+            onOpenChange={(open) =>
+              setOpenSections((current) => ({ ...current, details: open }))
+            }
+            status={
+              fieldErrorCount > 0
+                ? "error"
+                : detailsComplete
+                  ? "complete"
+                  : "incomplete"
+            }
+            summary={
+              detailsComplete
+                ? contractNo.trim() + " · " + currency.trim().toUpperCase()
+                : "Contract, language, and currency"
+            }
+            errorSummary={
+              fieldErrorCount > 0
+                ? fieldErrorCount +
+                  " " +
+                  (fieldErrorCount === 1 ? "field needs" : "fields need") +
+                  " attention"
+                : undefined
+            }
+          >
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <FormField
+                id="lot-contract-number"
+                label="Contract Number"
+                required
+                error={errors.contractNo}
+              >
+                <input
+                  type="text"
+                  value={contractNo}
+                  onChange={(event) => {
+                    setContractNo(event.target.value);
+                    clearFieldError("contractNo");
+                    markDirty();
+                  }}
+                  placeholder="e.g., CTR-2026-001"
+                  autoComplete="off"
+                  disabled={submitting}
+                  className={formControlClass}
+                />
+              </FormField>
+
+              <FormField id="lot-language" label="Language">
+                <select
+                  value={language}
+                  onChange={(event) => {
+                    setLanguage(
+                      event.target.value as "en" | "fr" | "es"
+                    );
+                    markDirty();
+                  }}
+                  disabled={submitting}
+                  className={formSelectClass}
+                >
+                  <option value="en">English</option>
+                  <option value="fr">French</option>
+                  <option value="es">Spanish</option>
+                </select>
+              </FormField>
+
+              <FormField
+                id="lot-currency"
+                label="Currency"
+                required
+                hint="Use the three-letter ISO code."
+                error={errors.currency}
+              >
+                <input
+                  type="text"
+                  value={currency}
+                  onChange={(event) => {
+                    setCurrency(event.target.value.toUpperCase());
+                    clearFieldError("currency");
+                    markDirty();
+                  }}
+                  placeholder="CAD"
+                  maxLength={3}
+                  autoComplete="off"
+                  disabled={submitting}
+                  className={formClassNames(
+                    formControlClass,
+                    "uppercase"
+                  )}
+                />
+              </FormField>
+
+              <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-4 py-3">
+                <FormSwitch
+                  id="lot-bank-photos"
+                  label="Include all photos in CR"
+                  description="Include report-only photos in the condition report."
+                  checked={bankPhotosEnabled}
+                  onChange={(event) => {
+                    setBankPhotosEnabled(event.target.checked);
+                    markDirty();
+                  }}
+                  disabled={submitting}
+                />
+              </div>
+            </div>
+            <p className="sr-only" aria-live="polite">
+              {locationStatus}
+            </p>
+          </FormSection>
+
+          <FormSection
+            id="lot-listing-media"
+            sectionNumber={2}
+            title="Lots & Media"
+            description="Create each lot, choose how its photos should be interpreted, and then add main or report-only images."
+            open={openSections.media}
+            onOpenChange={(open) =>
+              setOpenSections((current) => ({ ...current, media: open }))
+            }
+            status={
+              errors.media ? "error" : mediaComplete ? "complete" : "incomplete"
+            }
+            summary={mediaSummary}
+            errorSummary={errors.media}
+          >
+            <div
+              id="lot-media-workspace"
+              tabIndex={errors.media ? -1 : undefined}
+              data-invalid={errors.media ? "true" : undefined}
+              aria-describedby={
+                errors.media ? "lot-media-workspace-error" : undefined
+              }
+              className={formClassNames(
+                submitting ? "pointer-events-none opacity-70" : undefined
+              )}
+            >
+              {errors.media ? (
+                <p
+                  id="lot-media-workspace-error"
+                  className="border-b border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-4 py-3 text-sm font-medium text-[var(--app-danger)] sm:px-5"
+                  role="alert"
+                >
+                  {errors.media}
+                </p>
+              ) : null}
               <MixedSection
                 value={mixedLots}
-                onChange={setMixedLots}
+                onChange={handleLotsChange}
                 downloadPrefix={contractNo || "lot-listing"}
+                allowVideo={false}
+                analysisImageLimit={50}
               />
-            </section>
-
-            {/* Action Buttons */}
-            <div className="sticky bottom-0 z-10 -mx-1 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.35rem)] sm:mx-0">
-              <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200/80 bg-white/95 p-2.5 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-              <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:items-center">
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 active:translate-y-0.5 sm:gap-2 sm:px-4"
-                >
-                  <Save className="h-4 w-4" />
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => clearForm()}
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5 sm:px-4"
-                >
-                  Clear
-                </button>
-                {onCancel && (
-                  <button
-                    type="button"
-                    onClick={onCancel}
-                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-0.5 sm:gap-2 sm:px-4"
-                  >
-                    <X className="h-4 w-4" />
-                    Cancel
-                  </button>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full min-h-11 px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 rounded-xl shadow-lg shadow-purple-500/30 transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto"
-              >
-                {submitting ? "Creating..." : "Create Lot Listing"}
-              </button>
-              </div>
             </div>
-          </>
-        )}
+          </FormSection>
+        </div>
       </div>
+
+      <FormActionBar className="static">
+        <div className="hidden items-center gap-2 sm:flex">
+          <button
+            type="button"
+            onClick={() => void handleSaveDraft()}
+            disabled={submitting || restoringDraft}
+            className={secondaryButtonClass}
+          >
+            <Save className="h-4 w-4" aria-hidden="true" />
+            Save Draft
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmAction("clear")}
+            disabled={submitting}
+            className={secondaryButtonClass}
+          >
+            Clear
+          </button>
+        </div>
+
+        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_44px_minmax(0,1.25fr)] gap-2 sm:hidden">
+          <button
+            type="button"
+            onClick={() => void handleSaveDraft()}
+            disabled={submitting || restoringDraft}
+            className={formClassNames(secondaryButtonClass, "min-w-0 px-2")}
+          >
+            <Save className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Save Draft</span>
+          </button>
+          <button
+            type="button"
+            aria-label="More form actions"
+            aria-haspopup="menu"
+            aria-expanded={Boolean(moreAnchor)}
+            onClick={(event) => setMoreAnchor(event.currentTarget)}
+            disabled={submitting}
+            className={iconButtonClass}
+          >
+            <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className={formClassNames(primaryButtonClass, "min-w-0 px-2")}
+          >
+            <span className="truncate">
+              {submitting ? "Uploading..." : "Create Listing"}
+            </span>
+          </button>
+        </div>
+
+        <span className="hidden sm:inline">
+          <button
+            type="submit"
+            disabled={submitting}
+            className={primaryButtonClass}
+          >
+            {submitting ? "Uploading..." : "Create Lot Listing"}
+          </button>
+        </span>
+      </FormActionBar>
+
+      <Menu
+        anchorEl={moreAnchor}
+        open={Boolean(moreAnchor)}
+        onClose={() => setMoreAnchor(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 1,
+              minWidth: 200,
+              border: "1px solid var(--app-border)",
+              borderRadius: "10px",
+              bgcolor: "var(--app-panel)",
+              color: "var(--app-text)",
+              backgroundImage: "none",
+              boxShadow: "var(--app-shadow-modal)",
+            },
+          },
+        }}
+      >
+        <MenuItem
+          onClick={() => {
+            setMoreAnchor(null);
+            setConfirmAction("clear");
+          }}
+          sx={{ minHeight: 44 }}
+        >
+          <ListItemIcon>
+            <Trash2 className="h-4 w-4 text-[var(--app-danger)]" />
+          </ListItemIcon>
+          <ListItemText>Clear form</ListItemText>
+        </MenuItem>
+      </Menu>
+
+      <ConfirmDialog
+        open={confirmAction === "clear"}
+        title="Clear this lot listing?"
+        description="All fields, lots, photos, modes, covers, and annotations in this form will be removed. The saved draft will also be deleted."
+        confirmLabel="Clear listing"
+        tone="danger"
+        onConfirm={() => void handleConfirmedAction()}
+        onCancel={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === "discard"}
+        title="Discard the saved draft?"
+        description="The saved fields and locally stored media for this account will be removed. Legacy drafts are not changed."
+        confirmLabel="Discard draft"
+        tone="danger"
+        onConfirm={() => void handleConfirmedAction()}
+        onCancel={() => setConfirmAction(null)}
+      />
+
       <ActiveReportConflictDialog
         open={activeReportConflict}
         reportLabel="lot listing"
         onCancel={() => setActiveReportConflict(false)}
         onResume={() => {
           setActiveReportConflict(false);
-          window.dispatchEvent(new Event("cv:report-created"));
-          toast.info("The existing report is still processing. Check My Reports for its status.");
-          onSuccess?.("Existing report resumed. Open My Reports to follow its progress.");
+          toast.info(
+            "The existing report is still processing. Check My Reports for its status."
+          );
+          onSuccess?.(
+            "Existing report resumed. Open My Reports to follow its progress."
+          );
         }}
         onCreateSeparate={() => {
           setActiveReportConflict(false);
           jobIdRef.current =
-            typeof crypto !== "undefined" && (crypto as any)?.randomUUID
-              ? (crypto as any).randomUUID()
-              : `ll-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : "ll-" +
+                Date.now() +
+                "-" +
+                Math.random().toString(36).slice(2, 9);
           forceNewSubmissionRef.current = true;
           window.setTimeout(() => void onSubmit(), 0);
         }}

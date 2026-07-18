@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Dialog from "@mui/material/Dialog";
 
 export type AnnBox = {
   id: string;
@@ -282,11 +283,27 @@ export default function ImageAnnotator({
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[95] bg-black/80">
+    <Dialog
+      open
+      fullScreen
+      onClose={(_event, reason) => {
+        if (reason === "escapeKeyDown") onCancel();
+      }}
+      aria-labelledby="focus-editor-title"
+      slotProps={{
+        paper: {
+          sx: {
+            m: 0,
+            bgcolor: "#111827",
+            overflow: "hidden",
+          },
+        },
+      }}
+    >
       <div className="relative w-screen h-[100dvh] overflow-hidden bg-gray-900/80 flex flex-col pb-[env(safe-area-inset-bottom)]">
         {/* Header */}
         <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 text-white">
-          <div className="text-sm font-semibold">Focus / Crop Area</div>
+          <div id="focus-editor-title" className="text-sm font-semibold">Focus / Crop Area</div>
           <div className="flex items-center gap-2">
             {activeId && (
               <button
@@ -381,6 +398,6 @@ export default function ImageAnnotator({
           Tip: Click and drag on the image to add a box. Drag a box to move. Use corner handles to resize. Select a box by clicking it; then use Delete Box.
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
