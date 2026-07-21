@@ -35,8 +35,14 @@ import {
 } from "./mixed/types";
 import { buildMixedFocusBoxes } from "./mixed/focusBoxes";
 import {
+  DraftPersistenceError,
+  FORM_DRAFT_VERSION,
+  deleteScopedDraft,
   getScopedDraftKey,
+  loadScopedDraft,
   parseScopedDraftEnvelope,
+  requestDurableDraftStorage,
+  saveScopedDraft,
 } from "./drafts/storage";
 import {
   ConfirmDialog,
@@ -121,7 +127,7 @@ type AssetDraftFormData = {
   factorsAnalysis: string;
 };
 
-type AssetDraftEnvelope = {
+type LegacyAssetDraftEnvelope = {
   version: 2;
   kind: "asset";
   userId: string;
@@ -131,6 +137,17 @@ type AssetDraftEnvelope = {
   formData: AssetDraftFormData;
   lots: SerializedLot[];
   media: LocalDraftMedia[];
+};
+
+type AssetDraftEnvelope = {
+  version: typeof FORM_DRAFT_VERSION;
+  kind: "asset";
+  userId: string;
+  revision: number;
+  savedAt: string;
+  deviceId: string;
+  formData: AssetDraftFormData;
+  lots: MixedLot[];
 };
 
 type DraftSnapshot = {
@@ -165,14 +182,6 @@ const getDeviceId = () => {
   return deviceId;
 };
 
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error || new Error("Unable to read file"));
-    reader.readAsDataURL(file);
-  });
-
 const dataUrlToFile = async (media: LocalDraftMedia) => {
   const response = await fetch(media.dataUrl);
   const blob = await response.blob();
@@ -201,6 +210,7 @@ const urlToFile = async (
 };
 
 const storageErrorMessage = (error: unknown) => {
+  if (error instanceof DraftPersistenceError) return error.message;
   const name = String((error as { name?: string })?.name || "");
   if (name === "QuotaExceededError") {
     return "Browser storage is full. The previous local draft was preserved; remove large media or free browser storage.";
@@ -457,56 +467,24 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const saveLocalTier = async (snapshot: DraftSnapshot) => {
     if (!draftStorageKey) throw new Error("Authenticated user is unavailable");
-    const existing = localStorage.getItem(draftStorageKey);
-    const media: LocalDraftMedia[] = [];
-    const failures: string[] = [];
-
-    for (const lot of snapshot.lots) {
-      const buckets: Array<{
-        type: LocalDraftMedia["type"];
-        files: File[];
-      }> = [
-        { type: "main", files: lot.files },
-        { type: "extra", files: lot.extraFiles },
-        { type: "video", files: lot.videoFiles || [] },
-      ];
-      for (const bucket of buckets) {
-        for (const file of bucket.files) {
-          try {
-            media.push({
-              lotId: lot.id,
-              type: bucket.type,
-              ...describeFile(file),
-              dataUrl: await fileToDataUrl(file),
-            });
-          } catch {
-            failures.push(file.name);
-          }
-        }
-      }
-    }
-
-    if (failures.length && existing) {
-      throw new Error(
-        `Some media could not be read (${failures.slice(0, 3).join(", ")}). The previous local draft was preserved.`
-      );
-    }
-
     const envelope: AssetDraftEnvelope = {
-      version: 2,
+      version: FORM_DRAFT_VERSION,
       kind: "asset",
       userId,
       revision: snapshot.revision,
       savedAt: new Date().toISOString(),
       deviceId: getDeviceId(),
       formData: snapshot.formData,
-      lots: snapshot.serializedLots,
-      media,
+      lots: snapshot.lots.map((lot) => ({
+        ...lot,
+        files: [...lot.files],
+        extraFiles: [...lot.extraFiles],
+        videoFiles: [...(lot.videoFiles || [])],
+        annotations: lot.annotations ? { ...lot.annotations } : undefined,
+      })),
     };
-    localStorage.setItem(draftStorageKey, JSON.stringify(envelope));
-    return failures.length
-      ? `Some media could not be stored locally (${failures.slice(0, 3).join(", ")}).`
-      : null;
+    await saveScopedDraft(envelope);
+    return null;
   };
 
   const saveServerTier = async (snapshot: DraftSnapshot) => {
@@ -737,58 +715,93 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const restoreLocalDraft = async (): Promise<boolean> => {
     if (!draftStorageKey) return false;
-    const raw = localStorage.getItem(draftStorageKey);
-    if (!raw) return false;
-    let envelope: AssetDraftEnvelope;
-    try {
-      envelope = parseScopedDraftEnvelope<AssetDraftEnvelope>(raw, {
-        userId,
+    await requestDurableDraftStorage();
+    let envelope: AssetDraftEnvelope | null = null;
+    let missingMediaCount = 0;
+    const durable = await loadScopedDraft<AssetDraftEnvelope>(userId, "asset");
+
+    if (durable) {
+      envelope = durable.envelope;
+      missingMediaCount = durable.missingMediaCount;
+    } else {
+      const raw = localStorage.getItem(draftStorageKey);
+      if (!raw) return false;
+      let legacy: LegacyAssetDraftEnvelope;
+      try {
+        legacy = parseScopedDraftEnvelope<LegacyAssetDraftEnvelope>(raw, {
+          userId,
+          kind: "asset",
+        });
+      } catch {
+        setDraftGuidance({
+          tone: "error",
+          message:
+            "The local draft is corrupted and was not loaded. A server copy will be tried if available.",
+        });
+        publishDraftStatus("error", "Local draft is corrupted");
+        return false;
+      }
+
+      const restoredLots: MixedLot[] = [];
+      for (const lotMeta of legacy.lots || []) {
+        const restoreBucket = async (type: LocalDraftMedia["type"]) => {
+          const files: File[] = [];
+          for (const media of (legacy.media || []).filter(
+            (item) => item.lotId === lotMeta.id && item.type === type
+          )) {
+            try {
+              files.push(await dataUrlToFile(media));
+            } catch {
+              missingMediaCount += 1;
+            }
+          }
+          return files;
+        };
+        restoredLots.push({
+          id: lotMeta.id,
+          files: await restoreBucket("main"),
+          extraFiles: await restoreBucket("extra"),
+          videoFiles: await restoreBucket("video"),
+          coverIndex: lotMeta.coverIndex || 0,
+          mode: lotMeta.mode,
+          annotations: lotMeta.annotations || {},
+        });
+      }
+
+      envelope = {
+        version: FORM_DRAFT_VERSION,
         kind: "asset",
-      });
-    } catch {
-      setDraftGuidance({
-        tone: "error",
-        message: "The local draft is corrupted and was not loaded. A server copy will be tried if available.",
-      });
-      publishDraftStatus("error", "Local draft is corrupted");
-      return false;
+        userId,
+        revision: legacy.revision || 0,
+        savedAt: legacy.savedAt || new Date().toISOString(),
+        deviceId: legacy.deviceId || getDeviceId(),
+        formData: legacy.formData,
+        lots: restoredLots,
+      };
+
+      // A complete v2 draft is removed only after v3 can be written and read
+      // back with every media object intact.
+      if (missingMediaCount === 0) {
+        await saveScopedDraft(envelope);
+        const verified = await loadScopedDraft<AssetDraftEnvelope>(userId, "asset");
+        if (!verified || verified.missingMediaCount > 0) {
+          throw new Error("The migrated asset draft could not be verified.");
+        }
+        envelope = verified.envelope;
+        localStorage.removeItem(draftStorageKey);
+      }
     }
-    if (envelope.version !== 2 || envelope.userId !== userId) return false;
 
     restoreFormFields(envelope.formData || {});
-    const restoredLots: MixedLot[] = [];
-    let failedMedia = 0;
-    for (const lotMeta of envelope.lots || []) {
-      const restoreBucket = async (type: LocalDraftMedia["type"]) => {
-        const files: File[] = [];
-        for (const media of (envelope.media || []).filter(
-          (item) => item.lotId === lotMeta.id && item.type === type
-        )) {
-          try {
-            files.push(await dataUrlToFile(media));
-          } catch {
-            failedMedia += 1;
-          }
-        }
-        return files;
-      };
-      restoredLots.push({
-        id: lotMeta.id,
-        files: await restoreBucket("main"),
-        extraFiles: await restoreBucket("extra"),
-        videoFiles: await restoreBucket("video"),
-        coverIndex: lotMeta.coverIndex || 0,
-        mode: lotMeta.mode,
-        annotations: lotMeta.annotations || {},
-      });
-    }
-    setMixedLots(restoredLots);
+    setMixedLots(Array.isArray(envelope.lots) ? envelope.lots : []);
     saveRevisionRef.current = envelope.revision || 0;
     committedRevisionRef.current = envelope.revision || 0;
-    if (failedMedia) {
+    if (missingMediaCount) {
       setDraftGuidance({
         tone: "warning",
-        message: `${failedMedia} media file${failedMedia === 1 ? "" : "s"} could not be restored. All available fields and media were retained.`,
+        message: `${missingMediaCount} media file${
+          missingMediaCount === 1 ? "" : "s"
+        } could not be restored. All available fields and media were retained.`,
       });
       publishDraftStatus("partial", "Draft restored with missing media");
     } else {
@@ -865,7 +878,17 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     void (async () => {
       let restored = false;
       try {
-        restored = await restoreLocalDraft();
+        try {
+          restored = await restoreLocalDraft();
+        } catch (localRestoreError) {
+          if (!cancelled) {
+            setDraftGuidance({
+              tone: "error",
+              message: storageErrorMessage(localRestoreError),
+            });
+            publishDraftStatus("error", "Local draft storage is unavailable");
+          }
+        }
         if (!restored) restored = await restoreServerDraft();
         if (restored && !cancelled) toast.info("Your asset draft was restored.");
       } catch (restoreError) {
@@ -1024,6 +1047,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const clearDraftStorage = async () => {
+    let localDeleteError: unknown;
+    try {
+      await deleteScopedDraft(userId, "asset");
+    } catch (error) {
+      localDeleteError = error;
+    }
     if (draftStorageKey) localStorage.removeItem(draftStorageKey);
     const removeServerDraft = async () => {
       await SavedInputService.deleteDraftImages();
@@ -1038,6 +1067,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         throw new Error("The local draft was removed, but the server copy could not be deleted. Please try again.");
       }
     }
+    if (localDeleteError) throw localDeleteError;
   };
 
   const discardDraft = async () => {
@@ -1342,7 +1372,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAcceptedMessage(accepted);
       toast.success(accepted);
       saveRevisionRef.current += 1;
-      await clearDraftStorage().catch(() => undefined);
+      const cleanupError = await clearDraftStorage()
+        .then(() => null)
+        .catch((draftError) => draftError);
       dispatchReportCreated();
       setDraftHydrated(false);
       resetForm();
@@ -1350,6 +1382,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       forceNewSubmissionRef.current = false;
       setSubmitting(false);
       publishDraftStatus("saved", "Submission accepted");
+      if (cleanupError) {
+        toast.warning(
+          "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
+        );
+      }
       onSuccess?.(accepted);
       window.setTimeout(() => {
         lastFingerprintRef.current = null;

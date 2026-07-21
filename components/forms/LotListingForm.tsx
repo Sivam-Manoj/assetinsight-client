@@ -36,8 +36,15 @@ import type { MixedLot } from "./mixed/types";
 import { buildMixedFocusBoxes } from "./mixed/focusBoxes";
 import {
   DraftEnvelopeError,
+  DraftPersistenceError,
+  FORM_DRAFT_VERSION,
+  deleteScopedDraft,
   getScopedDraftKey,
+  hasScopedDraft,
+  loadScopedDraft,
   parseScopedDraftEnvelope,
+  requestDurableDraftStorage,
+  saveScopedDraft,
 } from "./drafts/storage";
 import {
   ConfirmDialog,
@@ -101,7 +108,7 @@ type SerializedDraftLot = {
   extraCount: number;
 };
 
-type LotListingDraftEnvelope = {
+type LegacyLotListingDraftEnvelope = {
   version: 2;
   kind: "lot-listing";
   userId: string;
@@ -111,6 +118,15 @@ type LotListingDraftEnvelope = {
     lots: SerializedDraftLot[];
   };
   media: SerializedDraftImage[];
+};
+
+type LotListingDraftEnvelope = {
+  version: typeof FORM_DRAFT_VERSION;
+  kind: "lot-listing";
+  userId: string;
+  revision: number;
+  savedAt: string;
+  data: DraftSnapshot;
 };
 
 type DraftIssue = {
@@ -124,15 +140,6 @@ const isoDate = (date: Date) => {
   return local.toISOString().slice(0, 10);
 };
 
-const fileToDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () =>
-      reject(reader.error || new Error("A media file could not be read."));
-    reader.readAsDataURL(file);
-  });
-
 async function dataUrlToFile(image: SerializedDraftImage): Promise<File> {
   const response = await fetch(image.dataUrl);
   if (!response.ok) throw new Error("Draft media could not be restored.");
@@ -141,6 +148,47 @@ async function dataUrlToFile(image: SerializedDraftImage): Promise<File> {
     type: image.mimeType || blob.type,
     lastModified: image.lastModified,
   });
+}
+
+async function hydrateLegacyDraft(envelope: LegacyLotListingDraftEnvelope) {
+  let missingMediaCount = 0;
+  const lots: MixedLot[] = [];
+
+  for (const lotData of envelope.data.lots) {
+    const restoreRole = async (role: "main" | "extra") => {
+      const files: File[] = [];
+      const entries = envelope.media
+        .filter((item) => item.lotId === lotData.id && item.role === role)
+        .sort((left, right) => left.index - right.index);
+
+      for (const entry of entries) {
+        try {
+          files.push(await dataUrlToFile(entry));
+        } catch {
+          missingMediaCount += 1;
+        }
+      }
+      return files;
+    };
+
+    const files = await restoreRole("main");
+    lots.push({
+      id: lotData.id,
+      files,
+      extraFiles: await restoreRole("extra"),
+      coverIndex: Math.max(
+        0,
+        Math.min(files.length - 1, Number(lotData.coverIndex) || 0)
+      ),
+      mode: lotData.mode,
+      annotations: lotData.annotations || {},
+    });
+  }
+
+  return {
+    data: { ...envelope.data, lots } as DraftSnapshot,
+    missingMediaCount,
+  };
 }
 
 function draftFailureGuidance(error: unknown): DraftIssue {
@@ -167,11 +215,19 @@ function draftFailureGuidance(error: unknown): DraftIssue {
     };
   }
 
+  if (error instanceof DraftPersistenceError) {
+    return {
+      tone: "error",
+      title: "Draft media was not saved",
+      message: error.message,
+    };
+  }
+
   return {
     tone: "warning",
     title: "Draft media was not fully saved",
     message:
-      "Your previous valid draft was preserved. Keep this form open and try Save draft again.",
+        "Your previous valid draft was preserved. Keep this form open and try Save draft again.",
   };
 }
 
@@ -304,62 +360,22 @@ export default function LotListingForm({
     ): Promise<LotListingDraftEnvelope> => {
       if (!userId) throw new DOMException("No authenticated user", "SecurityError");
 
-      const media: SerializedDraftImage[] = [];
-      for (const lot of snapshot.lots) {
-        for (let index = 0; index < lot.files.length; index += 1) {
-          const file = lot.files[index];
-          media.push({
-            lotId: lot.id,
-            role: "main",
-            index,
-            dataUrl: await fileToDataUrl(file),
-            name: file.name,
-            mimeType: file.type,
-            size: file.size,
-            lastModified: file.lastModified || 0,
-          });
-        }
-        for (let index = 0; index < lot.extraFiles.length; index += 1) {
-          const file = lot.extraFiles[index];
-          media.push({
-            lotId: lot.id,
-            role: "extra",
-            index,
-            dataUrl: await fileToDataUrl(file),
-            name: file.name,
-            mimeType: file.type,
-            size: file.size,
-            lastModified: file.lastModified || 0,
-          });
-        }
-      }
-
       return {
-        version: 2,
+        version: FORM_DRAFT_VERSION,
         kind: "lot-listing",
         userId,
         revision,
         savedAt: new Date().toISOString(),
         data: {
-          contractNo: snapshot.contractNo,
-          salesDate: snapshot.salesDate,
-          location: snapshot.location,
-          latitude: snapshot.latitude,
-          longitude: snapshot.longitude,
-          language: snapshot.language,
-          currency: snapshot.currency,
-          bankPhotosEnabled: snapshot.bankPhotosEnabled,
-          clientSubmissionId: snapshot.clientSubmissionId,
+          ...snapshot,
           lots: snapshot.lots.map((lot) => ({
-            id: lot.id,
-            coverIndex: lot.coverIndex,
-            mode: lot.mode,
-            annotations: lot.annotations,
-            mainCount: lot.files.length,
-            extraCount: lot.extraFiles.length,
+            ...lot,
+            files: [...lot.files],
+            extraFiles: [...lot.extraFiles],
+            videoFiles: [...(lot.videoFiles || [])],
+            annotations: lot.annotations ? { ...lot.annotations } : undefined,
           })),
         },
-        media,
       };
     },
     [userId]
@@ -385,7 +401,7 @@ export default function LotListingForm({
         try {
           const envelope = await buildDraftEnvelope(snapshot, revision);
           if (autosaveBlockedRef.current) break;
-          localStorage.setItem(draftKey, JSON.stringify(envelope));
+          await saveScopedDraft(envelope);
           committedRevisionRef.current = revision;
           committed = true;
           setHasDraft(true);
@@ -442,60 +458,95 @@ export default function LotListingForm({
     []
   );
 
+  const applyRestoredDraft = useCallback(
+    (data: DraftSnapshot, revision: number, missingMediaCount: number) => {
+      setContractNo(data.contractNo || "");
+      setSalesDate(data.salesDate || isoDate(new Date()));
+      setLocation(data.location || CURRENT_BROWSER_LOCATION_LABEL);
+      if (isValidBrowserCoordinates(data.latitude, data.longitude)) {
+        setLatitude(Number(data.latitude));
+        setLongitude(Number(data.longitude));
+        setLocationStatus("Current location restored from draft");
+      } else {
+        setLatitude(null);
+        setLongitude(null);
+        requestCurrentLocation();
+      }
+      setLanguage(data.language || "en");
+      setCurrency(data.currency || "CAD");
+      setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
+      setMixedLots(Array.isArray(data.lots) ? data.lots : []);
+      jobIdRef.current = data.clientSubmissionId || null;
+      requestedRevisionRef.current = revision;
+      committedRevisionRef.current = revision;
+      setShowDraftBanner(false);
+      setHasDraft(true);
+
+      if (missingMediaCount > 0) {
+        setDraftIssue({
+          tone: "warning",
+          title: "Some draft media could not be restored",
+          message: `${missingMediaCount} file${
+            missingMediaCount === 1 ? " was" : "s were"
+          } skipped. Review each lot before submitting.`,
+        });
+        reportDraftStatus("partial", "Draft restored with missing media");
+      } else {
+        setDraftIssue(null);
+        reportDraftStatus("saved", "Draft restored");
+      }
+    },
+    [reportDraftStatus, requestCurrentLocation]
+  );
+
   useEffect(() => {
     if (!draftKey || !userId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await requestDurableDraftStorage();
+        const durableDraftExists = await hasScopedDraft(userId, "lot-listing");
+        const legacyRaw = localStorage.getItem(draftKey);
+        if (!durableDraftExists && !legacyRaw) return;
 
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (!raw) return;
-      const envelope = parseScopedDraftEnvelope<LotListingDraftEnvelope>(raw, {
-        userId,
-        kind: "lot-listing",
-      });
-      if (
-        envelope.version !== 2 ||
-        envelope.kind !== "lot-listing" ||
-        envelope.userId !== userId ||
-        !envelope.data ||
-        !Array.isArray(envelope.media)
-      ) {
+        let revision = 0;
+        if (legacyRaw && !durableDraftExists) {
+          const legacy = parseScopedDraftEnvelope<LegacyLotListingDraftEnvelope>(
+            legacyRaw,
+            { userId, kind: "lot-listing" }
+          );
+          revision = Number(legacy.revision) || 0;
+        }
+        if (cancelled) return;
+        setHasDraft(true);
+        setShowDraftBanner(true);
+        requestedRevisionRef.current = revision;
+        committedRevisionRef.current = revision;
+        reportDraftStatus("saved", "Saved draft available");
+      } catch (checkError) {
+        if (cancelled) return;
+        const unsupported =
+          checkError instanceof DraftEnvelopeError &&
+          checkError.code === "unsupported-version";
         setHasDraft(true);
         setShowDraftBanner(false);
         setDraftIssue({
-          tone: "warning",
-          title: "This draft cannot be restored",
-          message:
-            "It was created by an unsupported form version. Discard it when you are ready to start a new draft.",
+          tone: unsupported ? "warning" : "error",
+          title: unsupported
+            ? "This draft cannot be restored"
+            : "Draft storage is unavailable",
+          message: unsupported
+            ? "It was created by an unsupported form version. Discard it when you are ready to start a new draft."
+            : checkError instanceof Error
+              ? checkError.message
+              : "The browser could not read durable draft storage.",
         });
         reportDraftStatus("error", "Draft needs attention");
-        return;
       }
-
-      setHasDraft(true);
-      setShowDraftBanner(true);
-      requestedRevisionRef.current = Number(envelope.revision) || 0;
-      committedRevisionRef.current = requestedRevisionRef.current;
-      reportDraftStatus("saved", "Saved draft available");
-    } catch (checkError) {
-      const unsupported =
-        checkError instanceof DraftEnvelopeError &&
-        checkError.code === "unsupported-version";
-      setHasDraft(true);
-      setShowDraftBanner(false);
-      setDraftIssue({
-        tone: unsupported ? "warning" : "error",
-        title: unsupported
-          ? "This draft cannot be restored"
-          : "Saved draft is damaged",
-        message: unsupported
-          ? "It was created by an unsupported form version. Discard it when you are ready to start a new draft."
-          : "The stored draft could not be read. Discard it to continue without changing any legacy drafts.",
-      });
-      reportDraftStatus(
-        "error",
-        unsupported ? "Draft version is unsupported" : "Draft is unreadable"
-      );
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [draftKey, reportDraftStatus, userId]);
 
   const clearFieldError = (field: string) => {
@@ -522,96 +573,47 @@ export default function LotListingForm({
     setDraftIssue(null);
 
     try {
-      const raw = localStorage.getItem(draftKey);
-      if (!raw) throw new Error("The saved draft is no longer available.");
-      const envelope = parseScopedDraftEnvelope<LotListingDraftEnvelope>(raw, {
+      const durable = await loadScopedDraft<LotListingDraftEnvelope>(
         userId,
-        kind: "lot-listing",
-      });
-      if (
-        envelope.version !== 2 ||
-        envelope.kind !== "lot-listing" ||
-        envelope.userId !== userId ||
-        !envelope.data ||
-        !Array.isArray(envelope.data.lots) ||
-        !Array.isArray(envelope.media)
-      ) {
-        throw new Error("This draft belongs to an unsupported form version.");
-      }
+        "lot-listing"
+      );
+      if (durable) {
+        applyRestoredDraft(
+          durable.envelope.data,
+          Number(durable.envelope.revision) || 0,
+          durable.missingMediaCount
+        );
+      } else {
+        const raw = localStorage.getItem(draftKey);
+        if (!raw) throw new Error("The saved draft is no longer available.");
+        const legacy = parseScopedDraftEnvelope<LegacyLotListingDraftEnvelope>(
+          raw,
+          { userId, kind: "lot-listing" }
+        );
+        const migrated = await hydrateLegacyDraft(legacy);
 
-      let failedMedia = 0;
-      const restoredLots: MixedLot[] = [];
-
-      for (const lotData of envelope.data.lots) {
-        const restoreRole = async (role: "main" | "extra") => {
-          const files: File[] = [];
-          const entries = envelope.media
-            .filter(
-              (item) => item.lotId === lotData.id && item.role === role
-            )
-            .sort((a, b) => a.index - b.index);
-
-          for (const entry of entries) {
-            try {
-              files.push(await dataUrlToFile(entry));
-            } catch {
-              failedMedia += 1;
-            }
+        // Remove v2 only after a complete v3 write/read verification. If a
+        // Data URL is damaged, the legacy revision remains available to retry.
+        if (migrated.missingMediaCount === 0) {
+          const nextEnvelope = await buildDraftEnvelope(
+            migrated.data,
+            Number(legacy.revision) || 0
+          );
+          await saveScopedDraft(nextEnvelope);
+          const verified = await loadScopedDraft<LotListingDraftEnvelope>(
+            userId,
+            "lot-listing"
+          );
+          if (!verified || verified.missingMediaCount > 0) {
+            throw new Error("The migrated draft could not be verified.");
           }
-          return files;
-        };
-
-        const files = await restoreRole("main");
-        const extraFiles = await restoreRole("extra");
-        restoredLots.push({
-          id: lotData.id,
-          files,
-          extraFiles,
-          coverIndex: Math.max(
-            0,
-            Math.min(files.length - 1, Number(lotData.coverIndex) || 0)
-          ),
-          mode: lotData.mode,
-          annotations: lotData.annotations || {},
-        });
-      }
-
-      const data = envelope.data;
-      setContractNo(data.contractNo || "");
-      setSalesDate(data.salesDate || isoDate(new Date()));
-      setLocation(data.location || CURRENT_BROWSER_LOCATION_LABEL);
-      if (isValidBrowserCoordinates(data.latitude, data.longitude)) {
-        setLatitude(Number(data.latitude));
-        setLongitude(Number(data.longitude));
-        setLocationStatus("Current location restored from draft");
-      } else {
-        setLatitude(null);
-        setLongitude(null);
-        requestCurrentLocation();
-      }
-      setLanguage(data.language || "en");
-      setCurrency(data.currency || "CAD");
-      setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
-      setMixedLots(restoredLots);
-      jobIdRef.current = data.clientSubmissionId || null;
-      requestedRevisionRef.current = Number(envelope.revision) || 0;
-      committedRevisionRef.current = requestedRevisionRef.current;
-      setShowDraftBanner(false);
-      setHasDraft(true);
-
-      if (failedMedia > 0) {
-        setDraftIssue({
-          tone: "warning",
-          title: "Some draft media could not be restored",
-          message:
-            String(failedMedia) +
-            " file" +
-            (failedMedia === 1 ? " was" : "s were") +
-            " skipped. Review each lot before submitting.",
-        });
-        reportDraftStatus("partial", "Draft restored with missing media");
-      } else {
-        reportDraftStatus("saved", "Draft restored");
+          localStorage.removeItem(draftKey);
+        }
+        applyRestoredDraft(
+          migrated.data,
+          Number(legacy.revision) || 0,
+          migrated.missingMediaCount
+        );
       }
       toast.success("Draft restored");
     } catch (restoreError) {
@@ -629,7 +631,24 @@ export default function LotListingForm({
     } finally {
       setRestoringDraft(false);
     }
-  }, [draftKey, reportDraftStatus, requestCurrentLocation, userId]);
+  }, [
+    applyRestoredDraft,
+    buildDraftEnvelope,
+    draftKey,
+    reportDraftStatus,
+    userId,
+  ]);
+
+  const deleteDraftStorage = useCallback(async () => {
+    let durableDeleteError: unknown;
+    try {
+      if (userId) await deleteScopedDraft(userId, "lot-listing");
+    } catch (deleteError) {
+      durableDeleteError = deleteError;
+    }
+    if (draftKey) localStorage.removeItem(draftKey);
+    if (durableDeleteError) throw durableDeleteError;
+  }, [draftKey, userId]);
 
   const deleteStoredDraft = useCallback(async () => {
     autosaveBlockedRef.current = true;
@@ -638,13 +657,13 @@ export default function LotListingForm({
       autosaveTimerRef.current = null;
     }
     await saveFlightRef.current;
-    if (draftKey) localStorage.removeItem(draftKey);
+    await deleteDraftStorage();
     requestedRevisionRef.current = 0;
     committedRevisionRef.current = 0;
     setHasDraft(false);
     setShowDraftBanner(false);
     setDraftIssue(null);
-  }, [draftKey]);
+  }, [deleteDraftStorage]);
 
   const resetFormState = useCallback(() => {
     setMixedLots([]);
@@ -737,14 +756,23 @@ export default function LotListingForm({
     await flushDraft();
   }, [flushDraft]);
 
-  const clearAcceptedDraft = useCallback(async () => {
+  const clearAcceptedDraft = useCallback(async (): Promise<unknown | null> => {
     autosaveBlockedRef.current = true;
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    await saveFlightRef.current;
-    if (draftKey) localStorage.removeItem(draftKey);
+
+    let cleanupError: unknown | null = null;
+    try {
+      await saveFlightRef.current;
+      await deleteDraftStorage();
+    } catch (draftError) {
+      // The server has already accepted the report at this point. Local cleanup
+      // must never turn that successful submission into a retryable upload error.
+      cleanupError = draftError;
+    }
+
     requestedRevisionRef.current = 0;
     committedRevisionRef.current = 0;
     setHasDraft(false);
@@ -752,7 +780,8 @@ export default function LotListingForm({
     setDraftIssue(null);
     resetFormState();
     autosaveBlockedRef.current = false;
-  }, [draftKey, resetFormState]);
+    return cleanupError;
+  }, [deleteDraftStorage, resetFormState]);
 
   const dispatchReportCreated = useCallback(() => {
     if (reportEventSentRef.current || typeof window === "undefined") return;
@@ -910,10 +939,15 @@ export default function LotListingForm({
         updateUploadProgress(1);
         const acceptedMessage =
           "Submission accepted — processing continues in My Reports.";
-        await clearAcceptedDraft();
+        const cleanupError = await clearAcceptedDraft();
         forceNewSubmissionRef.current = false;
         dispatchReportCreated();
         toast.success(acceptedMessage);
+        if (cleanupError) {
+          toast.warning(
+            "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
+          );
+        }
         onSuccess?.(acceptedMessage);
         void responseData;
       } catch (submitError: any) {
