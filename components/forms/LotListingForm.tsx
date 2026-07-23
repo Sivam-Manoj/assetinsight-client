@@ -18,6 +18,7 @@ import {
   MoreHorizontal,
   RotateCcw,
   Save,
+  ScanLine,
   Trash2,
 } from "lucide-react";
 import { toast } from "react-toastify";
@@ -65,6 +66,10 @@ import {
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
 });
+const SmartUploadWorkspace = dynamic(
+  () => import("./smartUpload/SmartUploadWorkspace"),
+  { ssr: false }
+);
 
 type ValuationMethod = "FML" | "TKV" | "OLV" | "FLV";
 const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
@@ -270,6 +275,7 @@ export default function LotListingForm({
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeReportConflict, setActiveReportConflict] = useState(false);
+  const [smartUploadOpen, setSmartUploadOpen] = useState(false);
 
   const [hasDraft, setHasDraft] = useState(false);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -719,36 +725,41 @@ export default function LotListingForm({
     if (committed) toast.success("Draft saved");
   }, [flushDraft]);
 
-  const validateForm = useCallback(() => {
-    const nextErrors: Record<string, string> = {};
-    if (!contractNo.trim()) {
-      nextErrors.contractNo = "Enter a contract number.";
-    }
-    if (!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())) {
-      nextErrors.currency = "Use a three-letter currency code such as CAD.";
-    }
+  const validateForm = useCallback(
+    ({ requireMedia = true }: { requireMedia?: boolean } = {}) => {
+      const nextErrors: Record<string, string> = {};
+      if (!contractNo.trim()) {
+        nextErrors.contractNo = "Enter a contract number.";
+      }
+      if (!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())) {
+        nextErrors.currency = "Use a three-letter currency code such as CAD.";
+      }
 
-    const hasMainImages = mixedLots.some((lot) => lot.files.length > 0);
-    const everyLotReady =
-      mixedLots.length > 0 &&
-      mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
-    if (!hasMainImages) {
-      nextErrors.media = "Add at least one main photo.";
-    } else if (!everyLotReady) {
-      nextErrors.media =
-        "Every lot needs a main photo and a Bundle, Per Item, or Per Photo mode.";
-    }
+      if (requireMedia) {
+        const hasMainImages = mixedLots.some((lot) => lot.files.length > 0);
+        const everyLotReady =
+          mixedLots.length > 0 &&
+          mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
+        if (!hasMainImages) {
+          nextErrors.media = "Add at least one main photo.";
+        } else if (!everyLotReady) {
+          nextErrors.media =
+            "Every lot needs a main photo and a Bundle, Per Item, or Per Photo mode.";
+        }
+      }
 
-    setErrors(nextErrors);
-    if (nextErrors.contractNo || nextErrors.currency) {
-      setOpenSections((current) => ({ ...current, details: true }));
-    }
-    if (nextErrors.media) {
-      setOpenSections((current) => ({ ...current, media: true }));
-    }
+      setErrors(nextErrors);
+      if (nextErrors.contractNo || nextErrors.currency) {
+        setOpenSections((current) => ({ ...current, details: true }));
+      }
+      if (nextErrors.media) {
+        setOpenSections((current) => ({ ...current, media: true }));
+      }
 
-    return Object.keys(nextErrors).length === 0;
-  }, [contractNo, currency, mixedLots]);
+      return Object.keys(nextErrors).length === 0;
+    },
+    [contractNo, currency, mixedLots]
+  );
 
   const resumeDraftAfterFailure = useCallback(async () => {
     autosaveBlockedRef.current = false;
@@ -788,6 +799,73 @@ export default function LotListingForm({
     reportEventSentRef.current = true;
     window.dispatchEvent(new Event("cv:report-created"));
   }, []);
+
+  const smartUploadDetails = useMemo<Record<string, unknown>>(
+    () => ({
+      smart_upload: true,
+      grouping_mode: "mixed",
+      contract_no: contractNo.trim(),
+      sales_date: salesDate,
+      location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+      ...(isValidBrowserCoordinates(latitude, longitude)
+        ? {
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+          }
+        : {}),
+      language,
+      currency: currency.trim().toUpperCase(),
+      valuation_methods: LOT_LISTING_VALUATION_METHODS,
+      include_damage_analysis: true,
+      bank_photos_enabled: bankPhotosEnabled,
+      force_new: forceNewSubmissionRef.current,
+    }),
+    [
+      bankPhotosEnabled,
+      contractNo,
+      currency,
+      language,
+      latitude,
+      location,
+      longitude,
+      salesDate,
+    ]
+  );
+
+  const openSmartUploadWorkspace = useCallback(() => {
+    if (mixedLots.length > 0) {
+      toast.info(
+        "Smart Upload starts with an empty media form. Clear the manually created lots first."
+      );
+      return;
+    }
+    if (!validateForm({ requireMedia: false })) {
+      const message =
+        "Complete the highlighted listing details before starting Smart Upload.";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+    setError(null);
+    setSmartUploadOpen(true);
+  }, [mixedLots.length, validateForm]);
+
+  const handleSmartUploadSubmitted = useCallback(async () => {
+    const accepted =
+      "Smart Upload accepted - preview processing continues in My Reports.";
+    setSmartUploadOpen(false);
+    reportEventSentRef.current = false;
+    const cleanupError = await clearAcceptedDraft();
+    forceNewSubmissionRef.current = false;
+    dispatchReportCreated();
+    toast.success(accepted);
+    if (cleanupError) {
+      toast.warning(
+        "The report was accepted, but its previous manual draft could not be removed."
+      );
+    }
+    onSuccess?.(accepted);
+  }, [clearAcceptedDraft, dispatchReportCreated, onSuccess]);
 
   const onSubmit = useCallback(
     async (event?: React.FormEvent) => {
@@ -1258,6 +1336,40 @@ export default function LotListingForm({
                   {errors.media}
                 </p>
               ) : null}
+              <div className="mb-4 flex flex-col gap-3 rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ScanLine
+                      className="h-5 w-5 shrink-0 text-[var(--app-accent)]"
+                      aria-hidden="true"
+                    />
+                    <p className="font-bold text-[var(--app-text)]">
+                      Smart Upload
+                    </p>
+                  </div>
+                  <p className="mt-1 text-sm leading-5 text-[var(--app-text-muted)]">
+                    Upload one ordered image sequence. Black images separate
+                    Bundle lots and are excluded from every output.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={openSmartUploadWorkspace}
+                  disabled={submitting || mixedLots.length > 0}
+                  className={formClassNames(
+                    secondaryButtonClass,
+                    "shrink-0 justify-center"
+                  )}
+                  title={
+                    mixedLots.length
+                      ? "Clear manually created lots before using Smart Upload"
+                      : undefined
+                  }
+                >
+                  <ScanLine className="h-4 w-4" aria-hidden="true" />
+                  Smart Upload
+                </button>
+              </div>
               <MixedSection
                 value={mixedLots}
                 onChange={handleLotsChange}
@@ -1411,6 +1523,15 @@ export default function LotListingForm({
           forceNewSubmissionRef.current = true;
           window.setTimeout(() => void onSubmit(), 0);
         }}
+      />
+
+      <SmartUploadWorkspace
+        open={smartUploadOpen}
+        kind="lot-listing"
+        userId={userId || ""}
+        details={smartUploadDetails}
+        onClose={() => setSmartUploadOpen(false)}
+        onSubmitted={() => handleSmartUploadSubmitted()}
       />
     </form>
   );

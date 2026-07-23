@@ -5,6 +5,8 @@ export type DirectUploadFile = {
   fieldname?: "images" | "videos";
   lotIndex?: number;
   imageIndex?: number;
+  captureOrder?: number;
+  originalOrder?: number;
   role?: "main" | "extra" | "video";
 };
 
@@ -25,12 +27,12 @@ type UploadSession = {
   }>;
 };
 
-const DIRECT_UPLOAD_CONCURRENCY = 4;
+export const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function putFileWithProgress(
+export function putFileWithProgress(
   url: string,
   file: File,
   contentType: string,
@@ -80,7 +82,7 @@ async function uploadFileThroughServerFallback(
   );
 }
 
-async function putFileWithRetry(
+export async function putFileWithRetry(
   url: string,
   file: File,
   contentType: string,
@@ -99,11 +101,12 @@ async function putFileWithRetry(
   throw lastError;
 }
 
-async function mapWithConcurrency<T>(
+export async function mapWithConcurrency<T>(
   items: T[],
-  worker: (item: T, index: number) => Promise<void>
+  worker: (item: T, index: number) => Promise<void>,
+  concurrency = DIRECT_UPLOAD_CONCURRENCY
 ) {
-  const limit = Math.max(1, Math.min(DIRECT_UPLOAD_CONCURRENCY, items.length || 1));
+  const limit = Math.max(1, Math.min(concurrency, items.length || 1));
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: limit }, async () => {
@@ -134,6 +137,8 @@ export async function uploadReportFilesDirectToR2(args: {
     fieldname: item.fieldname || "images",
     lotIndex: item.lotIndex,
     imageIndex: item.imageIndex ?? index,
+    captureOrder: item.captureOrder ?? item.originalOrder ?? index,
+    originalOrder: item.originalOrder ?? item.captureOrder ?? index,
     role: item.role || (item.fieldname === "videos" ? "video" : "main"),
   }));
 

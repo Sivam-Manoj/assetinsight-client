@@ -10,7 +10,7 @@ import {
 } from "react";
 import dynamic from "next/dynamic";
 import { Menu, MenuItem } from "@mui/material";
-import { MoreHorizontal, Save } from "lucide-react";
+import { MoreHorizontal, Save, ScanLine } from "lucide-react";
 import { toast } from "react-toastify";
 import {
   AssetService,
@@ -51,6 +51,7 @@ import {
   FormField,
   FormSection,
   FormSwitch,
+  formClassNames,
   formControlClass,
   formSelectClass,
   formTextareaClass,
@@ -64,6 +65,10 @@ import {
 const MixedSection = dynamic(() => import("./mixed/MixedSection"), {
   ssr: false,
 });
+const SmartUploadWorkspace = dynamic(
+  () => import("./smartUpload/SmartUploadWorkspace"),
+  { ssr: false }
+);
 
 type Props = {
   onSuccess?: (message?: string) => void;
@@ -308,6 +313,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   } | null>(null);
   const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const [activeReportConflict, setActiveReportConflict] = useState(false);
+  const [smartUploadOpen, setSmartUploadOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
@@ -1197,7 +1203,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return () => window.removeEventListener("load-saved-input", handler);
   }, []);
 
-  const validateForm = () => {
+  const validateForm = ({
+    requireMedia = true,
+    actionLabel = "creating the report",
+  }: {
+    requireMedia?: boolean;
+    actionLabel?: string;
+  } = {}) => {
     const nextErrors: Record<string, string> = {};
     if (!clientName.trim()) nextErrors.clientName = "Client name is required.";
     if (!effectiveDate) nextErrors.effectiveDate = "Effective date is required.";
@@ -1207,21 +1219,23 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (includeValuationTable && selectedValuationMethods.length === 0) {
       nextErrors.valuationMethods = "Select at least one valuation method.";
     }
-    const photoCount = mixedLots.reduce(
-      (total, lot) => total + lot.files.length + lot.extraFiles.length,
-      0
-    );
-    if (!mixedLots.length || photoCount === 0) {
-      nextErrors.media = "Add at least one lot with a main photo.";
-    } else if (
-      mixedLots.some(
-        (lot) =>
-          !lot.mode ||
-          lot.files.length === 0 ||
-          lot.files.length + lot.extraFiles.length > MAX_ASSET_LOT_PHOTOS
-      )
-    ) {
-      nextErrors.media = `Every lot needs a mode and a main photo, with no more than ${MAX_ASSET_LOT_PHOTOS} main and report-only photos combined.`;
+    if (requireMedia) {
+      const photoCount = mixedLots.reduce(
+        (total, lot) => total + lot.files.length + lot.extraFiles.length,
+        0
+      );
+      if (!mixedLots.length || photoCount === 0) {
+        nextErrors.media = "Add at least one lot with a main photo.";
+      } else if (
+        mixedLots.some(
+          (lot) =>
+            !lot.mode ||
+            lot.files.length === 0 ||
+            lot.files.length + lot.extraFiles.length > MAX_ASSET_LOT_PHOTOS
+        )
+      ) {
+        nextErrors.media = `Every lot needs a mode and a main photo, with no more than ${MAX_ASSET_LOT_PHOTOS} main and report-only photos combined.`;
+      }
     }
     setErrors(nextErrors);
     if (!Object.keys(nextErrors).length) return true;
@@ -1242,7 +1256,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           ? "media"
           : "report";
     setOpenSections((current) => new Set(current).add(section));
-    setError("Review the highlighted fields before creating the report.");
+    setError(`Review the highlighted fields before ${actionLabel}.`);
     toast.error("Please fix the highlighted fields.");
     window.setTimeout(() => {
       const target =
@@ -1259,6 +1273,127 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (createdEventDispatchedRef.current) return;
     createdEventDispatchedRef.current = true;
     window.dispatchEvent(new Event("cv:report-created"));
+  };
+
+  const smartUploadDetails = useMemo<Record<string, unknown>>(
+    () => ({
+      grouping_mode: "mixed",
+      smart_upload: true,
+      client_name: clientName.trim(),
+      effective_date: effectiveDate,
+      appraisal_purpose: appraisalPurpose.trim(),
+      ...(ownerName.trim() && { owner_name: ownerName.trim() }),
+      appraiser: appraiser.trim(),
+      ...(appraisalCompany.trim() && {
+        appraisal_company: appraisalCompany.trim(),
+      }),
+      ...(industry.trim() && { industry: industry.trim() }),
+      ...(inspectionDate && { inspection_date: inspectionDate }),
+      location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+      ...(isValidBrowserCoordinates(latitude, longitude)
+        ? { latitude: Number(latitude), longitude: Number(longitude) }
+        : {}),
+      ...(contractNo.trim() && { contract_no: contractNo.trim() }),
+      language,
+      currency,
+      include_valuation_table: includeValuationTable,
+      valuation_methods: includeValuationTable
+        ? selectedValuationMethods
+        : [],
+      include_damage_analysis: includeDamageAnalysis,
+      bank_photos_enabled: bankPhotosEnabled,
+      force_new: forceNewSubmissionRef.current,
+      ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
+      ...(factorsAgeCondition.trim() && {
+        factors_age_condition: factorsAgeCondition.trim(),
+      }),
+      ...(factorsQuality.trim() && {
+        factors_quality: factorsQuality.trim(),
+      }),
+      ...(factorsAnalysis.trim() && {
+        factors_analysis: factorsAnalysis.trim(),
+      }),
+    }),
+    [
+      appraisalCompany,
+      appraisalPurpose,
+      appraiser,
+      bankPhotosEnabled,
+      clientName,
+      contractNo,
+      currency,
+      effectiveDate,
+      factorsAgeCondition,
+      factorsAnalysis,
+      factorsQuality,
+      includeDamageAnalysis,
+      includeValuationTable,
+      industry,
+      inspectionDate,
+      language,
+      latitude,
+      location,
+      longitude,
+      ownerName,
+      preparedFor,
+      selectedValuationMethods,
+    ]
+  );
+
+  const openSmartUploadWorkspace = () => {
+    if (mixedLots.length > 0) {
+      toast.info(
+        "Smart Upload starts with an empty media form. Clear the manually created lots first."
+      );
+      return;
+    }
+    if (
+      !validateForm({
+        requireMedia: false,
+        actionLabel: "starting Smart Upload",
+      })
+    ) {
+      return;
+    }
+    setError(null);
+    setSmartUploadOpen(true);
+  };
+
+  const handleSmartUploadSubmitted = async () => {
+    const accepted =
+      "Smart Upload accepted - preview processing continues in My Reports.";
+    setSmartUploadOpen(false);
+    setAcceptedMessage(accepted);
+    toast.success(accepted);
+    autoSaveBlockedRef.current = true;
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+    }
+    if (saveInFlightRef.current) await saveInFlightRef.current;
+    saveRevisionRef.current += 1;
+    const cleanupError = await clearDraftStorage()
+      .then(() => null)
+      .catch((draftError) => draftError);
+    createdEventDispatchedRef.current = false;
+    dispatchReportCreated();
+    setDraftHydrated(false);
+    resetForm();
+    setAcceptedMessage(null);
+    forceNewSubmissionRef.current = false;
+    publishDraftStatus("saved", "Smart Upload accepted");
+    if (cleanupError) {
+      toast.warning(
+        "The report was accepted, but its previous manual draft could not be removed."
+      );
+    }
+    onSuccess?.(accepted);
+    window.setTimeout(() => {
+      lastFingerprintRef.current = null;
+      createdEventDispatchedRef.current = false;
+      autoSaveBlockedRef.current = false;
+      setDraftHydrated(true);
+    }, 0);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -1803,6 +1938,40 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                 aria-invalid={Boolean(errors.media)}
                 className="outline-none"
               >
+                <div className="mb-4 flex flex-col gap-3 rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <ScanLine
+                        className="h-5 w-5 shrink-0 text-[var(--app-accent)]"
+                        aria-hidden="true"
+                      />
+                      <p className="font-bold text-[var(--app-text)]">
+                        Smart Upload
+                      </p>
+                    </div>
+                    <p className="mt-1 text-sm leading-5 text-[var(--app-text-muted)]">
+                      Upload images in one sequence. Black images become lot
+                      dividers and are removed from the report.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openSmartUploadWorkspace}
+                    disabled={submitting || mixedLots.length > 0}
+                    className={formClassNames(
+                      secondaryButtonClass,
+                      "shrink-0 justify-center"
+                    )}
+                    title={
+                      mixedLots.length
+                        ? "Clear manually created lots before using Smart Upload"
+                        : undefined
+                    }
+                  >
+                    <ScanLine className="h-4 w-4" aria-hidden="true" />
+                    Smart Upload
+                  </button>
+                </div>
                 <MixedSection
                   value={mixedLots}
                   onChange={(lots) => {
@@ -1914,6 +2083,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           forceNewSubmissionRef.current = true;
           window.setTimeout(() => void onSubmit(), 0);
         }}
+      />
+
+      <SmartUploadWorkspace
+        open={smartUploadOpen}
+        kind="asset"
+        userId={userId}
+        details={smartUploadDetails}
+        onClose={() => setSmartUploadOpen(false)}
+        onSubmitted={() => handleSmartUploadSubmitted()}
       />
     </form>
   );
