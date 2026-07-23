@@ -64,7 +64,7 @@ export function putFileWithProgress(
   });
 }
 
-async function uploadFileThroughServerFallback(
+export async function uploadFileThroughServerFallback(
   endpoint: "/asset" | "/lot-listing",
   sessionId: string,
   fileId: string,
@@ -76,10 +76,53 @@ async function uploadFileThroughServerFallback(
     `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}`,
     formData,
     {
-      headers: { "Content-Type": "multipart/form-data" },
+      // Let the browser/Axios add the multipart boundary. Setting Content-Type
+      // manually can produce an incomplete form body behind some proxies.
       timeout: 300000,
     }
   );
+}
+
+export async function uploadFileToReportSession(args: {
+  endpoint: "/asset" | "/lot-listing";
+  sessionId: string;
+  fileId: string;
+  uploadUrl: string;
+  file: File;
+  contentType: string;
+  onDelta?: (delta: number) => void;
+}) {
+  try {
+    await putFileWithRetry(
+      args.uploadUrl,
+      args.file,
+      args.contentType,
+      args.onDelta
+    );
+    return { transport: "direct" as const };
+  } catch (directUploadError) {
+    try {
+      // Preserve the original session and R2 object key. This is a transport
+      // fallback only and cannot create a duplicate report or reorder files.
+      await uploadFileThroughServerFallback(
+        args.endpoint,
+        args.sessionId,
+        args.fileId,
+        args.file
+      );
+      return { transport: "server" as const };
+    } catch (fallbackError) {
+      const directMessage =
+        directUploadError instanceof Error
+          ? directUploadError.message
+          : "Direct R2 upload failed";
+      const fallbackMessage =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : "Server fallback upload failed";
+      throw new Error(`${directMessage}. ${fallbackMessage}`);
+    }
+  }
 }
 
 export async function putFileWithRetry(
@@ -167,26 +210,26 @@ export async function uploadReportFilesDirectToR2(args: {
     await mapWithConcurrency(args.files, async (item, index) => {
       const target = targetById.get(manifest[index].fileId);
       if (!target) throw new Error(`Missing upload target for ${item.file.name}`);
-      try {
-        await putFileWithRetry(target.uploadUrl, item.file, target.contentType, (delta) => {
-          uploadedBytes += delta;
+      let fileLoaded = 0;
+      await uploadFileToReportSession({
+        endpoint: args.endpoint,
+        sessionId: session.sessionId,
+        fileId: manifest[index].fileId,
+        uploadUrl: target.uploadUrl,
+        file: item.file,
+        contentType: target.contentType,
+        onDelta: (delta) => {
+          const nextLoaded = Math.min(item.file.size, fileLoaded + delta);
+          uploadedBytes += Math.max(0, nextLoaded - fileLoaded);
+          fileLoaded = nextLoaded;
           args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
-        });
-      } catch (directUploadError) {
-        // Browser direct PUT requests may be blocked by R2 CORS or a corporate
-        // network. Upload only this failed file through the authenticated API,
-        // keeping the same session/key and avoiding a duplicate report.
-        await uploadFileThroughServerFallback(
-          args.endpoint,
-          session.sessionId,
-          manifest[index].fileId,
-          item.file
-        ).catch((fallbackError) => {
-          const directMessage = directUploadError instanceof Error ? directUploadError.message : "Direct R2 upload failed";
-          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Server fallback upload failed";
-          throw new Error(`${directMessage}. ${fallbackMessage}`);
-        });
-        uploadedBytes += item.file.size || 1;
+        },
+      });
+      // Direct progress events may be unavailable, and server fallback has no
+      // browser upload progress. Count the file as complete exactly once.
+      if (fileLoaded < item.file.size) {
+        uploadedBytes += item.file.size - fileLoaded;
+        fileLoaded = item.file.size;
         args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
       }
     });

@@ -2,7 +2,7 @@ import API from "@/lib/api";
 import {
   DIRECT_UPLOAD_CONCURRENCY,
   mapWithConcurrency,
-  putFileWithRetry,
+  uploadFileToReportSession,
 } from "@/services/directUpload";
 import type {
   SmartUploadDraft,
@@ -218,11 +218,14 @@ export async function uploadSmartUploadFiles(args: {
         }
         if (stateById.get(target.fileId)?.uploaded) return;
         let lastLoaded = 0;
-        await putFileWithRetry(
-          target.uploadUrl,
-          item.file,
-          target.contentType,
-          (delta) => {
+        await uploadFileToReportSession({
+          endpoint,
+          sessionId: args.session.sessionId,
+          fileId: target.fileId,
+          uploadUrl: target.uploadUrl,
+          file: item.file,
+          contentType: target.contentType,
+          onDelta: (delta) => {
             // Retries restart XHR progress at zero, so cap the accumulated
             // contribution at the source file size.
             lastLoaded = Math.min(item.size, lastLoaded + delta);
@@ -237,8 +240,11 @@ export async function uploadSmartUploadFiles(args: {
               uploadedFiles,
               totalFiles: args.draft.files.length,
             });
-          }
-        );
+          },
+        });
+        // Server fallback does not expose XHR progress. Mark its contribution
+        // complete only after the authenticated upload returns successfully.
+        pageLoaded.set(target.fileId, item.size);
       },
       DIRECT_UPLOAD_CONCURRENCY
     );
