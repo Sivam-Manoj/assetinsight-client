@@ -44,6 +44,10 @@ export interface AssetReport {
     images?: string;
   };
   preview_submitted_at?: string;
+  preview_transferred_from?: string | null;
+  preview_transferred_to?: string | null;
+  preview_transferred_by?: string | null;
+  preview_transferred_at?: string | null;
   approval_requested_at?: string;
   approval_processed_at?: string;
   decline_reason?: string;

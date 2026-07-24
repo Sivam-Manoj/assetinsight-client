@@ -105,6 +105,10 @@ export interface LotListing {
   released_at?: string | null;
   downloadable?: boolean;
   preview_submitted_at?: string;
+  preview_transferred_from?: string | null;
+  preview_transferred_to?: string | null;
+  preview_transferred_by?: string | null;
+  preview_transferred_at?: string | null;
   approval_requested_at?: string;
   generation_target_status?: "preview" | "pending_approval" | "approved";
   createdAt: string;

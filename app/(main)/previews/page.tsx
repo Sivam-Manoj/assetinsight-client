@@ -298,11 +298,34 @@ export default function PreviewsPage() {
   }, [loadReports]);
 
   useEffect(() => {
+    const refreshOwnership = () => {
+      if (document.visibilityState === "visible") {
+        void loadReports({ silent: true });
+      }
+    };
+    window.addEventListener("focus", refreshOwnership);
+    document.addEventListener("visibilitychange", refreshOwnership);
+    return () => {
+      window.removeEventListener("focus", refreshOwnership);
+      document.removeEventListener("visibilitychange", refreshOwnership);
+    };
+  }, [loadReports]);
+
+  useEffect(() => {
     if (!hasActiveJobs) return;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       void loadReports({ silent: true });
     }, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [hasActiveJobs, loadReports]);
+
+  useEffect(() => {
+    if (hasActiveJobs) return;
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      void loadReports({ silent: true });
+    }, 60_000);
     return () => window.clearInterval(intervalId);
   }, [hasActiveJobs, loadReports]);
 
@@ -568,6 +591,9 @@ export default function PreviewsPage() {
                               label={`Merged · ${Array.isArray((report as any).merged_from_report_ids) ? (report as any).merged_from_report_ids.length : 2} sources`}
                               color="info"
                             />
+                          ) : null}
+                          {(report as any).preview_transferred_at ? (
+                            <StatusPill label="Assigned by admin" color="warning" />
                           ) : null}
                         </Stack>
                         <Typography
