@@ -29,8 +29,37 @@ type UploadSession = {
 
 export const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
+const SERVER_FALLBACK_RETRIES = 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+let serverFallbackQueue: Promise<void> = Promise.resolve();
+
+async function withServerFallbackSlot<T>(task: () => Promise<T>): Promise<T> {
+  const previous = serverFallbackQueue;
+  let release!: () => void;
+  serverFallbackQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+}
+
+const uploadErrorMessage = (error: unknown, fallback: string) => {
+  const responseMessage = (error as any)?.response?.data?.message;
+  if (typeof responseMessage === "string" && responseMessage.trim()) {
+    return responseMessage.trim();
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
+const isRetryableServerUploadError = (error: unknown) => {
+  const status = Number((error as any)?.response?.status || 0);
+  return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
+};
 
 export function putFileWithProgress(
   url: string,
@@ -70,17 +99,48 @@ export async function uploadFileThroughServerFallback(
   fileId: string,
   file: File
 ) {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-  await API.post(
-    `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}`,
-    formData,
-    {
-      // Let the browser/Axios add the multipart boundary. Setting Content-Type
-      // manually can produce an incomplete form body behind some proxies.
-      timeout: 300000,
+  await withServerFallbackSlot(async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= SERVER_FALLBACK_RETRIES; attempt += 1) {
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+      try {
+        await API.post(
+          `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}`,
+          formData,
+          {
+            // Let the browser/Axios add the multipart boundary. Setting
+            // Content-Type manually can produce an incomplete form body behind
+            // some proxies.
+            timeout: 300000,
+          }
+        );
+        return;
+      } catch (error) {
+        lastError = error;
+        if (
+          attempt >= SERVER_FALLBACK_RETRIES ||
+          !isRetryableServerUploadError(error)
+        ) {
+          throw error;
+        }
+        await sleep(750 * (attempt + 1));
+      }
     }
+    throw lastError;
+  });
+}
+
+export async function verifyUploadSessionFile(
+  endpoint: "/asset" | "/lot-listing",
+  sessionId: string,
+  fileId: string
+) {
+  const { data } = await API.post(
+    `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}/verify`,
+    {}
   );
+  return data?.data?.verified === true;
 }
 
 export async function uploadFileToReportSession(args: {
@@ -101,6 +161,21 @@ export async function uploadFileToReportSession(args: {
     );
     return { transport: "direct" as const };
   } catch (directUploadError) {
+    // R2 may accept the PUT but hide the response from the browser when its
+    // CORS policy is absent or stale. A small authenticated HEAD check avoids
+    // uploading the same multi-megabyte photo through the API unnecessarily.
+    try {
+      const verified = await verifyUploadSessionFile(
+        args.endpoint,
+        args.sessionId,
+        args.fileId
+      );
+      if (verified) return { transport: "direct-verified" as const };
+    } catch {
+      // A missing object or an older API without the verification endpoint
+      // should continue to the compatible server upload path.
+    }
+
     try {
       // Preserve the original session and R2 object key. This is a transport
       // fallback only and cannot create a duplicate report or reorder files.
@@ -112,14 +187,14 @@ export async function uploadFileToReportSession(args: {
       );
       return { transport: "server" as const };
     } catch (fallbackError) {
-      const directMessage =
-        directUploadError instanceof Error
-          ? directUploadError.message
-          : "Direct R2 upload failed";
-      const fallbackMessage =
-        fallbackError instanceof Error
-          ? fallbackError.message
-          : "Server fallback upload failed";
+      const directMessage = uploadErrorMessage(
+        directUploadError,
+        "Direct R2 upload failed"
+      );
+      const fallbackMessage = uploadErrorMessage(
+        fallbackError,
+        "Server fallback upload failed"
+      );
       throw new Error(`${directMessage}. ${fallbackMessage}`);
     }
   }
