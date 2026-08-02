@@ -79,8 +79,13 @@ let databasePromise: Promise<IDBPDatabase<DraftDatabase>> | null = null;
 let persistenceRequested = false;
 const mediaIdByBlob = new WeakMap<Blob, string>();
 
-function scopeFor(userId: string, kind: FormDraftKind) {
-  return `${userId}:${kind}`;
+function normalizeScopeId(scopeId?: string) {
+  const normalized = String(scopeId || "").trim();
+  return normalized ? `:${normalized}` : "";
+}
+
+function scopeFor(userId: string, kind: FormDraftKind, scopeId?: string) {
+  return `${userId}:${kind}${normalizeScopeId(scopeId)}`;
 }
 
 function assertBrowserStorage() {
@@ -253,13 +258,16 @@ function formatBytes(value: number) {
   return `${Math.max(0.1, value / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export async function saveScopedDraft<T extends ScopedDraftEnvelope>(envelope: T) {
+export async function saveScopedDraft<T extends ScopedDraftEnvelope>(
+  envelope: T,
+  scopeId?: string
+) {
   if (envelope.version !== FORM_DRAFT_VERSION) {
     throw new DraftPersistenceError("Only version 3 drafts can be saved to durable storage.");
   }
   await requestDurableDraftStorage();
   const database = await getDatabase();
-  const scope = scopeFor(envelope.userId, envelope.kind);
+  const scope = scopeFor(envelope.userId, envelope.kind, scopeId);
   const nextMedia = new Map<string, StoredMedia>();
   const serialized = await serializeValue(envelope, "draft", scope, nextMedia);
   const transaction = database.transaction(["drafts", "media"], "readwrite");
@@ -315,10 +323,11 @@ export async function saveScopedDraft<T extends ScopedDraftEnvelope>(envelope: T
 
 export async function loadScopedDraft<T extends ScopedDraftEnvelope>(
   userId: string,
-  kind: FormDraftKind
+  kind: FormDraftKind,
+  scopeId?: string
 ): Promise<LoadedScopedDraft<T> | null> {
   const database = await getDatabase();
-  const scope = scopeFor(userId, kind);
+  const scope = scopeFor(userId, kind, scopeId);
   const transaction = database.transaction(["drafts", "media"], "readonly");
   const record = await transaction.objectStore("drafts").get(scope);
   if (!record) return null;
@@ -333,14 +342,22 @@ export async function loadScopedDraft<T extends ScopedDraftEnvelope>(
   return { envelope, missingMediaCount: missing.count };
 }
 
-export async function hasScopedDraft(userId: string, kind: FormDraftKind) {
+export async function hasScopedDraft(
+  userId: string,
+  kind: FormDraftKind,
+  scopeId?: string
+) {
   const database = await getDatabase();
-  return Boolean(await database.get("drafts", scopeFor(userId, kind)));
+  return Boolean(await database.get("drafts", scopeFor(userId, kind, scopeId)));
 }
 
-export async function deleteScopedDraft(userId: string, kind: FormDraftKind) {
+export async function deleteScopedDraft(
+  userId: string,
+  kind: FormDraftKind,
+  scopeId?: string
+) {
   const database = await getDatabase();
-  const scope = scopeFor(userId, kind);
+  const scope = scopeFor(userId, kind, scopeId);
   const transaction = database.transaction(["drafts", "media"], "readwrite");
   const record = await transaction.objectStore("drafts").get(scope);
   await transaction.objectStore("drafts").delete(scope);
@@ -352,10 +369,11 @@ export async function deleteScopedDraft(userId: string, kind: FormDraftKind) {
 
 export function getScopedDraftKey(
   userId: string | null | undefined,
-  kind: FormDraftKind
+  kind: FormDraftKind,
+  scopeId?: string
 ) {
   if (!userId) return null;
-  return `cv:${userId}:${kind}:draft:v2`;
+  return `cv:${userId}:${kind}${normalizeScopeId(scopeId)}:draft:v2`;
 }
 
 function assertScopedDraftEnvelope(

@@ -61,9 +61,11 @@ let persistenceRequested = false;
 
 export function getSmartUploadScope(
   userId: string,
-  kind: SmartUploadKind
+  kind: SmartUploadKind,
+  scopeId?: string
 ) {
-  return `${userId}:${kind}`;
+  const normalized = String(scopeId || "").trim();
+  return `${userId}:${kind}${normalized ? `:${normalized}` : ""}`;
 }
 
 async function getDatabase() {
@@ -104,13 +106,14 @@ async function requestPersistentStorage() {
 export async function createSmartUploadDraft(args: {
   userId: string;
   kind: SmartUploadKind;
+  scopeId?: string;
   clientSubmissionId: string;
   details: Record<string, unknown>;
   files: File[];
 }) {
   await requestPersistentStorage();
   const database = await getDatabase();
-  const scope = getSmartUploadScope(args.userId, args.kind);
+  const scope = getSmartUploadScope(args.userId, args.kind, args.scopeId);
   const records: SmartUploadStoredFile[] = args.files.map((file, index) => ({
     fileId: `images-${index}`,
     name: file.name || `image-${index + 1}`,
@@ -159,10 +162,11 @@ export async function updateSmartUploadDraft(
       SmartUploadDraftState,
       "sessionId" | "stage" | "details" | "files"
     >
-  >
+  >,
+  scopeId?: string
 ) {
   const database = await getDatabase();
-  const scope = getSmartUploadScope(userId, kind);
+  const scope = getSmartUploadScope(userId, kind, scopeId);
   const current = await database.get("sessions", scope);
   if (!current) throw new Error("The Smart Upload recovery session is missing.");
   const next: SmartUploadDraftState = {
@@ -208,22 +212,24 @@ async function hydrateState(
 
 export async function loadSmartUploadDraft(
   userId: string,
-  kind: SmartUploadKind
+  kind: SmartUploadKind,
+  scopeId?: string
 ) {
   const database = await getDatabase();
   const state = await database.get(
     "sessions",
-    getSmartUploadScope(userId, kind)
+    getSmartUploadScope(userId, kind, scopeId)
   );
   return state ? hydrateState(state, database) : null;
 }
 
 export async function deleteSmartUploadDraft(
   userId: string,
-  kind: SmartUploadKind
+  kind: SmartUploadKind,
+  scopeId?: string
 ) {
   const database = await getDatabase();
-  const scope = getSmartUploadScope(userId, kind);
+  const scope = getSmartUploadScope(userId, kind, scopeId);
   const transaction = database.transaction(["sessions", "media"], "readwrite");
   const mediaKeys = await transaction
     .objectStore("media")

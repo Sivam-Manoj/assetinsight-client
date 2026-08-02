@@ -10,6 +10,7 @@ type Props = {
   onResume: () => void;
   onCreateSeparate: () => void;
   onCancel: () => void;
+  allowCreateSeparate?: boolean;
 };
 
 export default function ActiveReportConflictDialog({
@@ -18,6 +19,7 @@ export default function ActiveReportConflictDialog({
   onResume,
   onCreateSeparate,
   onCancel,
+  allowCreateSeparate = true,
 }: Props) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -47,7 +49,10 @@ export default function ActiveReportConflictDialog({
               Report already processing
             </h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              A {reportLabel} with this contract is already queued or processing. Resume it to avoid a duplicate, or explicitly create a separate report.
+              A {reportLabel} with this contract is already queued or processing.{" "}
+              {allowCreateSeparate
+                ? "Resume it to avoid a duplicate, or explicitly create a separate report."
+                : "Resume it from My Reports to avoid a duplicate."}
             </p>
           </div>
           <button
@@ -60,7 +65,11 @@ export default function ActiveReportConflictDialog({
           </button>
         </header>
 
-        <div className="grid gap-3 p-5 sm:grid-cols-2">
+        <div
+          className={`grid gap-3 p-5 ${
+            allowCreateSeparate ? "sm:grid-cols-2" : ""
+          }`}
+        >
           <button
             type="button"
             onClick={onResume}
@@ -69,14 +78,16 @@ export default function ActiveReportConflictDialog({
             <RotateCcw className="h-4 w-4" />
             Resume Existing
           </button>
-          <button
-            type="button"
-            onClick={onCreateSeparate}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-          >
-            <CopyPlus className="h-4 w-4" />
-            Create Separate Report
-          </button>
+          {allowCreateSeparate ? (
+            <button
+              type="button"
+              onClick={onCreateSeparate}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+            >
+              <CopyPlus className="h-4 w-4" />
+              Create Separate Report
+            </button>
+          ) : null}
         </div>
       </section>
     </div>,

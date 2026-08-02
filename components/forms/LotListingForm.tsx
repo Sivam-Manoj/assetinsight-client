@@ -33,6 +33,12 @@ import {
   type DirectUploadFile,
 } from "@/services/directUpload";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
+import {
+  auctioneerDateOnly,
+  auctioneerDraftScope,
+  buildAuctioneerSeedLots,
+  type AuctioneerFormIntegration,
+} from "./auctioneerSeed";
 import type { MixedLot } from "./mixed/types";
 import { buildMixedFocusBoxes } from "./mixed/focusBoxes";
 import {
@@ -78,6 +84,7 @@ type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
+  auctioneer?: AuctioneerFormIntegration;
 };
 
 type DraftSnapshot = {
@@ -240,22 +247,32 @@ export default function LotListingForm({
   onSuccess,
   onCancel: _onCancel,
   onDraftStatusChange,
+  auctioneer,
 }: Props) {
   const { user } = useAuthContext();
   const userId = user?._id || null;
+  const draftScopeId = auctioneerDraftScope(auctioneer);
   const draftKey = useMemo(
-    () => getScopedDraftKey(userId, "lot-listing"),
-    [userId]
+    () => getScopedDraftKey(userId, "lot-listing", draftScopeId),
+    [draftScopeId, userId]
   );
+  const importedSalesDate =
+    auctioneerDateOnly(auctioneer?.contract.eventDate) || isoDate(new Date());
+  const importedLocation =
+    auctioneer?.contract.location || CURRENT_BROWSER_LOCATION_LABEL;
 
-  const [mixedLots, setMixedLots] = useState<MixedLot[]>([]);
-  const [contractNo, setContractNo] = useState("");
-  const [salesDate, setSalesDate] = useState(isoDate(new Date()));
-  const [location, setLocation] = useState(CURRENT_BROWSER_LOCATION_LABEL);
+  const [mixedLots, setMixedLots] = useState<MixedLot[]>(() =>
+    buildAuctioneerSeedLots(auctioneer)
+  );
+  const [contractNo, setContractNo] = useState(
+    () => auctioneer?.contract.contractNo || ""
+  );
+  const [salesDate, setSalesDate] = useState(importedSalesDate);
+  const [location, setLocation] = useState(importedLocation);
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState(
-    "Detecting current location..."
+    auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
   );
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
@@ -286,7 +303,10 @@ export default function LotListingForm({
   >(null);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
 
-  const jobIdRef = useRef<string | null>(null);
+  const jobIdRef = useRef<string | null>(
+    auctioneer?.clientSubmissionId ||
+      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null)
+  );
   const forceNewSubmissionRef = useRef(false);
   const submitLockRef = useRef(false);
   const reportEventSentRef = useRef(false);
@@ -356,8 +376,9 @@ export default function LotListingForm({
   }, []);
 
   useEffect(() => {
+    if (auctioneer) return;
     requestCurrentLocation();
-  }, [requestCurrentLocation]);
+  }, [auctioneer, requestCurrentLocation]);
 
   const buildDraftEnvelope = useCallback(
     async (
@@ -407,7 +428,7 @@ export default function LotListingForm({
         try {
           const envelope = await buildDraftEnvelope(snapshot, revision);
           if (autosaveBlockedRef.current) break;
-          await saveScopedDraft(envelope);
+          await saveScopedDraft(envelope, draftScopeId);
           committedRevisionRef.current = revision;
           committed = true;
           setHasDraft(true);
@@ -444,7 +465,13 @@ export default function LotListingForm({
     } finally {
       if (saveFlightRef.current === task) saveFlightRef.current = null;
     }
-  }, [buildDraftEnvelope, draftKey, reportDraftStatus, userId]);
+  }, [
+    buildDraftEnvelope,
+    draftKey,
+    draftScopeId,
+    reportDraftStatus,
+    userId,
+  ]);
 
   const markDirty = useCallback(() => {
     if (autosaveBlockedRef.current) return;
@@ -476,13 +503,20 @@ export default function LotListingForm({
       } else {
         setLatitude(null);
         setLongitude(null);
-        requestCurrentLocation();
+        if (auctioneer) {
+          setLocationStatus("Imported from Auctioneer");
+        } else {
+          requestCurrentLocation();
+        }
       }
       setLanguage(data.language || "en");
       setCurrency(data.currency || "CAD");
       setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
       setMixedLots(Array.isArray(data.lots) ? data.lots : []);
-      jobIdRef.current = data.clientSubmissionId || null;
+      jobIdRef.current =
+        data.clientSubmissionId ||
+        auctioneer?.clientSubmissionId ||
+        (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null);
       requestedRevisionRef.current = revision;
       committedRevisionRef.current = revision;
       setShowDraftBanner(false);
@@ -502,7 +536,7 @@ export default function LotListingForm({
         reportDraftStatus("saved", "Draft restored");
       }
     },
-    [reportDraftStatus, requestCurrentLocation]
+    [auctioneer, reportDraftStatus, requestCurrentLocation]
   );
 
   useEffect(() => {
@@ -511,7 +545,11 @@ export default function LotListingForm({
     void (async () => {
       try {
         await requestDurableDraftStorage();
-        const durableDraftExists = await hasScopedDraft(userId, "lot-listing");
+        const durableDraftExists = await hasScopedDraft(
+          userId,
+          "lot-listing",
+          draftScopeId
+        );
         const legacyRaw = localStorage.getItem(draftKey);
         if (!durableDraftExists && !legacyRaw) return;
 
@@ -553,7 +591,7 @@ export default function LotListingForm({
     return () => {
       cancelled = true;
     };
-  }, [draftKey, reportDraftStatus, userId]);
+  }, [draftKey, draftScopeId, reportDraftStatus, userId]);
 
   const clearFieldError = (field: string) => {
     setErrors((current) => {
@@ -581,7 +619,8 @@ export default function LotListingForm({
     try {
       const durable = await loadScopedDraft<LotListingDraftEnvelope>(
         userId,
-        "lot-listing"
+        "lot-listing",
+        draftScopeId
       );
       if (durable) {
         applyRestoredDraft(
@@ -605,10 +644,11 @@ export default function LotListingForm({
             migrated.data,
             Number(legacy.revision) || 0
           );
-          await saveScopedDraft(nextEnvelope);
+          await saveScopedDraft(nextEnvelope, draftScopeId);
           const verified = await loadScopedDraft<LotListingDraftEnvelope>(
             userId,
-            "lot-listing"
+            "lot-listing",
+            draftScopeId
           );
           if (!verified || verified.missingMediaCount > 0) {
             throw new Error("The migrated draft could not be verified.");
@@ -641,6 +681,7 @@ export default function LotListingForm({
     applyRestoredDraft,
     buildDraftEnvelope,
     draftKey,
+    draftScopeId,
     reportDraftStatus,
     userId,
   ]);
@@ -648,13 +689,15 @@ export default function LotListingForm({
   const deleteDraftStorage = useCallback(async () => {
     let durableDeleteError: unknown;
     try {
-      if (userId) await deleteScopedDraft(userId, "lot-listing");
+      if (userId) {
+        await deleteScopedDraft(userId, "lot-listing", draftScopeId);
+      }
     } catch (deleteError) {
       durableDeleteError = deleteError;
     }
     if (draftKey) localStorage.removeItem(draftKey);
     if (durableDeleteError) throw durableDeleteError;
-  }, [draftKey, userId]);
+  }, [draftKey, draftScopeId, userId]);
 
   const deleteStoredDraft = useCallback(async () => {
     autosaveBlockedRef.current = true;
@@ -672,13 +715,15 @@ export default function LotListingForm({
   }, [deleteDraftStorage]);
 
   const resetFormState = useCallback(() => {
-    setMixedLots([]);
-    setContractNo("");
-    setSalesDate(isoDate(new Date()));
-    setLocation(CURRENT_BROWSER_LOCATION_LABEL);
+    setMixedLots(buildAuctioneerSeedLots(auctioneer));
+    setContractNo(auctioneer?.contract.contractNo || "");
+    setSalesDate(importedSalesDate);
+    setLocation(importedLocation);
     setLatitude(null);
     setLongitude(null);
-    setLocationStatus("Detecting current location...");
+    setLocationStatus(
+      auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
+    );
     setLanguage("en");
     setCurrency("CAD");
     setBankPhotosEnabled(false);
@@ -687,10 +732,17 @@ export default function LotListingForm({
     setUploadPercent(0);
     setUploadStats(null);
     setOpenSections({ details: true, media: true });
-    jobIdRef.current = null;
+    jobIdRef.current =
+      auctioneer?.clientSubmissionId ||
+      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null);
     forceNewSubmissionRef.current = false;
-    requestCurrentLocation();
-  }, [requestCurrentLocation]);
+    if (!auctioneer) requestCurrentLocation();
+  }, [
+    auctioneer,
+    importedLocation,
+    importedSalesDate,
+    requestCurrentLocation,
+  ]);
 
   const handleConfirmedAction = useCallback(async () => {
     const action = confirmAction;
@@ -819,8 +871,12 @@ export default function LotListingForm({
       include_damage_analysis: true,
       bank_photos_enabled: bankPhotosEnabled,
       force_new: forceNewSubmissionRef.current,
+      ...(auctioneer && {
+        auctioneer_work_item_id: auctioneer.workItemId,
+      }),
     }),
     [
+      auctioneer,
       bankPhotosEnabled,
       contractNo,
       currency,
@@ -933,6 +989,9 @@ export default function LotListingForm({
         progress_id: jobId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
+        ...(auctioneer && {
+          auctioneer_work_item_id: auctioneer.workItemId,
+        }),
         mixed_lots: lotsForSubmission.map((lot) => ({
           count: lot.files.length,
           extra_count: lot.extraFiles.length,
@@ -941,6 +1000,11 @@ export default function LotListingForm({
             Math.min(lot.files.length - 1, lot.coverIndex || 0)
           ),
           mode: lot.mode,
+          ...(lot.source && {
+            source_key: lot.source.key,
+            source_lot_id: lot.source.lotId,
+            source_submission_id: lot.source.submissionId,
+          }),
         })),
         ...(focusBoxes.length > 0 ? { focus_boxes: focusBoxes } : {}),
       };
@@ -1054,6 +1118,7 @@ export default function LotListingForm({
       submitLockRef.current = false;
     },
     [
+      auctioneer,
       bankPhotosEnabled,
       clearAcceptedDraft,
       contractNo,
@@ -1226,6 +1291,8 @@ export default function LotListingForm({
                 <input
                   type="text"
                   value={contractNo}
+                  readOnly={Boolean(auctioneer)}
+                  aria-readonly={Boolean(auctioneer)}
                   onChange={(event) => {
                     setContractNo(event.target.value);
                     clearFieldError("contractNo");
@@ -1376,6 +1443,7 @@ export default function LotListingForm({
                 downloadPrefix={contractNo || "lot-listing"}
                 allowVideo={false}
                 analysisImageLimit={50}
+                lockLotStructure={auctioneer?.kind === "scheduleA"}
               />
             </div>
           </FormSection>
@@ -1501,6 +1569,7 @@ export default function LotListingForm({
       <ActiveReportConflictDialog
         open={activeReportConflict}
         reportLabel="lot listing"
+        allowCreateSeparate={!auctioneer}
         onCancel={() => setActiveReportConflict(false)}
         onResume={() => {
           setActiveReportConflict(false);
@@ -1529,6 +1598,11 @@ export default function LotListingForm({
         open={smartUploadOpen}
         kind="lot-listing"
         userId={userId || ""}
+        scopeId={draftScopeId}
+        clientSubmissionId={
+          auctioneer?.clientSubmissionId ||
+          (auctioneer ? `auctioneer-${auctioneer.workItemId}` : undefined)
+        }
         details={smartUploadDetails}
         onClose={() => setSmartUploadOpen(false)}
         onSubmitted={() => handleSmartUploadSubmitted()}

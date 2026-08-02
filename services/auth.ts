@@ -55,6 +55,7 @@ export type ResetPasswordCodePayload = {
 
 export type AuthUser = {
   _id: string;
+  id?: string;
   email: string;
   username?: string;
   companyName?: string;

@@ -29,6 +29,7 @@ import {
   RefreshRounded,
   RestartAltRounded,
   SearchRounded,
+  SendRounded,
   TableChartRounded,
   VisibilityRounded,
 } from "@mui/icons-material";
@@ -40,10 +41,17 @@ import {
   RealEstateService,
   type RealEstateReport,
 } from "@/services/realEstate";
+import AuctioneerService, {
+  type AuctioneerDeliverySummary,
+} from "@/services/auctioneer";
 import { EmptyState, SurfaceCard } from "@/components/common/WorkspaceUI";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
+  { ssr: false }
+);
+const AuctioneerDeliveryDialog = dynamic(
+  () => import("@/components/reports/AuctioneerDeliveryDialog"),
   { ssr: false }
 );
 
@@ -77,6 +85,7 @@ type ReportGroup = {
   type?: string;
   isMergedReport?: boolean;
   mergedSourceCount?: number;
+  auctioneerDelivery?: AuctioneerDeliverySummary;
   variants: {
     pdf?: PdfReport;
     specPdf?: PdfReport;
@@ -86,6 +95,50 @@ type ReportGroup = {
     images?: PdfReport;
   };
 };
+
+function auctioneerDeliveryPresentation(
+  delivery?: AuctioneerDeliverySummary
+): { label: string; color: string; bg: string } | null {
+  if (!delivery) return null;
+  const values: Record<string, { label: string; color: string; bg: string }> = {
+    not_ready: {
+      label: "Auctioneer: not ready",
+      color: "#64748b",
+      bg: "rgba(100,116,139,0.12)",
+    },
+    ready: {
+      label: "Ready to Send",
+      color: "#2563eb",
+      bg: "rgba(37,99,235,0.12)",
+    },
+    queued: {
+      label: "Sending",
+      color: "#2563eb",
+      bg: "rgba(37,99,235,0.12)",
+    },
+    sending: {
+      label: "Sending",
+      color: "#2563eb",
+      bg: "rgba(37,99,235,0.12)",
+    },
+    failed: {
+      label: "Failed — Retry",
+      color: "#dc2626",
+      bg: "rgba(220,38,38,0.12)",
+    },
+    needs_reconciliation: {
+      label: "Needs Reconciliation",
+      color: "#b45309",
+      bg: "rgba(217,119,6,0.12)",
+    },
+    sent: {
+      label: "Sent",
+      color: "#087a43",
+      bg: "#e8f7ee",
+    },
+  };
+  return values[delivery.state] || values.not_ready;
+}
 
 function typeLabel(type?: string) {
   const normalized = String(type || "").toLowerCase();
@@ -371,11 +424,22 @@ export default function ReportsPage() {
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
+  const [auctioneerDeliveries, setAuctioneerDeliveries] = useState<
+    AuctioneerDeliverySummary[]
+  >([]);
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
+  const [deliveryDialogItem, setDeliveryDialogItem] =
+    useState<AuctioneerDeliverySummary | null>(null);
   const loadingReportsRef = useRef(false);
   const hasActiveJobs = useMemo(
-    () => [...assetReports, ...realEstateReports, ...lotListingReports].some(isFileGenerationActive),
-    [assetReports, realEstateReports, lotListingReports]
+    () =>
+      [...assetReports, ...realEstateReports, ...lotListingReports].some(
+        isFileGenerationActive
+      ) ||
+      auctioneerDeliveries.some((delivery) =>
+        ["queued", "sending"].includes(delivery.state)
+      ),
+    [assetReports, auctioneerDeliveries, realEstateReports, lotListingReports]
   );
 
   const loadReports = useCallback(async (
@@ -390,12 +454,19 @@ export default function ReportsPage() {
       } else {
         setRefreshing(true);
       }
-      const [legacy, assetResponse, realEstateResponse, lotListingResponse] =
+      const [
+        legacy,
+        assetResponse,
+        realEstateResponse,
+        lotListingResponse,
+        deliveryResponse,
+      ] =
         await Promise.all([
           ReportsService.getMyReports(),
           getAssetReports().catch(() => ({ data: [] })),
           RealEstateService.getReports().catch(() => ({ data: [] })),
           getLotListings().catch(() => ({ data: [] })),
+          AuctioneerService.getDeliveries().catch(() => []),
         ]);
 
       setReports(legacy);
@@ -429,6 +500,7 @@ export default function ReportsPage() {
             isFileGenerationActive(report)
           )
       );
+      setAuctioneerDeliveries(deliveryResponse);
       setError(null);
       if (options.successToast) {
         toast.success("Reports refreshed.");
@@ -888,8 +960,20 @@ export default function ReportsPage() {
       });
     }
 
+    for (const delivery of auctioneerDeliveries) {
+      if (!delivery.reportId) continue;
+      const group = map.get(String(delivery.reportId));
+      if (group) group.auctioneerDelivery = delivery;
+    }
+
     return Array.from(map.values());
-  }, [assetReports, lotListingReports, realEstateReports, reports]);
+  }, [
+    assetReports,
+    auctioneerDeliveries,
+    lotListingReports,
+    realEstateReports,
+    reports,
+  ]);
 
   const availableTypes = useMemo(() => {
     const values = new Set<string>();
@@ -1183,6 +1267,59 @@ export default function ReportsPage() {
       useFlexGap
       sx={{ flexWrap: singleLine ? "nowrap" : "wrap", alignItems: "center", minWidth: 0 }}
     >
+      {group.auctioneerDelivery ? (
+        <Tooltip
+          title={
+            group.auctioneerDelivery.state === "not_ready"
+              ? "Available after approval, release, and file generation"
+              : group.auctioneerDelivery.state === "sent"
+                ? "This report has been sent to Auctioneer"
+                : group.auctioneerDelivery.state === "needs_reconciliation"
+                  ? "Resolve the uncertain Unknown Lot before retrying"
+                  : group.auctioneerDelivery.state === "failed"
+                    ? group.auctioneerDelivery.canSend === false
+                      ? "Retry is available after the report is approved, released, and its files are ready"
+                      : "Retry the failed Auctioneer delivery"
+                    : "Send approved data and final photos to Auctioneer"
+          }
+          arrow
+        >
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<SendRounded sx={{ fontSize: 18 }} />}
+              onClick={() => setDeliveryDialogItem(group.auctioneerDelivery || null)}
+              disabled={
+                ["not_ready", "queued", "sending", "sent"].includes(
+                  group.auctioneerDelivery.state
+                ) ||
+                (group.auctioneerDelivery.state === "failed" &&
+                  group.auctioneerDelivery.canSend === false)
+              }
+              sx={{
+                ...actionButtonSx("download"),
+                minWidth: singleLine ? 58 : 70,
+                minHeight: singleLine ? 50 : 54,
+                px: singleLine ? 0.35 : 0.65,
+                fontSize: singleLine ? 9 : 10,
+                flex: "0 0 auto",
+              }}
+            >
+              {group.auctioneerDelivery.state === "failed"
+                ? "Retry"
+                : group.auctioneerDelivery.state === "needs_reconciliation"
+                  ? "Resolve"
+                  : group.auctioneerDelivery.state === "sent"
+                    ? "Sent"
+                    : group.auctioneerDelivery.state === "queued" ||
+                        group.auctioneerDelivery.state === "sending"
+                      ? "Sending"
+                      : "Send to Auctioneer"}
+            </Button>
+          </span>
+        </Tooltip>
+      ) : null}
       {String(group.type || "").toLowerCase() === "asset" ? (
         <Tooltip title="Merge this report with other Asset reports using the same contract" arrow>
           <Button
@@ -1382,6 +1519,9 @@ export default function ReportsPage() {
                 group.reportStatus,
                 group.workflowStage
               );
+              const deliveryStatus = auctioneerDeliveryPresentation(
+                group.auctioneerDelivery
+              );
               const title = group.contract_no
                 ? `${typeLabel(group.type)} - ${group.contract_no}`
                 : group.address || typeLabel(group.type);
@@ -1428,11 +1568,25 @@ export default function ReportsPage() {
                           </Typography>
                         ) : null}
                       </Box>
-                      <Chip
-                        size="small"
-                        label={status.label}
-                        sx={{ borderRadius: 1.25, bgcolor: status.bg, color: status.color, fontWeight: 800, flexShrink: 0 }}
-                      />
+                      <Stack spacing={0.6} sx={{ alignItems: "flex-end", flexShrink: 0 }}>
+                        <Chip
+                          size="small"
+                          label={status.label}
+                          sx={{ borderRadius: 1.25, bgcolor: status.bg, color: status.color, fontWeight: 800 }}
+                        />
+                        {deliveryStatus ? (
+                          <Chip
+                            size="small"
+                            label={deliveryStatus.label}
+                            sx={{
+                              borderRadius: 1.25,
+                              bgcolor: deliveryStatus.bg,
+                              color: deliveryStatus.color,
+                              fontWeight: 800,
+                            }}
+                          />
+                        ) : null}
+                      </Stack>
                     </Stack>
 
                     <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }, gap: 1 }}>
@@ -1497,6 +1651,9 @@ export default function ReportsPage() {
                     group.reportStatus,
                     group.workflowStage
                   );
+                  const deliveryStatus = auctioneerDeliveryPresentation(
+                    group.auctioneerDelivery
+                  );
                   const title = group.contract_no
                     ? `${typeLabel(group.type)} - ${group.contract_no}`
                     : group.address || typeLabel(group.type);
@@ -1532,6 +1689,22 @@ export default function ReportsPage() {
                       </Box>
                       <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
                         <Chip size="small" label={status.label} sx={{ borderRadius: 1, bgcolor: status.bg, color: status.color, fontWeight: 800, maxWidth: "100%" }} />
+                        {deliveryStatus ? (
+                          <Chip
+                            size="small"
+                            label={deliveryStatus.label}
+                            sx={{
+                              display: "flex",
+                              mt: 0.55,
+                              width: "fit-content",
+                              maxWidth: "100%",
+                              borderRadius: 1,
+                              bgcolor: deliveryStatus.bg,
+                              color: deliveryStatus.color,
+                              fontWeight: 800,
+                            }}
+                          />
+                        ) : null}
                         {group.released_at ? <Typography variant="caption" sx={{ display: "block", mt: 0.45, color: "var(--app-text-muted)" }}>{new Date(group.released_at).toLocaleDateString()}</Typography> : null}
                       </Box>
                       <Box component="td" sx={{ px: 0.8, py: 1.1, verticalAlign: "top", whiteSpace: "nowrap" }}>
@@ -1568,6 +1741,22 @@ export default function ReportsPage() {
           setMergeAnchorId(null);
           window.dispatchEvent(new Event("cv:report-created"));
           router.push("/previews");
+        }}
+      />
+      <AuctioneerDeliveryDialog
+        open={Boolean(deliveryDialogItem)}
+        delivery={deliveryDialogItem}
+        onClose={() => setDeliveryDialogItem(null)}
+        onUpdated={(updated) => {
+          setAuctioneerDeliveries((current) => {
+            const existingIndex = current.findIndex(
+              (item) => item.workItemId === updated.workItemId
+            );
+            if (existingIndex < 0) return [...current, updated];
+            return current.map((item, index) =>
+              index === existingIndex ? updated : item
+            );
+          });
         }}
       />
     </Stack>

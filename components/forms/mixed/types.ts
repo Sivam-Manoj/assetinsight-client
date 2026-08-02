@@ -11,6 +11,17 @@ export type CameraLens = {
 
 export type MixedLot = {
   id: string;
+  /** Opaque upstream identity used to preserve an integration lot mapping. */
+  source?: {
+    key: string;
+    lotId?: string;
+    submissionId?: string;
+    lotNumber?: string;
+    label?: string;
+    title?: string;
+    description?: string;
+    locked?: boolean;
+  };
   /** Main images sent through the analysis workflow. */
   files: File[];
   /** Report-only images that are not analyzed. */

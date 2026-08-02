@@ -23,6 +23,11 @@ afterEach(async () => {
   await Promise.all([
     deleteSmartUploadDraft(USER_ID, "asset"),
     deleteSmartUploadDraft(USER_ID, "lot-listing"),
+    deleteSmartUploadDraft(
+      USER_ID,
+      "asset",
+      "auctioneer:work-item-1"
+    ),
   ]);
 });
 
@@ -100,5 +105,33 @@ describe("Smart Upload IndexedDB recovery", () => {
     ]);
     expect(asset?.details.contract_no).toBe("ASSET-1");
     expect(listing?.details.contract_no).toBe("LISTING-1");
+  });
+
+  it("isolates an Auctioneer recovery session from an ordinary session", async () => {
+    const scopeId = "auctioneer:work-item-1";
+    await createSmartUploadDraft({
+      userId: USER_ID,
+      kind: "asset",
+      clientSubmissionId: "ordinary",
+      details: { contract_no: "ORDINARY" },
+      files: [new File(["ordinary"], "ordinary.jpg", { type: "image/jpeg" })],
+    });
+    await createSmartUploadDraft({
+      userId: USER_ID,
+      kind: "asset",
+      scopeId,
+      clientSubmissionId: "auctioneer",
+      details: { contract_no: "AUCTIONEER" },
+      files: [
+        new File(["auctioneer"], "auctioneer.jpg", { type: "image/jpeg" }),
+      ],
+    });
+
+    const [ordinary, auctioneer] = await Promise.all([
+      loadSmartUploadDraft(USER_ID, "asset"),
+      loadSmartUploadDraft(USER_ID, "asset", scopeId),
+    ]);
+    expect(ordinary?.clientSubmissionId).toBe("ordinary");
+    expect(auctioneer?.clientSubmissionId).toBe("auctioneer");
   });
 });

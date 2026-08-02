@@ -34,11 +34,14 @@ export type PdfReport = {
 };
 
 export type AssignedApproval = PdfReport & {
-  reportType: "Asset" | "RealEstate" | "Salvage";
+  reportType: "Asset" | "RealEstate" | "LotListing" | "Salvage";
   user?: { _id?: string; email?: string; username?: string };
   isAssetReport?: boolean;
   isRealEstateReport?: boolean;
+  isLotListing?: boolean;
   preview_files?: Record<string, string>;
+  files?: Record<string, string>;
+  auctioneer_work_item_id?: string;
 };
 
 export type AssignedRelease = PdfReport & {

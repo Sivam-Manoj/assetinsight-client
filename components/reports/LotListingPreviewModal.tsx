@@ -37,6 +37,18 @@ interface LotListingPreviewModalProps {
   onClose: () => void;
   onSuccess?: (submittedReport?: any) => void;
   isResubmitMode?: boolean;
+  isAssignedApprovalMode?: boolean;
+  loadPreviewDataOverride?: (id: string) => Promise<any>;
+  updatePreviewDataOverride?: (id: string, previewData: any) => Promise<any>;
+  resubmitReportOverride?: (id: string, previewData?: any) => Promise<any>;
+  uploadPreviewLotImagesOverride?: (
+    id: string,
+    lotKey: string | number,
+    files: File[],
+    previewData?: any,
+    onProgress?: (progress: number) => void
+  ) => Promise<any>;
+  refreshSpecPdfOverride?: (id: string) => Promise<any>;
 }
 
 type ConditionSelectionKey = "condition" | "completeness" | "legal";
@@ -221,6 +233,12 @@ export default function LotListingPreviewModal({
   onClose,
   onSuccess,
   isResubmitMode = false,
+  isAssignedApprovalMode = false,
+  loadPreviewDataOverride,
+  updatePreviewDataOverride,
+  resubmitReportOverride,
+  uploadPreviewLotImagesOverride,
+  refreshSpecPdfOverride,
 }: LotListingPreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -305,9 +323,11 @@ export default function LotListingPreviewModal({
     try {
       setLoading(true);
       const [response, categorySpecResponse] = await Promise.all([
-        isResubmitMode
-          ? getLotListingSubmittedPreview(reportId)
-          : getLotListingPreview(reportId),
+        loadPreviewDataOverride
+          ? loadPreviewDataOverride(reportId)
+          : isResubmitMode
+            ? getLotListingSubmittedPreview(reportId)
+            : getLotListingPreview(reportId),
         getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
       ]);
       setCategorySpecs(categorySpecResponse.specs || []);
@@ -330,8 +350,16 @@ export default function LotListingPreviewModal({
       setSaving(true);
       const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
       setPreviewData(previewForRequest);
-      const saved = await updateLotListingPreview(reportId, { preview_data: previewForRequest });
-      if ((saved as any)?.data) applyLotListingState((saved as any).data);
+      const saved = updatePreviewDataOverride
+        ? await updatePreviewDataOverride(reportId, previewForRequest)
+        : await updateLotListingPreview(reportId, { preview_data: previewForRequest });
+      if ((saved as any)?.data) {
+        applyLotListingState(
+          updatePreviewDataOverride
+            ? { preview_data: (saved as any).data }
+            : (saved as any).data
+        );
+      }
       if ((saved as any)?.files_regeneration_queued) {
         setHasChanges(false);
         applyLotListingState((saved as any).data, {
@@ -345,7 +373,9 @@ export default function LotListingPreviewModal({
       }
       let pdfRefreshed = false;
       try {
-        const pdf = await refreshLotListingSpecPdf(reportId);
+        const pdf = refreshSpecPdfOverride
+          ? await refreshSpecPdfOverride(reportId)
+          : await refreshLotListingSpecPdf(reportId);
         setPreviewFiles((prev: any) => ({
           ...(prev || {}),
           ...(pdf.data?.preview_files || {}),
@@ -392,14 +422,20 @@ export default function LotListingPreviewModal({
       if (isResubmitMode) {
         const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
         setPreviewData(previewForRequest);
-        const updated = await resubmitLotListing(reportId, { preview_data: previewForRequest });
+        const updated = resubmitReportOverride
+          ? await resubmitReportOverride(reportId, previewForRequest)
+          : await resubmitLotListing(reportId, { preview_data: previewForRequest });
         submittedReport = updated;
         setHasChanges(false);
         applyLotListingState(updated, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: true,
         });
-        toast.success("Lot listing files are being regenerated and will remain automatically released.");
+        toast.success(
+          isAssignedApprovalMode
+            ? "Lot listing files are being regenerated and will remain pending approval."
+            : "Lot listing files are being regenerated and will remain automatically released."
+        );
       } else {
         // Submit the edited snapshot once. Saving first and then submitting the
         // previous React state allowed the second request to restore stale text.
@@ -653,7 +689,19 @@ export default function LotListingPreviewModal({
     const lotKey = getLotUploadKey(lot, index);
     setUploadingLotKey(lotKey);
     try {
-      const response = await uploadLotListingPreviewLotImages(reportId, lotKey, files, previewData);
+      const response = uploadPreviewLotImagesOverride
+        ? await uploadPreviewLotImagesOverride(
+            reportId,
+            lotKey,
+            files,
+            previewData
+          )
+        : await uploadLotListingPreviewLotImages(
+            reportId,
+            lotKey,
+            files,
+            previewData
+          );
       if (response.data?.preview_data) {
         setPreviewData(applyDamageAnalysisLotPolicy(response.data.preview_data));
       }

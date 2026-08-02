@@ -84,6 +84,7 @@ type Props = {
   onImageCapture?: () => void; // Callback when image is captured/added (for auto-save)
   allowVideo?: boolean;
   analysisImageLimit?: number;
+  lockLotStructure?: boolean;
 };
 
 type RemovedMedia = {
@@ -105,6 +106,7 @@ export default function MixedSection({
   onImageCapture,
   allowVideo = true,
   analysisImageLimit,
+  lockLotStructure = false,
 }: Props) {
   const [lots, setLots] = useState<MixedLot[]>(value || []);
   const lotsRef = useRef<MixedLot[]>(value || []);
@@ -342,6 +344,7 @@ export default function MixedSection({
   }, []);
 
   function createLot() {
+    if (lockLotStructure) return;
     const id = `lot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const next: MixedLot[] = [
       ...lotsRef.current,
@@ -352,6 +355,7 @@ export default function MixedSection({
   }
 
   function removeLot(idx: number) {
+    if (lockLotStructure || lotsRef.current[idx]?.source?.locked) return;
     const next = lotsRef.current.filter((_, i) => i !== idx);
     commitLots(next);
     setActiveIdx((current) => {
@@ -368,6 +372,7 @@ export default function MixedSection({
       const out = [...prev];
       const lot = out[idx];
       if (!lot) return prev;
+      if (lot.source?.locked) return prev;
       if (lot.mode && lot.mode !== mode && lot.files.length > 0) {
         toast.warn("Cannot change mode after images are added to this lot.");
         return prev;
@@ -1692,6 +1697,9 @@ export default function MixedSection({
   }, [allowVideo, lots]);
   const activeLot = activeIdx >= 0 ? lots[activeIdx] : undefined;
   const activeLotHasMode = Boolean(activeLot?.mode);
+  const lotLabel = (lot: MixedLot, index: number) =>
+    lot.source?.label ||
+    (lot.source?.lotNumber ? `Lot ${lot.source.lotNumber}` : `Lot ${index + 1}`);
   return (
     <div className="@container min-w-0 space-y-4 overflow-x-hidden text-[var(--app-text)]">
       <div className="flex min-w-0 flex-col gap-3 @min-[560px]:flex-row @min-[560px]:items-center @min-[560px]:justify-between">
@@ -1702,14 +1710,20 @@ export default function MixedSection({
           {allowVideo ? <span>{totals.videos} video</span> : null}
           {totals.bytes > 0 ? <span>{formatFileSize(totals.bytes)}</span> : null}
         </div>
-        <button
-          type="button"
-          onClick={createLot}
-          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--app-text)] px-4 py-2.5 text-sm font-semibold text-[var(--app-panel)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 @min-[560px]:w-auto"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New lot
-        </button>
+        {!lockLotStructure ? (
+          <button
+            type="button"
+            onClick={createLot}
+            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--app-text)] px-4 py-2.5 text-sm font-semibold text-[var(--app-panel)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 @min-[560px]:w-auto"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New lot
+          </button>
+        ) : (
+          <span className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2 text-xs font-semibold text-[var(--app-text-muted)]">
+            Source lot mapping locked
+          </span>
+        )}
       </div>
 
       <input
@@ -1773,7 +1787,7 @@ export default function MixedSection({
             >
               {lots.map((lot, index) => (
                 <option key={lot.id} value={index}>
-                  Lot {index + 1} · {getModeLabel(lot.mode)} · {getLotPhotoCount(lot)} photos
+                  {lotLabel(lot, index)} · {getModeLabel(lot.mode)} · {getLotPhotoCount(lot)} photos
                 </option>
               ))}
             </select>
@@ -1814,7 +1828,7 @@ export default function MixedSection({
                       }`}
                     >
                       <span className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-[var(--app-text)]">Lot {index + 1}</span>
+                        <span className="text-sm font-semibold text-[var(--app-text)]">{lotLabel(lot, index)}</span>
                         <span className="text-[11px] tabular-nums text-[var(--app-text-muted)]">{getLotPhotoCount(lot)}</span>
                       </span>
                       <span className="mt-0.5 block truncate text-xs text-[var(--app-text-muted)]">{getModeLabel(lot.mode)}</span>
@@ -1833,7 +1847,14 @@ export default function MixedSection({
               >
                 <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--app-border)] pb-4 @min-[560px]:flex-row @min-[560px]:items-start @min-[560px]:justify-between">
                   <div className="min-w-0">
-                    <h4 className="text-base font-semibold text-[var(--app-text)]">Lot {activeIdx + 1}</h4>
+                    <h4 className="text-base font-semibold text-[var(--app-text)]">{lotLabel(activeLot, activeIdx)}</h4>
+                    {activeLot.source?.title || activeLot.source?.description ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-[var(--app-text-muted)]">
+                        {[activeLot.source.title, activeLot.source.description]
+                          .filter(Boolean)
+                          .join(" — ")}
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
                       {activeLot.files.length} main · {(activeLot.extraFiles || []).length} report-only
                       {allowVideo ? ` · ${(activeLot.videoFiles || []).length} video` : ""}
@@ -1879,7 +1900,12 @@ export default function MixedSection({
                   <div role="radiogroup" className="mt-3 grid gap-2 @min-[560px]:grid-cols-3">
                     {MODE_OPTIONS.map((option) => {
                       const checked = activeLot.mode === option.value;
-                      const disabled = Boolean(activeLot.mode && !checked && activeLot.files.length > 0);
+                      const disabled = Boolean(
+                        activeLot.source?.locked ||
+                          (activeLot.mode &&
+                            !checked &&
+                            activeLot.files.length > 0)
+                      );
                       return (
                         <label
                           key={option.value}
@@ -2059,6 +2085,7 @@ export default function MixedSection({
           Download lot ZIP
         </MenuItem>
         <MenuItem
+          disabled={lockLotStructure || Boolean(activeLot?.source?.locked)}
           onClick={() => {
             setMoreAnchor(null);
             setRemoveLotPending(activeIdx);

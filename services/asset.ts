@@ -40,6 +40,7 @@ export type AssetCreateDetails = {
   factors_analysis?: string; // populates Analysis under Factors Affecting Value
   // Real-time progress
   progress_id?: string;
+  auctioneer_work_item_id?: string;
   // Catalogue mode: describe how files map to lots (flattened in order)
   catalogue_lots?: Array<{
     count: number; // number of images in this lot (max 20)
@@ -53,6 +54,9 @@ export type AssetCreateDetails = {
     extra_count?: number; // report-only images in this lot
     cover_index?: number; // 0-based within the lot
     mode: "single_lot" | "per_item" | "per_photo";
+    source_key?: string;
+    source_lot_id?: string;
+    source_submission_id?: string;
   }>;
   focus_boxes?: Array<{
     imageIndex: number;

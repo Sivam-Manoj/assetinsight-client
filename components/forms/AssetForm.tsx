@@ -30,6 +30,13 @@ import {
 } from "@/lib/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import {
+  auctioneerDateOnly,
+  auctioneerDraftScope,
+  auctioneerIndustry,
+  buildAuctioneerSeedLots,
+  type AuctioneerFormIntegration,
+} from "./auctioneerSeed";
+import {
   getMixedFileKey,
   type MixedLot,
 } from "./mixed/types";
@@ -74,6 +81,7 @@ type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
+  auctioneer?: AuctioneerFormIntegration;
 };
 
 export type AssetFormHandle = {
@@ -254,34 +262,50 @@ const valuationOptions: Array<{
 ];
 
 const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
-  { onSuccess, onCancel, onDraftStatusChange },
+  { onSuccess, onCancel, onDraftStatusChange, auctioneer },
   ref
 ) {
   const { user } = useAuthContext();
   const userId = user?._id || "";
-  const draftStorageKey = getScopedDraftKey(userId, "asset") || "";
+  const draftScopeId = auctioneerDraftScope(auctioneer);
+  const draftStorageKey =
+    getScopedDraftKey(userId, "asset", draftScopeId) || "";
+  const importedEventDate =
+    auctioneerDateOnly(auctioneer?.contract.eventDate) || isoDate(new Date());
+  const importedLocation =
+    auctioneer?.contract.location || CURRENT_BROWSER_LOCATION_LABEL;
 
-  const [clientName, setClientName] = useState("");
-  const [effectiveDate, setEffectiveDate] = useState(isoDate(new Date()));
-  const [appraisalPurpose, setAppraisalPurpose] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [preparedFor, setPreparedFor] = useState("");
+  const [clientName, setClientName] = useState(
+    () => auctioneer?.contract.customerName || ""
+  );
+  const [effectiveDate, setEffectiveDate] = useState(importedEventDate);
+  const [appraisalPurpose, setAppraisalPurpose] = useState(
+    () => (auctioneer ? "Auction listing and condition report" : "")
+  );
+  const [ownerName, setOwnerName] = useState(
+    () => auctioneer?.contract.customerName || ""
+  );
+  const [preparedFor, setPreparedFor] = useState(
+    () => auctioneer?.contract.customerName || ""
+  );
   const [appraiser, setAppraiser] = useState(user?.username || "");
   const [appraisalCompany, setAppraisalCompany] = useState(
     user?.companyName || ""
   );
-  const [industry, setIndustry] = useState("");
+  const [industry, setIndustry] = useState(() => auctioneerIndustry(auctioneer));
   const [inspectionDate, setInspectionDate] = useState(isoDate(new Date()));
-  const [location, setLocation] = useState(CURRENT_BROWSER_LOCATION_LABEL);
+  const [location, setLocation] = useState(importedLocation);
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState(
-    "Detecting current location…"
+    auctioneer ? "Imported from Auctioneer" : "Detecting current location…"
   );
-  const [contractNo, setContractNo] = useState("");
+  const [contractNo, setContractNo] = useState(
+    () => auctioneer?.contract.contractNo || ""
+  );
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
-  const [currency, setCurrency] = useState("");
-  const [currencyTouched, setCurrencyTouched] = useState(false);
+  const [currency, setCurrency] = useState(() => (auctioneer ? "CAD" : ""));
+  const [currencyTouched, setCurrencyTouched] = useState(Boolean(auctioneer));
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(true);
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
@@ -292,7 +316,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [selectedValuationMethods, setSelectedValuationMethods] = useState<
     ValuationMethod[]
   >(["FML"]);
-  const [mixedLots, setMixedLots] = useState<MixedLot[]>([]);
+  const [mixedLots, setMixedLots] = useState<MixedLot[]>(() =>
+    buildAuctioneerSeedLots(auctioneer)
+  );
 
   const [openSections, setOpenSections] = useState<Set<SectionId>>(
     () => new Set(["report", "media"])
@@ -320,7 +346,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [draftHydrated, setDraftHydrated] = useState(false);
 
   const currencyPromptedRef = useRef(false);
-  const jobIdRef = useRef<string | null>(null);
+  const jobIdRef = useRef<string | null>(
+    auctioneer?.clientSubmissionId ||
+      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null)
+  );
   const forceNewSubmissionRef = useRef(false);
   const createdEventDispatchedRef = useRef(false);
   const autoSaveBlockedRef = useRef(false);
@@ -489,11 +518,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         annotations: lot.annotations ? { ...lot.annotations } : undefined,
       })),
     };
-    await saveScopedDraft(envelope);
+    await saveScopedDraft(envelope, draftScopeId);
     return null;
   };
 
   const saveServerTier = async (snapshot: DraftSnapshot) => {
+    if (auctioneer) return;
     const uploaded: DraftImageData[] = [];
     const failures: string[] = [];
     for (const lot of snapshot.lots) {
@@ -724,7 +754,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     await requestDurableDraftStorage();
     let envelope: AssetDraftEnvelope | null = null;
     let missingMediaCount = 0;
-    const durable = await loadScopedDraft<AssetDraftEnvelope>(userId, "asset");
+    const durable = await loadScopedDraft<AssetDraftEnvelope>(
+      userId,
+      "asset",
+      draftScopeId
+    );
 
     if (durable) {
       envelope = durable.envelope;
@@ -788,8 +822,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       // A complete v2 draft is removed only after v3 can be written and read
       // back with every media object intact.
       if (missingMediaCount === 0) {
-        await saveScopedDraft(envelope);
-        const verified = await loadScopedDraft<AssetDraftEnvelope>(userId, "asset");
+        await saveScopedDraft(envelope, draftScopeId);
+        const verified = await loadScopedDraft<AssetDraftEnvelope>(
+          userId,
+          "asset",
+          draftScopeId
+        );
         if (!verified || verified.missingMediaCount > 0) {
           throw new Error("The migrated asset draft could not be verified.");
         }
@@ -817,6 +855,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const restoreServerDraft = async (): Promise<boolean> => {
+    if (auctioneer) return false;
     const draft = await SavedInputService.getDraft("asset");
     if (!draft) return false;
     const formData = draft.formData as any;
@@ -971,6 +1010,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   useEffect(() => {
+    if (auctioneer) {
+      setCurrencyLoading(false);
+      return;
+    }
     if (currencyPromptedRef.current || currencyTouched) return;
     currencyPromptedRef.current = true;
     setCurrencyLoading(true);
@@ -1013,26 +1056,30 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
     );
-  }, [currencyTouched]);
+  }, [auctioneer, currencyTouched]);
 
   const resetForm = () => {
-    setClientName("");
-    setEffectiveDate(isoDate(new Date()));
-    setAppraisalPurpose("");
-    setOwnerName("");
-    setPreparedFor("");
+    setClientName(auctioneer?.contract.customerName || "");
+    setEffectiveDate(importedEventDate);
+    setAppraisalPurpose(
+      auctioneer ? "Auction listing and condition report" : ""
+    );
+    setOwnerName(auctioneer?.contract.customerName || "");
+    setPreparedFor(auctioneer?.contract.customerName || "");
     setAppraiser(user?.username || "");
     setAppraisalCompany(user?.companyName || "");
-    setIndustry("");
+    setIndustry(auctioneerIndustry(auctioneer));
     setInspectionDate(isoDate(new Date()));
-    setLocation(CURRENT_BROWSER_LOCATION_LABEL);
+    setLocation(importedLocation);
     setLatitude(null);
     setLongitude(null);
-    setLocationStatus("Detecting current location…");
-    setContractNo("");
+    setLocationStatus(
+      auctioneer ? "Imported from Auctioneer" : "Detecting current location…"
+    );
+    setContractNo(auctioneer?.contract.contractNo || "");
     setLanguage("en");
-    setCurrency("");
-    setCurrencyTouched(false);
+    setCurrency(auctioneer ? "CAD" : "");
+    setCurrencyTouched(Boolean(auctioneer));
     setCurrencyLoading(false);
     currencyPromptedRef.current = false;
     setIncludeDamageAnalysis(true);
@@ -1042,25 +1089,28 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     setFactorsAnalysis("");
     setIncludeValuationTable(false);
     setSelectedValuationMethods(["FML"]);
-    setMixedLots([]);
+    setMixedLots(buildAuctioneerSeedLots(auctioneer));
     setErrors({});
     setError(null);
     setUploadProgress(0);
     setUploadStats(null);
     setOpenSections(new Set(["report", "media"]));
-    jobIdRef.current = null;
+    jobIdRef.current =
+      auctioneer?.clientSubmissionId ||
+      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null);
     forceNewSubmissionRef.current = false;
   };
 
   const clearDraftStorage = async () => {
     let localDeleteError: unknown;
     try {
-      await deleteScopedDraft(userId, "asset");
+      await deleteScopedDraft(userId, "asset", draftScopeId);
     } catch (error) {
       localDeleteError = error;
     }
     if (draftStorageKey) localStorage.removeItem(draftStorageKey);
     const removeServerDraft = async () => {
+      if (auctioneer) return;
       await SavedInputService.deleteDraftImages();
       await SavedInputService.deleteDraft("asset");
     };
@@ -1195,13 +1245,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   useImperativeHandle(ref, () => ({ loadSavedInput }));
 
   useEffect(() => {
+    if (auctioneer) return;
     const handler = (event: Event) => {
       const savedInput = (event as CustomEvent<SavedInput>).detail;
       if (savedInput) loadSavedInput(savedInput);
     };
     window.addEventListener("load-saved-input", handler);
     return () => window.removeEventListener("load-saved-input", handler);
-  }, []);
+  }, [auctioneer]);
 
   const validateForm = ({
     requireMedia = true,
@@ -1303,6 +1354,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       include_damage_analysis: includeDamageAnalysis,
       bank_photos_enabled: bankPhotosEnabled,
       force_new: forceNewSubmissionRef.current,
+      ...(auctioneer && {
+        auctioneer_work_item_id: auctioneer.workItemId,
+      }),
       ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
       ...(factorsAgeCondition.trim() && {
         factors_age_condition: factorsAgeCondition.trim(),
@@ -1318,6 +1372,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       appraisalCompany,
       appraisalPurpose,
       appraiser,
+      auctioneer,
       bankPhotosEnabled,
       clientName,
       contractNo,
@@ -1457,6 +1512,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       progress_id: jobId,
       client_submission_id: jobId,
       force_new: forceNewSubmissionRef.current,
+      ...(auctioneer && {
+        auctioneer_work_item_id: auctioneer.workItemId,
+      }),
       ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
       ...(factorsAgeCondition.trim() && { factors_age_condition: factorsAgeCondition.trim() }),
       ...(factorsQuality.trim() && { factors_quality: factorsQuality.trim() }),
@@ -1466,11 +1524,17 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         extra_count: lot.extraFiles.length,
         cover_index: Math.max(0, Math.min(lot.files.length - 1, lot.coverIndex || 0)),
         mode: lot.mode!,
+        ...(lot.source && {
+          source_key: lot.source.key,
+          source_lot_id: lot.source.lotId,
+          source_submission_id: lot.source.submissionId,
+        }),
       })),
       ...(focusBoxes.length ? { focus_boxes: focusBoxes } : {}),
     } as AssetCreateDetails & {
       client_submission_id: string;
       force_new: boolean;
+      auctioneer_work_item_id?: string;
     };
 
     try {
@@ -1664,6 +1728,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     type="date"
                     className={formControlClass}
                     value={effectiveDate}
+                    readOnly={Boolean(auctioneer)}
+                    aria-readonly={Boolean(auctioneer)}
                     onChange={(event) => {
                       setEffectiveDate(event.target.value);
                       clearFieldError("effectiveDate");
@@ -1739,6 +1805,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   <input
                     className={formControlClass}
                     value={contractNo}
+                    readOnly={Boolean(auctioneer)}
+                    aria-readonly={Boolean(auctioneer)}
                     onChange={(event) => setContractNo(event.target.value)}
                     placeholder="CN-2026-001"
                   />
@@ -1982,6 +2050,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   maxImagesPerLot={MAX_ASSET_LOT_PHOTOS}
                   maxExtraImagesPerLot={MAX_ASSET_LOT_PHOTOS}
                   maxTotalImages={MAX_ASSET_LOT_PHOTOS}
+                  lockLotStructure={auctioneer?.kind === "scheduleA"}
                   downloadPrefix={(contractNo || "asset").replace(/[^a-zA-Z0-9_-]/g, "-")}
                 />
               </div>
@@ -2068,6 +2137,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       <ActiveReportConflictDialog
         open={activeReportConflict}
         reportLabel="asset report"
+        allowCreateSeparate={!auctioneer}
         onCancel={() => setActiveReportConflict(false)}
         onResume={() => {
           setActiveReportConflict(false);
@@ -2089,6 +2159,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         open={smartUploadOpen}
         kind="asset"
         userId={userId}
+        scopeId={draftScopeId}
+        clientSubmissionId={
+          auctioneer?.clientSubmissionId ||
+          (auctioneer ? `auctioneer-${auctioneer.workItemId}` : undefined)
+        }
         details={smartUploadDetails}
         onClose={() => setSmartUploadOpen(false)}
         onSubmitted={() => handleSmartUploadSubmitted()}

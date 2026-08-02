@@ -25,6 +25,7 @@ import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import { ReportsService, type AssignedApproval } from "@/services/reports";
 import PreviewModal from "@/components/reports/PreviewModal";
 import RealEstatePreviewModal from "@/components/reports/RealEstatePreviewModal";
+import LotListingPreviewModal from "@/components/reports/LotListingPreviewModal";
 import Loading from "@/components/common/Loading";
 import { useAuthContext } from "@/context/AuthContext";
 
@@ -188,7 +189,7 @@ export default function AssignedApprovalsPage() {
                     </Typography>
                   </Box>
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
-                    {item.isAssetReport || item.isRealEstateReport ? (
+                    {item.isAssetReport || item.isRealEstateReport || item.isLotListing ? (
                       <Button
                         variant="outlined"
                         startIcon={<EditRoundedIcon />}
@@ -284,6 +285,24 @@ export default function AssignedApprovalsPage() {
           loadPreviewDataOverride={ReportsService.getAssignedPreview}
           updatePreviewDataOverride={ReportsService.updateAssignedPreview}
           resubmitReportOverride={ReportsService.resubmitAssignedPreview}
+        />
+      ) : null}
+      {reviewTarget?.isLotListing ? (
+        <LotListingPreviewModal
+          reportId={reviewTarget._id}
+          isOpen={Boolean(reviewTarget)}
+          onClose={() => setReviewTarget(null)}
+          onSuccess={() => {
+            setReviewTarget(null);
+            void load();
+          }}
+          isResubmitMode
+          isAssignedApprovalMode
+          loadPreviewDataOverride={ReportsService.getAssignedPreview}
+          updatePreviewDataOverride={ReportsService.updateAssignedPreview}
+          resubmitReportOverride={ReportsService.resubmitAssignedPreview}
+          uploadPreviewLotImagesOverride={ReportsService.uploadAssignedPreviewLotImages}
+          refreshSpecPdfOverride={ReportsService.refreshAssignedPreviewSpecPdf}
         />
       ) : null}
     </Box>

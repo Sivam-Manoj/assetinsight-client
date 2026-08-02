@@ -46,6 +46,8 @@ type Props = {
   open: boolean;
   kind: SmartUploadKind;
   userId: string;
+  scopeId?: string;
+  clientSubmissionId?: string;
   details: Record<string, unknown>;
   onClose: () => void;
   onSubmitted: (result: {
@@ -112,6 +114,8 @@ export default function SmartUploadWorkspace({
   open,
   kind,
   userId,
+  scopeId,
+  clientSubmissionId,
   details,
   onClose,
   onSubmitted,
@@ -140,7 +144,7 @@ export default function SmartUploadWorkspace({
     setError(null);
     setDraft(null);
     setGrouping(null);
-    void loadSmartUploadDraft(userId, kind)
+    void loadSmartUploadDraft(userId, kind, scopeId)
       .then(async (saved) => {
         if (cancelled || !saved) return;
         // Current form details win when a user resumes before upload. Once a
@@ -169,9 +173,12 @@ export default function SmartUploadWorkspace({
                 setDraft((current) =>
                     current ? { ...current, stage: "review" } : current
                   );
-                await updateSmartUploadDraft(userId, kind, {
-                  stage: "review",
-                });
+                await updateSmartUploadDraft(
+                  userId,
+                  kind,
+                  { stage: "review" },
+                  scopeId
+                );
               } else if (result.groupingStatus === "classifying") {
                 setDraft((current) =>
                   current ? { ...current, stage: "classifying" } : current
@@ -192,9 +199,12 @@ export default function SmartUploadWorkspace({
                   setDraft((current) =>
                     current ? { ...current, stage: "review" } : current
                   );
-                  await updateSmartUploadDraft(userId, kind, {
-                    stage: "review",
-                  });
+                  await updateSmartUploadDraft(
+                    userId,
+                    kind,
+                    { stage: "review" },
+                    scopeId
+                  );
                 }
               } else if (result.groupingStatus === "uploading") {
                 setDraft((current) =>
@@ -203,9 +213,12 @@ export default function SmartUploadWorkspace({
                 setError(
                   "The previous upload was interrupted. Resume to upload only the remaining images."
                 );
-                await updateSmartUploadDraft(userId, kind, {
-                  stage: "failed",
-                });
+                await updateSmartUploadDraft(
+                  userId,
+                  kind,
+                  { stage: "failed" },
+                  scopeId
+                );
               } else if (result.groupingStatus === "failed") {
                 setDraft((current) =>
                   current ? { ...current, stage: "failed" } : current
@@ -214,9 +227,12 @@ export default function SmartUploadWorkspace({
                   result.error ||
                     "Black-image detection failed. Resume to retry the same upload."
                 );
-                await updateSmartUploadDraft(userId, kind, {
-                  stage: "failed",
-                });
+                await updateSmartUploadDraft(
+                  userId,
+                  kind,
+                  { stage: "failed" },
+                  scopeId
+                );
               }
             }
           } catch (resumeError) {
@@ -242,7 +258,7 @@ export default function SmartUploadWorkspace({
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, [kind, open, userId]);
+  }, [kind, open, scopeId, userId]);
 
   const active =
     draft?.stage === "uploading" ||
@@ -305,7 +321,8 @@ export default function SmartUploadWorkspace({
         const next = await createSmartUploadDraft({
           userId,
           kind,
-          clientSubmissionId: newSubmissionId(kind),
+          scopeId,
+          clientSubmissionId: clientSubmissionId || newSubmissionId(kind),
           details: detailsRef.current,
           files: selected,
         });
@@ -320,7 +337,7 @@ export default function SmartUploadWorkspace({
         setError(getSmartUploadError(selectionError));
       }
     },
-    [kind, userId]
+    [clientSubmissionId, kind, scopeId, userId]
   );
 
   const runUploadAndDetection = useCallback(async () => {
@@ -329,7 +346,7 @@ export default function SmartUploadWorkspace({
       setError(null);
       const session = await createOrResumeSmartUploadSession(draft);
       if (session.alreadyQueued && session.reportId) {
-        await deleteSmartUploadDraft(userId, kind);
+        await deleteSmartUploadDraft(userId, kind, scopeId);
         await onSubmitted({
           message: "This Smart Upload was already accepted.",
           reportId: session.reportId,
@@ -344,18 +361,23 @@ export default function SmartUploadWorkspace({
         stage: "uploading" as const,
       };
       setDraft(sessionDraft);
-      await updateSmartUploadDraft(userId, kind, {
-        sessionId: session.sessionId,
-        stage: "uploading",
-        details: detailsRef.current,
-      });
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        {
+          sessionId: session.sessionId,
+          stage: "uploading",
+          details: detailsRef.current,
+        },
+        scopeId
+      );
 
       await uploadSmartUploadFiles({
         draft: sessionDraft,
         session,
         onProgress: setProgress,
         onFilesConfirmed: async (files) => {
-          await updateSmartUploadDraft(userId, kind, { files });
+          await updateSmartUploadDraft(userId, kind, { files }, scopeId);
           setDraft((current) =>
             current
               ? {
@@ -375,7 +397,12 @@ export default function SmartUploadWorkspace({
       setDraft((current) =>
         current ? { ...current, stage: "classifying" } : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "classifying" });
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { stage: "classifying" },
+        scopeId
+      );
       const started = await startSmartUploadDetection(kind, session.sessionId);
       setGrouping(started);
       abortRef.current?.abort();
@@ -391,7 +418,7 @@ export default function SmartUploadWorkspace({
       setDraft((current) =>
         current ? { ...current, stage: "review" } : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "review" });
+      await updateSmartUploadDraft(userId, kind, { stage: "review" }, scopeId);
     } catch (uploadError) {
       if ((uploadError as { name?: string })?.name === "AbortError") return;
       const message = getSmartUploadError(uploadError);
@@ -399,11 +426,14 @@ export default function SmartUploadWorkspace({
       setDraft((current) =>
         current ? { ...current, stage: "failed" } : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "failed" }).catch(
-        () => undefined
-      );
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { stage: "failed" },
+        scopeId
+      ).catch(() => undefined);
     }
-  }, [draft, kind, onSubmitted, userId]);
+  }, [draft, kind, onSubmitted, scopeId, userId]);
 
   const toggleDivider = useCallback(
     async (fileId: string) => {
@@ -436,7 +466,12 @@ export default function SmartUploadWorkspace({
       setDraft((current) =>
         current ? { ...current, stage: "submitting" } : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "submitting" });
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { stage: "submitting" },
+        scopeId
+      );
       await updateSmartUploadDividers({
         kind,
         sessionId: draft.sessionId,
@@ -444,7 +479,7 @@ export default function SmartUploadWorkspace({
         confirm: true,
       });
       const result = await completeSmartUpload(kind, draft.sessionId);
-      await deleteSmartUploadDraft(userId, kind);
+      await deleteSmartUploadDraft(userId, kind, scopeId);
       setDraft(null);
       setGrouping(null);
       await onSubmitted(result);
@@ -453,11 +488,14 @@ export default function SmartUploadWorkspace({
       setDraft((current) =>
         current ? { ...current, stage: "review" } : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "review" }).catch(
-        () => undefined
-      );
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { stage: "review" },
+        scopeId
+      ).catch(() => undefined);
     }
-  }, [draft?.sessionId, grouping, kind, onSubmitted, userId]);
+  }, [draft?.sessionId, grouping, kind, onSubmitted, scopeId, userId]);
 
   const discard = useCallback(async () => {
     if (!draft || discarding) return;
@@ -468,7 +506,7 @@ export default function SmartUploadWorkspace({
       if (draft.sessionId) {
         await cancelSmartUpload(kind, draft.sessionId);
       }
-      await deleteSmartUploadDraft(userId, kind);
+      await deleteSmartUploadDraft(userId, kind, scopeId);
       setDraft(null);
       setGrouping(null);
       setProgress(null);
@@ -477,7 +515,7 @@ export default function SmartUploadWorkspace({
     } finally {
       setDiscarding(false);
     }
-  }, [discarding, draft, kind, userId]);
+  }, [discarding, draft, kind, scopeId, userId]);
 
   if (!mounted || !open) return null;
 

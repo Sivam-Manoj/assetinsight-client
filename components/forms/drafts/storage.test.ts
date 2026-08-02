@@ -22,6 +22,9 @@ describe("scoped v2 form drafts", () => {
       getScopedDraftKey("user-a", "asset")
     );
     expect(getScopedDraftKey(null, "asset")).toBeNull();
+    expect(
+      getScopedDraftKey("user-a", "asset", "auctioneer:work-item-1")
+    ).toBe("cv:user-a:asset:auctioneer:work-item-1:draft:v2");
   });
 
   it("accepts only the attributed user, form, and v2 envelope", () => {
@@ -71,6 +74,46 @@ describe("scoped v2 form drafts", () => {
 });
 
 describe("scoped v3 IndexedDB drafts", () => {
+  it("isolates Auctioneer work-item drafts from ordinary form drafts", async () => {
+    const userId = "auctioneer-scope-user";
+    const scopeId = "auctioneer:work-item-1";
+    await Promise.all([
+      deleteScopedDraft(userId, "asset"),
+      deleteScopedDraft(userId, "asset", scopeId),
+    ]);
+
+    const base = {
+      version: 3 as const,
+      kind: "asset" as const,
+      userId,
+      savedAt: "2026-08-01T10:00:00.000Z",
+    };
+    await saveScopedDraft({ ...base, revision: 1, contractNo: "ORDINARY" });
+    await saveScopedDraft(
+      { ...base, revision: 2, contractNo: "AUCTIONEER" },
+      scopeId
+    );
+
+    const [ordinary, auctioneer] = await Promise.all([
+      loadScopedDraft<typeof base & { revision: number; contractNo: string }>(
+        userId,
+        "asset"
+      ),
+      loadScopedDraft<typeof base & { revision: number; contractNo: string }>(
+        userId,
+        "asset",
+        scopeId
+      ),
+    ]);
+    expect(ordinary?.envelope.contractNo).toBe("ORDINARY");
+    expect(auctioneer?.envelope.contractNo).toBe("AUCTIONEER");
+
+    await Promise.all([
+      deleteScopedDraft(userId, "asset"),
+      deleteScopedDraft(userId, "asset", scopeId),
+    ]);
+  });
+
   it("restores original media and removes the draft transactionally", async () => {
     const userId = "indexed-media-user";
     await deleteScopedDraft(userId, "asset");
