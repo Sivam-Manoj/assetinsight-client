@@ -37,7 +37,6 @@ import { useColorMode } from "@/components/providers/ColorModeProvider";
 import OutlookConnectionDialog from "@/components/outlook/OutlookConnectionDialog";
 import { useAuthContext } from "@/context/AuthContext";
 import { useOutlookCalendar } from "@/hooks/useOutlookCalendar";
-import AuctioneerService from "@/services/auctioneer";
 
 const InputsHistoryModal = dynamic(
   () => import("@/components/modals/InputsHistoryModal"),
@@ -50,7 +49,6 @@ const navItems = [
     label: "Incoming",
     href: "/incoming",
     icon: MoveToInboxRounded,
-    requiresAuctioneer: true,
   },
   { label: "My Reports", href: "/reports", icon: DescriptionRounded },
   { label: "Previews", href: "/previews", icon: VisibilityRounded },
@@ -318,7 +316,6 @@ export default function Navbar({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showInputsHistory, setShowInputsHistory] = useState(false);
   const [showOutlookDialog, setShowOutlookDialog] = useState(false);
-  const [auctioneerEnabled, setAuctioneerEnabled] = useState(false);
 
   const isCollapsed = collapsed && desktop;
   const railWidth = isCollapsed ? 88 : 304;
@@ -330,23 +327,8 @@ export default function Navbar({
   const visibleNavItems = navItems.filter(
     (item) =>
       (!("requiresReportApprover" in item) || !item.requiresReportApprover || user?.isReportApprover) &&
-      (!("requiresReleaseManager" in item) || !item.requiresReleaseManager || user?.isReleaseManager) &&
-      (!("requiresAuctioneer" in item) || !item.requiresAuctioneer || auctioneerEnabled)
+      (!("requiresReleaseManager" in item) || !item.requiresReleaseManager || user?.isReleaseManager)
   );
-
-  useEffect(() => {
-    let active = true;
-    AuctioneerService.getStatus()
-      .then((status) => {
-        if (active) setAuctioneerEnabled(status.enabled && status.configured);
-      })
-      .catch(() => {
-        if (active) setAuctioneerEnabled(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
