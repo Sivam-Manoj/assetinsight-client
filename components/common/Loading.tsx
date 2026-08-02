@@ -1,9 +1,5 @@
 "use client";
 
-import Lottie from "lottie-react";
-import loadingAnimation from "@/public/loadingAnimation.json";
-import React from "react";
-
 type LoadingProps = {
   message?: string;
   height?: number;
@@ -12,22 +8,25 @@ type LoadingProps = {
 };
 
 export default function Loading({
-  message = "Loading...",
-  height = 200,
-  width = 200,
+  message = "Loading…",
   className = "",
 }: LoadingProps) {
   return (
-    <div className={`flex flex-col items-center justify-center p-6 ${className}`}>
-      <Lottie
-        animationData={loadingAnimation}
-        loop
-        autoplay
-        style={{ height, width }}
-      />
-      {message && (
-        <p className="mt-3 text-sm font-medium text-rose-800/80">{message}</p>
-      )}
+    <div
+      className={className}
+      role="status"
+      aria-live="polite"
+      style={{
+        minHeight: 160,
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+      }}
+    >
+      <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
+        <span className="app-spinner" aria-hidden style={{ width: 26, height: 26 }} />
+        {message ? <span className="app-muted" style={{ fontSize: 14 }}>{message}</span> : null}
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2 } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   getLotListingPreview,
   getLotListingSubmittedPreview,
@@ -853,7 +853,7 @@ export default function LotListingPreviewModal({
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
             Required selections
           </p>
-          <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+          <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
             N/A allowed
           </span>
         </div>
@@ -872,7 +872,7 @@ export default function LotListingPreviewModal({
                 role="radiogroup"
                 aria-label={`${group.label} for lot ${idx + 1}`}
               >
-                <div className="mb-1 text-[11px] font-semibold text-gray-700">
+                <div className="mb-1 text-[11px] font-semibold text-[var(--app-text-muted)]">
                   {group.label}
                 </div>
                 <div
@@ -889,8 +889,8 @@ export default function LotListingPreviewModal({
                         key={option}
                         className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                           checked
-                            ? "border-amber-500 bg-white text-amber-950 shadow-sm"
-                            : "border-gray-200 bg-white/70 text-gray-700 hover:border-amber-300 hover:bg-white"
+                            ? "border-amber-500 bg-[var(--app-panel)] text-amber-950 shadow-sm"
+                            : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-amber-300 hover:bg-[var(--app-panel)]"
                         }`}
                       >
                         <input
@@ -931,7 +931,7 @@ export default function LotListingPreviewModal({
               Optional shortcut for large listings. Individual lots can still be changed after this.
             </p>
           </div>
-          <span className="self-start rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+          <span className="self-start rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
             {lots.length} lots
           </span>
         </div>
@@ -946,8 +946,8 @@ export default function LotListingPreviewModal({
                 onClick={() => applyRunningConditionToAllLots(option)}
                 className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
                   selected
-                    ? "border-amber-500 bg-white text-amber-950 shadow-sm"
-                    : "border-amber-200 bg-white/80 text-amber-900 hover:border-amber-400 hover:bg-white"
+                    ? "border-amber-500 bg-[var(--app-panel)] text-amber-950 shadow-sm"
+                    : "border-amber-200 bg-[var(--app-panel)] text-amber-900 hover:border-amber-400 hover:bg-[var(--app-panel)]"
                 }`}
               >
                 {option}
@@ -972,7 +972,7 @@ export default function LotListingPreviewModal({
       )}
 
       {specPdfUrl && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-[var(--app-panel)] px-4 py-3 shadow-sm">
           <div className="mr-auto">
             <p className="text-sm font-semibold text-slate-900">CR</p>
           </div>
@@ -995,7 +995,7 @@ export default function LotListingPreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadCrDocx()}
-            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-white px-3 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-[var(--app-panel)] px-3 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
             title={crDocxUrl ? "Download editable CR Word file" : "Generate and download editable CR Word file"}
           >
             <Download className="h-4 w-4" />
@@ -1017,26 +1017,26 @@ export default function LotListingPreviewModal({
           </datalist>
           {/* Listing Details */}
           <div className="space-y-6 max-w-5xl mx-auto pb-28">
-            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-purple-600">📋</span>
                 Listing Details
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Contract Number *
                   </label>
                   <input
                     type="text"
                     value={previewData?.contract_no || ""}
                     onChange={(e) => updateField("contract_no", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     placeholder="e.g., CTR-2024-001"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Bank
                   </label>
                   <button
@@ -1047,24 +1047,24 @@ export default function LotListingPreviewModal({
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                       previewData?.bank_photos_enabled
                         ? "border-purple-400 bg-purple-50 text-purple-700"
-                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                        : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
                     }`}
                     aria-pressed={!!previewData?.bank_photos_enabled}
                   >
                     <span>Include all photos in CR</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs shadow-sm">
                       {previewData?.bank_photos_enabled ? "On" : "Off"}
                     </span>
                   </button>
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Currency
                   </label>
                   <select
                     value={previewData?.currency || "CAD"}
                     onChange={(e) => updateField("currency", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   >
                     <option value="CAD">CAD - Canadian Dollar</option>
                     <option value="USD">USD - US Dollar</option>
@@ -1075,11 +1075,11 @@ export default function LotListingPreviewModal({
               </div>
             </div>
 
-            <div className="rounded-xl border border-[var(--app-border)] bg-white p-4 shadow-[var(--app-shadow-card)] sm:p-5">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4 shadow-sm sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h4 className="text-sm font-bold text-gray-900">Damages</h4>
-                  <p className="mt-1 text-sm text-gray-600">
+                  <h4 className="text-sm font-bold text-[var(--app-text)]">Damages</h4>
+                  <p className="mt-1 text-sm text-[var(--app-text-muted)]">
                     Applies to lot numbers up to and including 1000. Lot numbers above 1000 never require Damage Analysis.
                   </p>
                 </div>
@@ -1091,7 +1091,7 @@ export default function LotListingPreviewModal({
                   className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
                     includeDamageAnalysis
                       ? "border-purple-500 bg-purple-50 text-purple-700"
-                      : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
                   }`}
                 >
                   {includeDamageAnalysis ? "Included" : "Excluded"}
@@ -1100,20 +1100,20 @@ export default function LotListingPreviewModal({
             </div>
 
             {/* Quick Stats */}
-            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
-              <h4 className="text-sm font-bold text-gray-900 mb-3">📊 Listing Statistics</h4>
+            <div className="bg-[var(--app-panel)] from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4">
+              <h4 className="text-sm font-bold text-[var(--app-text)] mb-3">📊 Listing Statistics</h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">{lotsArray.length}</div>
-                  <div className="text-xs text-gray-600">Total Lots</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Total Lots</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{previewData?.currency || "CAD"}</div>
-                  <div className="text-xs text-gray-600">Currency</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Currency</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{imageUrls.length}</div>
-                  <div className="text-xs text-gray-600">Images</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Images</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-amber-600">
@@ -1121,7 +1121,7 @@ export default function LotListingPreviewModal({
                       ? `${previewData.currency || "CAD"} ${displayedTotalValue.toLocaleString()}`
                       : "-"}
                   </div>
-                  <div className="text-xs text-gray-600">Total Value</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Total Value</div>
                 </div>
               </div>
             </div>
@@ -1189,11 +1189,11 @@ export default function LotListingPreviewModal({
                     <ChevronRight className="h-8 w-8" />
                   </button>
                 )}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={galleryLotImages.entries[galleryLotImages.currentIdx]?.url}
                   alt={`Photo ${galleryLotImages.currentIdx + 1}`}
-                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-2xl"
+                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-sm"
                 />
               </div>
               <div className="bg-black/70 p-3" onClick={(e) => e.stopPropagation()}>
@@ -1209,7 +1209,7 @@ export default function LotListingPreviewModal({
                           : 'opacity-60 hover:opacity-100'
                       }`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      { }
                       <img src={entry.url} alt={`Photo ${i + 1} thumbnail`} className="w-full h-full object-cover" />
                     </button>
                   ))}
@@ -1220,7 +1220,7 @@ export default function LotListingPreviewModal({
 
           {/* Lots Section */}
           <div className="mt-6 space-y-4 max-w-5xl mx-auto">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900">Lots ({lotsArray.length})</h3>
+            <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)]">Lots ({lotsArray.length})</h3>
             {lotsArray.length > 0 ? (
               <div className="space-y-4">
                 {lotsArray.map((lot, idx) => {
@@ -1235,9 +1235,9 @@ export default function LotListingPreviewModal({
                   };
 
                   return (
-                    <div key={idx} className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] shadow-[var(--app-shadow-card)] backdrop-blur">
-                      <div className="mb-3 flex items-center justify-between border-t-4 border-purple-500 bg-white px-4 py-4 shadow-sm">
-                        <div className="text-sm font-semibold text-gray-900">
+                    <div key={idx} className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] shadow-sm ">
+                      <div className="mb-3 flex items-center justify-between border-t-4 border-purple-500 bg-[var(--app-panel)] px-4 py-4 shadow-sm">
+                        <div className="text-sm font-semibold text-[var(--app-text)]">
                           Lot #{getLotDisplayNumber(lot, idx)}
                         </div>
                         <button
@@ -1251,7 +1251,7 @@ export default function LotListingPreviewModal({
                       {/* Lot Images */}
                       <div className="mb-3">
                           <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-2 text-xs text-gray-600">
+                          <label className="flex items-center gap-2 text-xs text-[var(--app-text-muted)]">
                             <Image className="h-3.5 w-3.5" />
                             Photos ({lotImages.length})
                           </label>
@@ -1270,7 +1270,7 @@ export default function LotListingPreviewModal({
                             type="button"
                             disabled={uploadingLotKey === lotUploadKey}
                             onClick={() => document.getElementById(uploadInputId)?.click()}
-                            className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                            className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
                           >
                             <Upload className="h-3 w-3" />
                             {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -1281,10 +1281,10 @@ export default function LotListingPreviewModal({
                             {lotImages.slice(0, 10).map(({ url, globalIndex }, imgIdx) => (
                               <div
                                 key={imgIdx}
-                                className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-purple-500 transition-all"
+                                className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-purple-500 transition-all"
                                 onClick={() => openLotGallery(imgIdx)}
                               >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                { }
                                 <img src={url} alt={`Photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
                                 <button
                                   type="button"
@@ -1303,11 +1303,11 @@ export default function LotListingPreviewModal({
                             {lotImages.length > 10 && (
                               <button
                                 type="button"
-                                className="flex-shrink-0 w-16 h-16 rounded-lg bg-gray-100 border-2 border-gray-300 cursor-pointer hover:bg-gray-200 flex items-center justify-center"
+                                className="flex-shrink-0 w-16 h-16 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 flex items-center justify-center"
                                 onClick={() => openLotGallery(10)}
                                 aria-label={`Open ${lotImages.length - 10} more photos`}
                               >
-                                <span className="text-xs font-semibold text-gray-600">+{lotImages.length - 10}</span>
+                                <span className="text-xs font-semibold text-[var(--app-text-muted)]">+{lotImages.length - 10}</span>
                               </button>
                             )}
                           </div>
@@ -1317,63 +1317,63 @@ export default function LotListingPreviewModal({
                       {/* Lot Fields */}
                       <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Lot #</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Lot #</label>
                           <input
                             type="text"
                             value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                             onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder={String(idx + 1)}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Title</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Title</label>
                           <input
                             type="text"
                             value={lot.title || ""}
                             onChange={(e) => updateLot(idx, "title", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="Lot title"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Est. Value</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Est. Value</label>
                           <input
                             type="text"
                             value={lot.estimated_value || ""}
                             onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="0.00"
                           />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="block text-xs text-gray-600 mb-1">Description</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
                           <textarea
                             value={lot.description || ""}
                             onChange={(e) => updateLot(idx, "description", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-y min-h-[80px]"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-y min-h-[80px]"
                             placeholder="Description"
                             rows={3}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Category</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Category</label>
                           <input
                             type="text"
                             list="lot-listing-auctioneer-categories"
                             value={lot.categories || ""}
                             onChange={(e) => updateLot(idx, "categories", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="Category"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Item Condition</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Item Condition</label>
                           <input
                             type="text"
                             value={lot.item_condition || ""}
                             onChange={(e) => updateLot(idx, "item_condition", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="Excel item condition"
                           />
                         </div>
@@ -1398,22 +1398,22 @@ export default function LotListingPreviewModal({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Serial Number</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Serial Number</label>
                           <input
                             type="text"
                             value={lot.serial_number || ""}
                             onChange={(e) => updateLot(idx, "serial_number", e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="Serial/VIN"
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">Quantity</label>
+                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Quantity</label>
                           <input
                             type="number"
                             value={lot.quantity || 1}
                             onChange={(e) => updateLot(idx, "quantity", parseInt(e.target.value) || 1)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             min={1}
                           />
                         </div>
@@ -1423,14 +1423,14 @@ export default function LotListingPreviewModal({
                 })}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-[var(--app-text-muted)]">
                 No lots in this listing yet.
               </div>
             )}
           </div>
 
           {/* Action Buttons */}
-          <div className="sticky bottom-0 z-10 mt-6 flex max-w-5xl mx-auto flex-wrap items-center justify-between gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-4 pb-1 backdrop-blur">
+          <div className="sticky bottom-0 z-10 mt-6 flex max-w-5xl mx-auto flex-wrap items-center justify-between gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-4 pb-1 ">
             <div className="flex items-center gap-2">
               {hasChanges && (
                 <span className="text-xs text-amber-600">Changes will be saved when files generate</span>
@@ -1443,7 +1443,7 @@ export default function LotListingPreviewModal({
               <button
                 onClick={handleSubmitForApproval}
                 disabled={submitting || saving || filesGenerating || filesRegenerating}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/30 transition-all"
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-[var(--app-panel)] from-purple-500 to-purple-600 rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-purple-500/30 transition-all"
               >
                 {submitting || saving ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />

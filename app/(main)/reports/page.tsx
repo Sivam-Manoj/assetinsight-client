@@ -4,36 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  InputAdornment,
-  LinearProgress,
-  MenuItem,
-  Paper,
-  Select,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import {
-  CollectionsRounded,
-  DeleteOutlineRounded,
-  DescriptionRounded,
-  InsertDriveFileRounded,
-  MergeRounded,
-  PictureAsPdfRounded,
-  RefreshRounded,
-  RestartAltRounded,
-  SearchRounded,
-  SendRounded,
-  TableChartRounded,
-  VisibilityRounded,
-} from "@mui/icons-material";
-import { toast } from "react-toastify";
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  Merge,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Send,
+  Trash2,
+} from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import { ReportsService, type PdfReport } from "@/services/reports";
 import { deleteAssetReport, getAssetReports, resubmitReport, type AssetReport } from "@/services/assets";
 import { deleteLotListing, getLotListings, resubmitLotListing, type LotListing } from "@/services/lotListing";
@@ -44,7 +26,6 @@ import {
 import AuctioneerService, {
   type AuctioneerDeliverySummary,
 } from "@/services/auctioneer";
-import { EmptyState, SurfaceCard } from "@/components/common/WorkspaceUI";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -139,7 +120,6 @@ function auctioneerDeliveryPresentation(
   };
   return values[delivery.state] || values.not_ready;
 }
-
 function typeLabel(type?: string) {
   const normalized = String(type || "").toLowerCase();
   if (normalized === "realestate" || normalized.includes("real")) {
@@ -280,72 +260,13 @@ function hasGroupDownloadVariants(group: ReportGroup) {
   });
 }
 
-function actionButtonSx(kind: "download" | "delete"): Record<string, any> {
-  if (kind === "delete") {
-    return {
-      minWidth: 52,
-      minHeight: 54,
-      px: 0.75,
-      py: 0.65,
-      borderRadius: 1.25,
-      fontWeight: 700,
-      fontSize: 10,
-      lineHeight: 1.1,
-      textTransform: "none",
-      whiteSpace: "normal",
-      borderColor: "rgba(220,38,38,0.28)",
-      color: "#dc2626",
-      bgcolor: "var(--app-panel-soft)",
-      flexDirection: "column",
-      gap: 0.35,
-      "& .MuiButton-startIcon": { m: 0 },
-      "&:hover": {
-        borderColor: "#dc2626",
-        bgcolor: "rgba(220,38,38,0.06)",
-      },
-    };
-  }
-
-  return {
-    minWidth: 50,
-    minHeight: 54,
-    px: 0.65,
-    py: 0.65,
-    borderRadius: 1.25,
-    fontWeight: 700,
-    fontSize: 10,
-    lineHeight: 1.1,
-    textTransform: "none",
-    whiteSpace: "normal",
-    color: "var(--app-text)",
-    border: "1px solid var(--app-border)",
-    background: "var(--app-panel-soft)",
-    boxShadow: "none",
-    flexDirection: "column",
-    gap: 0.35,
-    "& .MuiButton-startIcon": { m: 0 },
-    "&:hover": {
-      borderColor: "var(--app-accent)",
-      color: "var(--app-accent)",
-      background: "var(--app-accent-soft)",
-      boxShadow: "none",
-    },
-    "&.Mui-disabled": {
-      color: "var(--app-text-muted)",
-      background: "var(--app-panel-soft)",
-      boxShadow: "none",
-    },
-  };
-}
-
 function fileActionIcon(
   variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images"
 ) {
-  if (variant === "pdf") return <VisibilityRounded sx={{ fontSize: 18 }} />;
-  if (variant === "specPdf") return <PictureAsPdfRounded sx={{ fontSize: 18 }} />;
-  if (variant === "xlsx") return <TableChartRounded sx={{ fontSize: 18 }} />;
-  if (variant === "images") return <CollectionsRounded sx={{ fontSize: 18 }} />;
-  return <DescriptionRounded sx={{ fontSize: 18 }} />;
+  if (variant === "xlsx") return <FileSpreadsheet className="size-4" />;
+  if (variant === "images") return <FileArchive className="size-4" />;
+  if (variant === "specPdf") return <FileImage className="size-4" />;
+  return <FileText className="size-4" />;
 }
 
 function getFirstReportImage(lots: any[], report: any): string | undefined {
@@ -383,26 +304,29 @@ function GeneratingFilesProgress({
 }) {
   const percent = Math.max(2, Math.min(100, Number(progress?.progressPercent || 0)));
   return (
-    <Box sx={{ minWidth: { xs: 180, sm: 220 } }}>
-      <Stack spacing={0.75}>
-        <Typography
-          sx={{
-            color: "#2563eb",
-            fontSize: 12,
-            fontWeight: 800,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {progress?.message || fallbackMessage}
-        </Typography>
-        <LinearProgress variant="determinate" value={percent} sx={{ height: 6, borderRadius: 1 }} />
-        {progress?.totalLots ? (
-          <Typography variant="caption" sx={{ color: "var(--app-text-muted)" }}>
-            Lot {progress.currentLot || 0} of {progress.totalLots} · {Math.round(percent)}%
-          </Typography>
-        ) : null}
-      </Stack>
-    </Box>
+    <div className="min-w-44 space-y-1.5">
+      <p className="text-xs font-semibold text-[var(--app-accent)]">
+        {progress?.message || fallbackMessage}
+      </p>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-[var(--app-panel-alt)]"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent)}
+      >
+        <span
+          className="block h-full rounded-full bg-[var(--app-accent)] transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+      {progress?.totalLots ? (
+        <p className="text-xs text-[var(--app-text-muted)]">
+          Lot {progress.currentLot || 0} of {progress.totalLots} ·{" "}
+          {Math.round(percent)}%
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1124,7 +1048,7 @@ export default function ReportsPage() {
     setPage(1);
   };
 
-  const renderFileControls = (group: ReportGroup, singleLine = false) => {
+  const renderFileControls = (group: ReportGroup) => {
     const hasDownloads = hasGroupDownloadVariants(group);
     const workflowProgress = {
       ...(group.generationProgress || {}),
@@ -1139,14 +1063,18 @@ export default function ReportsPage() {
       (group.reportStatus === "preview" && Boolean(group.isGeneratingFiles));
     const isPreviewReady =
       group.workflowStage === "preview_ready" ||
-      (!group.workflowStage && group.reportStatus === "preview" && !group.isGeneratingFiles);
+      (!group.workflowStage &&
+        group.reportStatus === "preview" &&
+        !group.isGeneratingFiles);
     const showGeneratingOnly =
       group.workflowStage === "generating_files" ||
       (!group.workflowStage && Boolean(group.isGeneratingFiles) && !hasDownloads);
     const showErrorOnly =
       (group.workflowStage === "error" || group.generationState === "error") &&
       !hasDownloads &&
-      !["processing", "preview", "declined"].includes(String(group.reportStatus || ""));
+      !["processing", "preview", "declined"].includes(
+        String(group.reportStatus || "")
+      );
     const downloadable = group.downloadable !== false;
 
     if (isPreparingPreview) {
@@ -1157,72 +1085,65 @@ export default function ReportsPage() {
         />
       );
     }
-
     if (isPreviewReady && !hasDownloads) {
       return (
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-          <Typography sx={{ color: "#2563eb", fontSize: 12, fontWeight: 800 }}>
-            Preview ready for your review.
-          </Typography>
-          <Button size="small" variant="outlined" onClick={() => router.push("/previews")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-[var(--app-accent)]">
+            Preview ready for review
+          </span>
+          <button
+            type="button"
+            className="rounded-md border border-[var(--app-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+            onClick={() => router.push("/previews")}
+          >
             Open preview
-          </Button>
-        </Stack>
+          </button>
+        </div>
       );
     }
-
     if (showGeneratingOnly) {
       return <GeneratingFilesProgress progress={workflowProgress} />;
     }
-
     if (showErrorOnly) {
       return (
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-          <Typography sx={{ color: "#dc2626", fontSize: 12, fontWeight: 700 }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-[var(--app-danger)]">
             {group.jobError || "File generation failed."}
-          </Typography>
-          <Button size="small" variant="outlined" onClick={() => void handleRetry(group)}>
+          </span>
+          <button
+            type="button"
+            className="rounded-md border border-[var(--app-danger-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)]"
+            onClick={() => void handleRetry(group)}
+          >
             Retry
-          </Button>
-        </Stack>
+          </button>
+        </div>
       );
     }
-
     if (group.workflowStage === "awaiting_approval") {
       return (
-        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+        <span className="text-xs font-semibold text-[var(--app-warning)]">
           Files ready; awaiting approval
-        </Typography>
+        </span>
       );
     }
-
     if (group.workflowStage === "awaiting_release") {
       return (
-        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+        <span className="text-xs font-semibold text-[var(--app-warning)]">
           Approved; awaiting release
-        </Typography>
+        </span>
       );
     }
-
     if (!downloadable) {
       return (
-        <Typography sx={{ color: "#b45309", fontSize: 12, fontWeight: 800 }}>
+        <span className="text-xs font-semibold text-[var(--app-warning)]">
           Files available after release
-        </Typography>
+        </span>
       );
     }
 
     return (
-      <Stack
-        direction="row"
-        spacing={singleLine ? 0.4 : 0.55}
-        useFlexGap
-        sx={{
-          minWidth: 0,
-          flexWrap: singleLine ? "nowrap" : "wrap",
-          alignItems: "center",
-        }}
-      >
+      <div className="flex flex-wrap items-center gap-1.5">
         {(["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map(
           (variant) => {
             const file = group.variants[variant];
@@ -1233,532 +1154,496 @@ export default function ReportsPage() {
               (!!file.approvalStatus && file.approvalStatus !== "approved");
             const label = actionLabel(variant);
             return (
-              <Tooltip key={variant} title={`Download ${label}`} arrow>
-                <span>
-                  <Button
-                    size="small"
-                    startIcon={fileActionIcon(variant)}
-                    onClick={() => handleDownload(file._id)}
-                    disabled={disabled}
-                    sx={{
-                      ...actionButtonSx("download"),
-                      minWidth: singleLine ? (variant === "crDocx" ? 54 : 44) : variant === "crDocx" ? 62 : 50,
-                      minHeight: singleLine ? 50 : 54,
-                      px: singleLine ? 0.35 : 0.65,
-                      fontSize: singleLine ? 9 : 10,
-                      flex: "0 0 auto",
-                    }}
-                  >
-                    {downloadingId === file._id ? "..." : label}
-                  </Button>
-                </span>
-              </Tooltip>
+              <button
+                key={variant}
+                type="button"
+                title={`Download ${label}`}
+                aria-label={`Download ${label}`}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void handleDownload(file._id)}
+                disabled={disabled}
+              >
+                {downloadingId === file._id ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : (
+                  fileActionIcon(variant)
+                )}
+                <span>{label}</span>
+              </button>
             );
           }
         )}
-      </Stack>
+      </div>
     );
   };
 
-  const renderReportActions = (group: ReportGroup, singleLine = false) => (
-    <Stack
-      direction="row"
-      spacing={singleLine ? 0.4 : 0.55}
-      useFlexGap
-      sx={{ flexWrap: singleLine ? "nowrap" : "wrap", alignItems: "center", minWidth: 0 }}
-    >
-      {group.auctioneerDelivery ? (
-        <Tooltip
-          title={
-            group.auctioneerDelivery.state === "not_ready"
-              ? "Available after approval, release, and file generation"
-              : group.auctioneerDelivery.state === "sent"
-                ? "This report has been sent to Auctioneer"
-                : group.auctioneerDelivery.state === "needs_reconciliation"
-                  ? "Resolve the uncertain Unknown Lot before retrying"
-                  : group.auctioneerDelivery.state === "failed"
-                    ? group.auctioneerDelivery.canSend === false
-                      ? "Retry is available after the report is approved, released, and its files are ready"
-                      : "Retry the failed Auctioneer delivery"
-                    : "Send approved data and final photos to Auctioneer"
-          }
-          arrow
-        >
-          <span>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<SendRounded sx={{ fontSize: 18 }} />}
-              onClick={() => setDeliveryDialogItem(group.auctioneerDelivery || null)}
-              disabled={
-                ["not_ready", "queued", "sending", "sent"].includes(
-                  group.auctioneerDelivery.state
-                ) ||
-                (group.auctioneerDelivery.state === "failed" &&
-                  group.auctioneerDelivery.canSend === false)
-              }
-              sx={{
-                ...actionButtonSx("download"),
-                minWidth: singleLine ? 58 : 70,
-                minHeight: singleLine ? 50 : 54,
-                px: singleLine ? 0.35 : 0.65,
-                fontSize: singleLine ? 9 : 10,
-                flex: "0 0 auto",
-              }}
-            >
-              {group.auctioneerDelivery.state === "failed"
-                ? "Retry"
-                : group.auctioneerDelivery.state === "needs_reconciliation"
-                  ? "Resolve"
-                  : group.auctioneerDelivery.state === "sent"
-                    ? "Sent"
-                    : group.auctioneerDelivery.state === "queued" ||
-                        group.auctioneerDelivery.state === "sending"
-                      ? "Sending"
-                      : "Send to Auctioneer"}
-            </Button>
-          </span>
-        </Tooltip>
-      ) : null}
-      {String(group.type || "").toLowerCase() === "asset" ? (
-        <Tooltip title="Merge this report with other Asset reports using the same contract" arrow>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<MergeRounded sx={{ fontSize: 18 }} />}
+  const renderReportActions = (group: ReportGroup) => {
+    const delivery = group.auctioneerDelivery;
+    const deliveryDisabled = Boolean(
+      delivery &&
+        (["not_ready", "queued", "sending", "sent"].includes(delivery.state) ||
+          (delivery.state === "failed" && delivery.canSend === false))
+    );
+    const deliveryLabel =
+      delivery?.state === "failed"
+        ? "Retry delivery"
+        : delivery?.state === "needs_reconciliation"
+          ? "Resolve"
+          : delivery?.state === "sent"
+            ? "Sent"
+            : delivery?.state === "queued" || delivery?.state === "sending"
+              ? "Sending"
+              : "Send";
+    const deliveryTitle =
+      delivery?.state === "not_ready"
+        ? "Available after approval, release, and file generation"
+        : delivery?.state === "sent"
+          ? "This report has been sent to Auctioneer"
+          : delivery?.state === "needs_reconciliation"
+            ? "Resolve the uncertain Unknown Lot before retrying"
+            : delivery?.state === "failed"
+              ? delivery.canSend === false
+                ? "Retry is available after approval, release, and file generation"
+                : "Retry the failed Auctioneer delivery"
+              : "Send approved data and final photos to Auctioneer";
+
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {delivery ? (
+          <button
+            type="button"
+            title={deliveryTitle}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => setDeliveryDialogItem(delivery)}
+            disabled={deliveryDisabled}
+          >
+            <Send className="size-3.5" />
+            {deliveryLabel}
+          </button>
+        ) : null}
+        {String(group.type || "").toLowerCase() === "asset" ? (
+          <button
+            type="button"
+            title="Merge with other Asset reports using the same contract"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]"
             onClick={() => setMergeAnchorId(group.key)}
-            sx={{
-              ...actionButtonSx("download"),
-              minWidth: singleLine ? 60 : 72,
-              minHeight: singleLine ? 50 : 54,
-              px: singleLine ? 0.35 : 0.65,
-              fontSize: singleLine ? 9 : 10,
-              flex: "0 0 auto",
-            }}
           >
+            <Merge className="size-3.5" />
             Merge
-          </Button>
-        </Tooltip>
-      ) : null}
-      <Tooltip title="Permanently delete this report" arrow>
-        <span>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<DeleteOutlineRounded sx={{ fontSize: 18 }} />}
-            onClick={() => handleDelete(group)}
-            disabled={deletingKey === group.key}
-            sx={{
-              ...actionButtonSx("delete"),
-              minWidth: singleLine ? 48 : 52,
-              minHeight: singleLine ? 50 : 54,
-              px: singleLine ? 0.35 : 0.75,
-              fontSize: singleLine ? 9 : 10,
-              flex: "0 0 auto",
-            }}
-          >
-            {deletingKey === group.key ? "..." : "Delete"}
-          </Button>
-        </span>
-      </Tooltip>
-    </Stack>
-  );
+          </button>
+        ) : null}
+        <button
+          type="button"
+          title="Permanently delete this report"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-danger-border)] px-2.5 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={() => void handleDelete(group)}
+          disabled={deletingKey === group.key}
+        >
+          {deletingKey === group.key ? (
+            <RefreshCw className="size-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="size-3.5" />
+          )}
+          Delete
+        </button>
+      </div>
+    );
+  };
+
+  const reportPresentation = (group: ReportGroup) => {
+    const hasDownloads = hasGroupDownloadVariants(group);
+    const status = statusTone(
+      group.approvalStatus,
+      Boolean(group.isGeneratingFiles) && !hasDownloads,
+      group.release_status,
+      group.generationState,
+      group.reportStatus,
+      group.workflowStage
+    );
+    const deliveryStatus = auctioneerDeliveryPresentation(
+      group.auctioneerDelivery
+    );
+    const title = group.contract_no
+      ? `${typeLabel(group.type)} · ${group.contract_no}`
+      : group.address || typeLabel(group.type);
+    return { status, deliveryStatus, title };
+  };
 
   return (
-    <Stack
-      spacing={2.25}
-      sx={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}
-    >
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1.5}
-        sx={{ alignItems: { xs: "flex-start", sm: "center" }, justifyContent: "space-between" }}
-      >
-        <Box sx={{ minWidth: 0 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-            <Typography variant="h3" sx={{ color: "var(--app-text)", fontWeight: 800 }}>
-              My Reports
-            </Typography>
-            <Chip
-              size="small"
-              label={groups.length}
-              sx={{ borderRadius: 1.25, fontWeight: 800, bgcolor: "var(--app-panel-soft)" }}
-            />
-          </Stack>
-          <Typography sx={{ mt: 0.65, color: "var(--app-text-muted)" }}>
-            Review report status and download each available file directly.
-          </Typography>
-        </Box>
-        <Button
-          variant="outlined"
-          startIcon={refreshing ? <CircularProgress color="inherit" size={16} /> : <RefreshRounded />}
+    <main className="w-full min-w-0 space-y-5 overflow-x-hidden">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+              My reports
+            </h1>
+            <span className="rounded-md bg-[var(--app-panel-alt)] px-2 py-0.5 text-xs font-bold text-[var(--app-text-muted)]">
+              {groups.length}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+            Track report status and download every available deliverable.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => void handleManualRefresh()}
           disabled={loading || refreshing}
-          sx={{ borderRadius: 1.5, whiteSpace: "nowrap" }}
         >
+          <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh"}
-        </Button>
-      </Stack>
+        </button>
+      </header>
 
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 1.5, md: 2 },
-          border: "1px solid var(--app-border)",
-          borderRadius: 2,
-          bgcolor: "var(--app-panel-soft)",
-          minWidth: 0,
-        }}
+      <section
+        aria-label="Report filters"
+        className="grid gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3 sm:grid-cols-2 lg:grid-cols-[minmax(240px,1.4fr)_minmax(140px,.7fr)_minmax(170px,.8fr)_120px_auto]"
       >
-        <Box
-          sx={{
-            display: "grid",
-            gap: 1.25,
-            alignItems: "center",
-            gridTemplateColumns: {
-              xs: "minmax(0, 1fr)",
-              sm: "repeat(2, minmax(0, 1fr))",
-              lg: "minmax(260px, 1.5fr) minmax(145px, .65fr) minmax(175px, .8fr) minmax(125px, .55fr) auto",
-            },
-          }}
-        >
-          <TextField
-            size="small"
+        <label className="relative block">
+          <span className="sr-only">Search reports</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--app-text-muted)]" />
+          <input
+            type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search reports..."
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRounded sx={{ color: "var(--app-text-muted)" }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
+            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] pl-9 pr-3 text-sm text-[var(--app-text)] outline-none placeholder:text-[var(--app-text-muted)] focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           />
-          <Select
-            size="small"
+        </label>
+        <label>
+          <span className="sr-only">Report type</span>
+          <select
             value={typeFilter}
-            displayEmpty
-            onChange={(event) => setTypeFilter(String(event.target.value))}
+            onChange={(event) => setTypeFilter(event.target.value)}
+            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
           >
-            <MenuItem value="">All types</MenuItem>
+            <option value="">All types</option>
             {availableTypes.map((type) => (
-              <MenuItem key={type} value={type}>
+              <option key={type} value={type}>
                 {typeLabel(type)}
-              </MenuItem>
+              </option>
             ))}
-          </Select>
-          <Select
-            size="small"
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Sort reports</span>
+          <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
           >
-            <MenuItem value="date-desc">Newest first</MenuItem>
-            <MenuItem value="date-asc">Oldest first</MenuItem>
-            <MenuItem value="value-desc">Value high to low</MenuItem>
-            <MenuItem value="value-asc">Value low to high</MenuItem>
-          </Select>
-          <Select
-            size="small"
+            <option value="date-desc">Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="value-desc">Value high to low</option>
+            <option value="value-asc">Value low to high</option>
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Rows per page</span>
+          <select
             value={pageSize}
             onChange={(event) => setPageSize(Number(event.target.value))}
+            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
           >
             {[10, 20, 50].map((size) => (
-              <MenuItem key={size} value={size}>
+              <option key={size} value={size}>
                 {size} rows
-              </MenuItem>
+              </option>
             ))}
-          </Select>
-          <Button
-            variant="outlined"
-            startIcon={<RestartAltRounded />}
-            onClick={resetFilters}
-            sx={{ borderRadius: 1.5, whiteSpace: "nowrap" }}
-          >
-            Reset
-          </Button>
-        </Box>
-      </Paper>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] px-3 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+          onClick={resetFilters}
+        >
+          <RotateCcw className="size-4" />
+          Reset
+        </button>
+      </section>
 
       {loading ? (
-        <Paper
-          elevation={0}
-          sx={{ minHeight: 320, display: "grid", placeItems: "center", border: "1px solid var(--app-border)", borderRadius: 2 }}
+        <section
+          className="grid min-h-80 place-items-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]"
+          role="status"
+          aria-label="Loading reports"
         >
-          <Stack spacing={2} sx={{ alignItems: "center" }}>
-            <CircularProgress />
-            <Typography sx={{ color: "var(--app-text-muted)" }}>Loading reports...</Typography>
-          </Stack>
-        </Paper>
+          <div className="flex items-center gap-2 text-sm text-[var(--app-text-muted)]">
+            <RefreshCw className="size-4 animate-spin text-[var(--app-accent)]" />
+            Loading reports...
+          </div>
+        </section>
       ) : error ? (
-        <Alert severity="error">{error}</Alert>
+        <div
+          role="alert"
+          className="rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-4 py-3 text-sm text-[var(--app-danger)]"
+        >
+          {error}
+        </div>
       ) : filteredGroups.length === 0 ? (
-        <EmptyState
-          title="No reports found"
-          description={
-            groups.length === 0
+        <section className="rounded-xl border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-5 py-12 text-center">
+          <FileText className="mx-auto size-6 text-[var(--app-text-muted)]" />
+          <h2 className="mt-3 font-semibold text-[var(--app-text)]">
+            No reports found
+          </h2>
+          <p className="mx-auto mt-1 max-w-md text-sm text-[var(--app-text-muted)]">
+            {groups.length === 0
               ? "Create a report from the dashboard to populate this page."
-              : "No reports match the current search and filters."
-          }
-        />
+              : "No reports match the current search and filters."}
+          </p>
+        </section>
       ) : (
         <>
-          <Stack
-            spacing={1.25}
-            sx={{ display: "flex", "@media (min-width: 1280px)": { display: "none" } }}
-          >
+          <ul className="space-y-3 xl:hidden">
             {paginatedGroups.map((group) => {
-              const hasDownloads = hasGroupDownloadVariants(group);
-              const status = statusTone(
-                group.approvalStatus,
-                Boolean(group.isGeneratingFiles) && !hasDownloads,
-                group.release_status,
-                group.generationState,
-                group.reportStatus,
-                group.workflowStage
-              );
-              const deliveryStatus = auctioneerDeliveryPresentation(
-                group.auctioneerDelivery
-              );
-              const title = group.contract_no
-                ? `${typeLabel(group.type)} - ${group.contract_no}`
-                : group.address || typeLabel(group.type);
+              const { status, deliveryStatus, title } =
+                reportPresentation(group);
               return (
-                <SurfaceCard key={group.key} sx={{ p: { xs: 1.75, sm: 2 }, borderRadius: 2, overflow: "hidden" }}>
-                  <Stack spacing={1.6}>
-                    <Stack direction="row" spacing={1.25} sx={{ minWidth: 0, alignItems: "flex-start" }}>
-                      <Box
-                        sx={{
-                          width: 68,
-                          height: 68,
-                          flex: "0 0 68px",
-                          border: "1px solid var(--app-border)",
-                          borderRadius: 1.25,
-                          overflow: "hidden",
-                          bgcolor: "rgba(148,163,184,.08)",
-                          display: "grid",
-                          placeItems: "center",
-                        }}
+                <li
+                  key={group.key}
+                  className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="break-words font-semibold text-[var(--app-text)]">
+                        {title}
+                      </h2>
+                      <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                        {typeLabel(group.type)} ·{" "}
+                        {new Date(group.createdAt).toLocaleDateString()}
+                      </p>
+                      {group.lotSummary ? (
+                        <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
+                          {group.lotSummary}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span
+                      className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold"
+                      style={{ backgroundColor: status.bg, color: status.color }}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {[
+                      ["Lots", `${group.lotCount || "—"}`],
+                      ["Market value", group.fairMarketValue || "—"],
+                      [
+                        "Client",
+                        group.address && group.address !== group.contract_no
+                          ? group.address
+                          : "—",
+                      ],
+                      ["Delivery", deliveryStatus?.label || "—"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] p-2"
                       >
-                        {group.thumbnail ? (
-                          <Box component="img" src={group.thumbnail} alt="" loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        ) : (
-                          <InsertDriveFileRounded sx={{ color: "var(--app-text-muted)" }} />
-                        )}
-                      </Box>
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography sx={{ color: "var(--app-text)", fontWeight: 800, overflowWrap: "anywhere" }}>
-                          {title}
-                        </Typography>
-                        {group.contract_no ? (
-                          <Typography variant="body2" sx={{ mt: 0.25, color: "var(--app-text-muted)" }}>
-                            Contract: {group.contract_no}
-                          </Typography>
-                        ) : null}
-                        {group.lotSummary ? (
-                          <Typography variant="body2" sx={{ mt: 0.25, color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>
-                            {group.lotSummary}
-                          </Typography>
-                        ) : null}
-                        {group.isMergedReport ? (
-                          <Typography sx={{ color: "#2563eb", mt: 0.35, fontSize: 12, fontWeight: 800 }}>
-                            Merged from {group.mergedSourceCount || 2} reports
-                          </Typography>
-                        ) : null}
-                      </Box>
-                      <Stack spacing={0.6} sx={{ alignItems: "flex-end", flexShrink: 0 }}>
-                        <Chip
-                          size="small"
-                          label={status.label}
-                          sx={{ borderRadius: 1.25, bgcolor: status.bg, color: status.color, fontWeight: 800 }}
-                        />
-                        {deliveryStatus ? (
-                          <Chip
-                            size="small"
-                            label={deliveryStatus.label}
-                            sx={{
-                              borderRadius: 1.25,
-                              bgcolor: deliveryStatus.bg,
-                              color: deliveryStatus.color,
-                              fontWeight: 800,
-                            }}
-                          />
-                        ) : null}
-                      </Stack>
-                    </Stack>
-
-                    <Box sx={{ display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", sm: "repeat(4, minmax(0, 1fr))" }, gap: 1 }}>
-                      {[
-                        ["Lots / FMV", `${group.lotCount || "-"} lot${group.lotCount === 1 ? "" : "s"} · ${group.fairMarketValue || "-"}`],
-                        ["Type", typeLabel(group.type)],
-                        ["Created", new Date(group.createdAt).toLocaleDateString()],
-                        ["Client", group.address && group.address !== group.contract_no ? group.address : "-"],
-                      ].map(([label, value]) => (
-                        <Box key={label} sx={{ p: 1, bgcolor: "rgba(148,163,184,.06)", borderRadius: 1.25, minWidth: 0 }}>
-                          <Typography variant="caption" sx={{ color: "var(--app-text-muted)", fontWeight: 700 }}>{label}</Typography>
-                          <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700, overflowWrap: "anywhere" }}>{value}</Typography>
-                        </Box>
-                      ))}
-                    </Box>
-
-                    <Box>
-                      <Typography variant="caption" sx={{ display: "block", mb: 0.75, color: "var(--app-text-muted)", fontWeight: 800 }}>
-                        Files
-                      </Typography>
-                      {renderFileControls(group)}
-                    </Box>
-                    <Stack direction="row" sx={{ justifyContent: "flex-end" }}>{renderReportActions(group)}</Stack>
-                  </Stack>
-                </SurfaceCard>
+                        <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                          {label}
+                        </dt>
+                        <dd className="mt-0.5 break-words text-sm font-medium text-[var(--app-text)]">
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="mt-4 border-t border-[var(--app-border)] pt-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
+                      Files
+                    </p>
+                    {renderFileControls(group)}
+                  </div>
+                  <div className="mt-3 flex justify-end border-t border-[var(--app-border)] pt-3">
+                    {renderReportActions(group)}
+                  </div>
+                </li>
               );
             })}
-          </Stack>
+          </ul>
 
-          <SurfaceCard
-            sx={{
-              p: 0,
-              display: "none",
-              borderRadius: 2,
-              overflow: "hidden",
-              "@media (min-width: 1280px)": { display: "block" },
-            }}
-          >
-            <Box component="table" sx={{ width: "100%", maxWidth: "100%", tableLayout: "fixed", borderCollapse: "collapse" }}>
-              <Box component="colgroup">
-                {["20%", "8%", "8%", "10%", "9%", "33%", "12%"].map((width, index) => (
-                  <Box component="col" key={index} sx={{ width }} />
-                ))}
-              </Box>
-              <Box component="thead">
-                <Box component="tr" sx={{ bgcolor: "rgba(148,163,184,.06)" }}>
-                  {["Report", "Lots / FMV", "Type", "Created", "Status", "Files", "Actions"].map((heading) => (
-                    <Box component="th" key={heading} sx={{ px: 1.25, py: 1.4, textAlign: "left", color: "var(--app-text)", fontSize: 12, fontWeight: 800, borderBottom: "1px solid var(--app-border)" }}>
+          <section className="hidden overflow-x-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] xl:block">
+            <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
+              <caption className="sr-only">Generated reports</caption>
+              <colgroup>
+                <col className="w-[20%]" />
+                <col className="w-[10%]" />
+                <col className="w-[9%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[25%]" />
+                <col className="w-[14%]" />
+              </colgroup>
+              <thead className="bg-[var(--app-panel-alt)] text-xs font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
+                <tr>
+                  {[
+                    "Report",
+                    "Lots / FMV",
+                    "Type",
+                    "Created",
+                    "Status",
+                    "Files",
+                    "Actions",
+                  ].map((heading) => (
+                    <th
+                      key={heading}
+                      scope="col"
+                      className="border-b border-[var(--app-border)] px-3 py-3"
+                    >
                       {heading}
-                    </Box>
+                    </th>
                   ))}
-                </Box>
-              </Box>
-              <Box component="tbody">
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--app-border)]">
                 {paginatedGroups.map((group) => {
-                  const hasDownloads = hasGroupDownloadVariants(group);
-                  const status = statusTone(
-                    group.approvalStatus,
-                    Boolean(group.isGeneratingFiles) && !hasDownloads,
-                    group.release_status,
-                    group.generationState,
-                    group.reportStatus,
-                    group.workflowStage
-                  );
-                  const deliveryStatus = auctioneerDeliveryPresentation(
-                    group.auctioneerDelivery
-                  );
-                  const title = group.contract_no
-                    ? `${typeLabel(group.type)} - ${group.contract_no}`
-                    : group.address || typeLabel(group.type);
+                  const { status, deliveryStatus, title } =
+                    reportPresentation(group);
                   return (
-                    <Box component="tr" key={group.key} sx={{ "&:not(:last-child) td": { borderBottom: "1px solid var(--app-border)" }, "&:hover": { bgcolor: "rgba(148,163,184,.035)" } }}>
-                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
-                        <Stack direction="row" spacing={1} sx={{ minWidth: 0, alignItems: "flex-start" }}>
-                          <Box sx={{ width: 58, height: 58, flex: "0 0 58px", border: "1px solid var(--app-border)", borderRadius: 1, overflow: "hidden", bgcolor: "rgba(148,163,184,.08)", display: "grid", placeItems: "center" }}>
-                            {group.thumbnail ? (
-                              <Box component="img" src={group.thumbnail} alt="" loading="lazy" sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            ) : (
-                              <InsertDriveFileRounded sx={{ color: "var(--app-text-muted)" }} />
-                            )}
-                          </Box>
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 800, overflowWrap: "anywhere" }}>{title}</Typography>
-                            {group.contract_no ? <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)" }}>Contract: {group.contract_no}</Typography> : null}
-                            {group.lotSummary ? <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>{group.lotSummary}</Typography> : null}
-                            {group.isMergedReport ? <Typography variant="caption" sx={{ display: "block", color: "#2563eb", fontWeight: 800 }}>Merged · {group.mergedSourceCount || 2} sources</Typography> : null}
-                          </Box>
-                        </Stack>
-                      </Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
-                        <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700 }}>{group.lotCount || "-"} lot{group.lotCount === 1 ? "" : "s"}</Typography>
-                        <Typography variant="caption" sx={{ color: "var(--app-text-muted)", overflowWrap: "anywhere" }}>{group.fairMarketValue || "-"}</Typography>
-                      </Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
-                        <Chip size="small" variant="outlined" label={typeLabel(group.type)} sx={{ borderRadius: 1, maxWidth: "100%" }} />
-                      </Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
-                        <Typography variant="body2" sx={{ color: "var(--app-text)", fontWeight: 700 }}>{new Date(group.createdAt).toLocaleDateString()}</Typography>
-                        <Typography variant="caption" sx={{ display: "block", color: "var(--app-text-muted)" }}>{new Date(group.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Typography>
-                      </Box>
-                      <Box component="td" sx={{ px: 1.25, py: 1.25, verticalAlign: "top" }}>
-                        <Chip size="small" label={status.label} sx={{ borderRadius: 1, bgcolor: status.bg, color: status.color, fontWeight: 800, maxWidth: "100%" }} />
-                        {deliveryStatus ? (
-                          <Chip
-                            size="small"
-                            label={deliveryStatus.label}
-                            sx={{
-                              display: "flex",
-                              mt: 0.55,
-                              width: "fit-content",
-                              maxWidth: "100%",
-                              borderRadius: 1,
-                              bgcolor: deliveryStatus.bg,
-                              color: deliveryStatus.color,
-                              fontWeight: 800,
-                            }}
-                          />
+                    <tr
+                      key={group.key}
+                      className="align-top hover:bg-[var(--app-panel-alt)]"
+                    >
+                      <td className="px-3 py-4">
+                        <p className="break-words text-sm font-semibold text-[var(--app-text)]">
+                          {title}
+                        </p>
+                        {group.lotSummary ? (
+                          <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
+                            {group.lotSummary}
+                          </p>
                         ) : null}
-                        {group.released_at ? <Typography variant="caption" sx={{ display: "block", mt: 0.45, color: "var(--app-text-muted)" }}>{new Date(group.released_at).toLocaleDateString()}</Typography> : null}
-                      </Box>
-                      <Box component="td" sx={{ px: 0.8, py: 1.1, verticalAlign: "top", whiteSpace: "nowrap" }}>
-                        {renderFileControls(group, true)}
-                      </Box>
-                      <Box component="td" sx={{ px: 0.8, py: 1.1, verticalAlign: "top", whiteSpace: "nowrap" }}>
-                        {renderReportActions(group, true)}
-                      </Box>
-                    </Box>
+                        {group.isMergedReport ? (
+                          <p className="mt-1 text-xs font-semibold text-[var(--app-accent)]">
+                            Merged · {group.mergedSourceCount || 2} sources
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-4">
+                        <p className="text-sm font-semibold text-[var(--app-text)]">
+                          {group.lotCount || "—"}{" "}
+                          {group.lotCount === 1 ? "lot" : "lots"}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
+                          {group.fairMarketValue || "—"}
+                        </p>
+                      </td>
+                      <td className="px-3 py-4 text-sm text-[var(--app-text)]">
+                        {typeLabel(group.type)}
+                      </td>
+                      <td className="px-3 py-4">
+                        <p className="text-sm text-[var(--app-text)]">
+                          {new Date(group.createdAt).toLocaleDateString()}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                          {new Date(group.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                      </td>
+                      <td className="px-3 py-4">
+                        <span
+                          className="inline-flex rounded-md px-2 py-1 text-xs font-semibold"
+                          style={{
+                            backgroundColor: status.bg,
+                            color: status.color,
+                          }}
+                        >
+                          {status.label}
+                        </span>
+                        {deliveryStatus ? (
+                          <span
+                            className="mt-1.5 block w-fit rounded-md px-2 py-1 text-xs font-semibold"
+                            style={{
+                              backgroundColor: deliveryStatus.bg,
+                              color: deliveryStatus.color,
+                            }}
+                          >
+                            {deliveryStatus.label}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3">
+                        {renderFileControls(group)}
+                      </td>
+                      <td className="px-3 py-3">
+                        {renderReportActions(group)}
+                      </td>
+                    </tr>
                   );
                 })}
-              </Box>
-            </Box>
-          </SurfaceCard>
+              </tbody>
+            </table>
+          </section>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { xs: "stretch", sm: "center" }, justifyContent: "space-between" }}>
-            <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
-              Showing {totalItems === 0 ? 0 : startIndex + 1}-{endIndex} of {totalItems} reports
-            </Typography>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", justifyContent: { xs: "space-between", sm: "flex-end" } }}>
-              <Button size="small" variant="outlined" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} sx={{ borderRadius: 1.25 }}>Previous</Button>
-              <Typography variant="body2" sx={{ px: 1, color: "var(--app-text-muted)", whiteSpace: "nowrap" }}>Page {currentPage} of {totalPages}</Typography>
-              <Button size="small" variant="outlined" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} sx={{ borderRadius: 1.25 }}>Next</Button>
-            </Stack>
-          </Stack>
+          <nav
+            aria-label="Reports pagination"
+            className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-[var(--app-text-muted)]">
+              Showing {startIndex + 1}–{endIndex} of {totalItems} reports
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                Previous
+              </button>
+              <span className="px-1 text-[var(--app-text-muted)]">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  setPage((value) => Math.min(totalPages, value + 1))
+                }
+              >
+                Next
+              </button>
+            </div>
+          </nav>
         </>
       )}
 
-      <AssetMergeDialog
-        open={Boolean(mergeAnchorId)}
-        anchorReportId={mergeAnchorId}
-        onClose={() => setMergeAnchorId(null)}
-        onCreated={() => {
-          setMergeAnchorId(null);
-          window.dispatchEvent(new Event("cv:report-created"));
-          router.push("/previews");
-        }}
-      />
-      <AuctioneerDeliveryDialog
-        open={Boolean(deliveryDialogItem)}
-        delivery={deliveryDialogItem}
-        onClose={() => setDeliveryDialogItem(null)}
-        onUpdated={(updated) => {
-          setAuctioneerDeliveries((current) => {
-            const existingIndex = current.findIndex(
-              (item) => item.workItemId === updated.workItemId
-            );
-            if (existingIndex < 0) return [...current, updated];
-            return current.map((item, index) =>
-              index === existingIndex ? updated : item
-            );
-          });
-        }}
-      />
-    </Stack>
+      {mergeAnchorId ? (
+        <AssetMergeDialog
+          open
+          anchorReportId={mergeAnchorId}
+          onClose={() => setMergeAnchorId(null)}
+          onCreated={() => {
+            setMergeAnchorId(null);
+            window.dispatchEvent(new Event("cv:report-created"));
+            router.push("/previews");
+          }}
+        />
+      ) : null}
+      {deliveryDialogItem ? (
+        <AuctioneerDeliveryDialog
+          open
+          delivery={deliveryDialogItem}
+          onClose={() => setDeliveryDialogItem(null)}
+          onUpdated={(updated) => {
+            setAuctioneerDeliveries((current) => {
+              const existingIndex = current.findIndex(
+                (item) => item.workItemId === updated.workItemId
+              );
+              if (existingIndex < 0) return [...current, updated];
+              return current.map((item, index) =>
+                index === existingIndex ? updated : item
+              );
+            });
+          }}
+        />
+      ) : null}
+    </main>
   );
 }

@@ -1,0 +1,402 @@
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background: var(--app-bg);
+  transition: grid-template-columns 160ms ease;
+}
+
+.shell[data-collapsed="true"] {
+  grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-sidebar);
+}
+
+.brandRow {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 12px 18px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.brand {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.brandImage {
+  width: 150px;
+  height: auto;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.brandDark {
+  display: none;
+}
+
+:global([data-theme="dark"]) .brandLight {
+  display: none;
+}
+
+:global([data-theme="dark"]) .brandDark {
+  display: block;
+}
+
+.mark {
+  display: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-panel);
+  color: var(--app-accent);
+}
+
+.collapseButton {
+  flex: 0 0 auto;
+}
+
+.navScroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 12px;
+}
+
+.navGroup + .navGroup {
+  margin-top: 22px;
+}
+
+.navLabel {
+  margin: 0 8px 8px;
+  color: var(--app-text-muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.navList {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navLink {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--app-text-muted);
+  font-size: 0.88rem;
+  font-weight: 620;
+  white-space: nowrap;
+  transition:
+    color 130ms ease,
+    background-color 130ms ease,
+    border-color 130ms ease;
+}
+
+.navLink:hover {
+  background: var(--app-panel);
+  color: var(--app-text);
+}
+
+.navLink[data-active="true"] {
+  border-color: var(--app-info-border);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+.navIcon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.navText {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  min-width: 21px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.actionButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.footer {
+  padding: 12px;
+  border-top: 1px solid var(--app-border);
+}
+
+.profile {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.profile:hover {
+  background: var(--app-panel);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 760;
+}
+
+[data-theme="dark"] .avatar,
+[data-theme="dark"] .badge {
+  color: #07101e;
+}
+
+.profileCopy {
+  min-width: 0;
+  display: grid;
+}
+
+.profileName,
+.profileEmail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileName {
+  color: var(--app-text);
+  font-size: 0.84rem;
+  font-weight: 680;
+}
+
+.profileEmail {
+  color: var(--app-text-muted);
+  font-size: 0.72rem;
+}
+
+.main {
+  min-width: 0;
+}
+
+.mobileHeader {
+  display: none;
+}
+
+.content {
+  min-width: 0;
+}
+
+.mobileBackdrop {
+  display: none;
+}
+
+.shell[data-collapsed="true"] .brand {
+  justify-content: center;
+}
+
+.shell[data-collapsed="true"] .brandImage,
+.shell[data-collapsed="true"] .navLabel,
+.shell[data-collapsed="true"] .navText,
+.shell[data-collapsed="true"] .profileCopy,
+.shell[data-collapsed="true"] .badge {
+  display: none;
+}
+
+.shell[data-collapsed="true"] .mark {
+  display: grid;
+}
+
+.shell[data-collapsed="true"] .brandRow {
+  height: 72px;
+  justify-content: center;
+  padding: 10px;
+}
+
+.shell[data-collapsed="true"] .collapseButton {
+  position: absolute;
+  top: 62px;
+  right: -14px;
+  z-index: 2;
+  width: 28px;
+  min-height: 28px;
+  border-radius: 999px;
+  background: var(--app-panel);
+}
+
+.shell[data-collapsed="true"] .navScroll {
+  padding: 16px 10px;
+}
+
+.shell[data-collapsed="true"] .navLink {
+  justify-content: center;
+  padding: 9px;
+}
+
+.shell[data-collapsed="true"] .profile {
+  justify-content: center;
+  padding: 6px;
+}
+
+@media (max-width: 1023px) {
+  .shell,
+  .shell[data-collapsed="true"] {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    width: min(304px, 88vw);
+    transform: translateX(-102%);
+    transition: transform 170ms ease;
+    box-shadow: var(--app-shadow-modal);
+  }
+
+  .shell[data-mobile-open="true"] .sidebar {
+    transform: translateX(0);
+  }
+
+  .shell[data-collapsed="true"] .brandImage,
+  .shell[data-collapsed="true"] .navLabel,
+  .shell[data-collapsed="true"] .navText,
+  .shell[data-collapsed="true"] .profileCopy,
+  .shell[data-collapsed="true"] .badge {
+    display: initial;
+  }
+
+  .shell[data-collapsed="true"] .mark {
+    display: none;
+  }
+
+  .shell[data-collapsed="true"] .brand {
+    justify-content: flex-start;
+  }
+
+  .shell[data-collapsed="true"] .brandRow {
+    justify-content: initial;
+    padding: 12px 14px 12px 18px;
+  }
+
+  .shell[data-collapsed="true"] .collapseButton {
+    position: static;
+    width: 40px;
+    min-height: 40px;
+    border-radius: 8px;
+  }
+
+  .shell[data-collapsed="true"] .navScroll {
+    padding: 16px 12px;
+  }
+
+  .shell[data-collapsed="true"] .navLink,
+  .shell[data-collapsed="true"] .profile {
+    justify-content: flex-start;
+  }
+
+  .mobileHeader {
+    position: sticky;
+    z-index: 40;
+    top: 0;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--app-border);
+    background: var(--app-panel);
+  }
+
+  .mobileHeading {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .mobileEyebrow {
+    display: block;
+    color: var(--app-text-muted);
+    font-size: 0.68rem;
+  }
+
+  .mobileTitle {
+    display: block;
+    overflow: hidden;
+    color: var(--app-text);
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileActions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .mobileBackdrop {
+    position: fixed;
+    z-index: 45;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: var(--app-overlay);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 170ms ease;
+  }
+
+  .shell[data-mobile-open="true"] .mobileBackdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

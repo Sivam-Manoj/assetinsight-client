@@ -16,12 +16,12 @@ const PROPERTY_TYPES = [
     label: "Residential",
     description: "Houses, apartments, condos",
     icon: Home,
-    gradient: "from-rose-500 to-rose-600",
-    shadow: "shadow-rose-500/40",
-    selectedBg: "bg-rose-50",
-    selectedBorder: "border-rose-400",
-    selectedRing: "ring-rose-200",
-    hoverShadow: "hover:shadow-rose-500/30",
+    gradient: "from-blue-500 to-blue-600",
+    shadow: "shadow-blue-500/40",
+    selectedBg: "bg-blue-50",
+    selectedBorder: "border-blue-400",
+    selectedRing: "ring-blue-200",
+    hoverShadow: "hover:shadow-blue-500/30",
   },
   {
     type: "commercial" as PropertyType,
@@ -53,10 +53,10 @@ export default function PropertyTypeSelector({ value, onChange }: Props) {
   return (
     <section className="space-y-4">
       <div className="text-center">
-        <h3 className="text-base font-semibold text-gray-900">
+        <h3 className="text-base font-semibold text-[var(--app-text)]">
           Select Property Type
         </h3>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-[var(--app-text-muted)] mt-1">
           Choose the type of property you want to appraise
         </p>
       </div>
@@ -70,11 +70,11 @@ export default function PropertyTypeSelector({ value, onChange }: Props) {
               type="button"
               onClick={() => onChange(pt.type)}
               className={`
-                group relative rounded-2xl p-5 text-center transition-all duration-200 ease-out
+                group relative rounded-lg p-5 text-center transition-all duration-200 ease-out
                 ${
                   isSelected
-                    ? `${pt.selectedBg} ${pt.selectedBorder} border-2 ring-4 ${pt.selectedRing} shadow-lg translate-y-0`
-                    : `bg-white border-2 border-gray-200 shadow-md hover:shadow-xl ${pt.hoverShadow} hover:-translate-y-1 active:translate-y-0`
+                    ? `${pt.selectedBg} ${pt.selectedBorder} border ring-4 ${pt.selectedRing} shadow-sm translate-y-0`
+                    : `bg-[var(--app-panel)] border border-[var(--app-border)] shadow-md hover:shadow-sm ${pt.hoverShadow} hover:-translate-y-1 active:translate-y-0`
                 }
               `}
             >
@@ -84,7 +84,7 @@ export default function PropertyTypeSelector({ value, onChange }: Props) {
                   absolute inset-x-2 -bottom-1 h-2 rounded-b-2xl transition-all duration-200
                   ${
                     isSelected
-                      ? `bg-gradient-to-r ${pt.gradient} opacity-30`
+                      ? `bg-[var(--app-panel)] ${pt.gradient} opacity-30`
                       : "bg-gray-200 group-hover:bg-gray-300"
                   }
                 `}
@@ -98,8 +98,8 @@ export default function PropertyTypeSelector({ value, onChange }: Props) {
                   transition-all duration-200 ease-out
                   ${
                     isSelected
-                      ? `bg-gradient-to-br ${pt.gradient} text-white shadow-lg ${pt.shadow}`
-                      : "bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:scale-105"
+                      ? `bg-[var(--app-panel)] ${pt.gradient} text-white shadow-sm ${pt.shadow}`
+                      : "bg-[var(--app-panel-alt)] text-[var(--app-text-muted)] group-hover:bg-gray-200 group-hover:scale-105"
                   }
                 `}
               >
@@ -109,21 +109,21 @@ export default function PropertyTypeSelector({ value, onChange }: Props) {
               {/* Label */}
               <div
                 className={`font-semibold text-sm transition-colors ${
-                  isSelected ? "text-gray-900" : "text-gray-700"
+                  isSelected ? "text-[var(--app-text)]" : "text-[var(--app-text-muted)]"
                 }`}
               >
                 {pt.label}
               </div>
               
               {/* Description */}
-              <div className="mt-1 text-xs text-gray-500">{pt.description}</div>
+              <div className="mt-1 text-xs text-[var(--app-text-muted)]">{pt.description}</div>
               
               {/* Selected indicator */}
               {isSelected && (
                 <div
                   className={`
                     absolute -top-1 -right-1 h-5 w-5 rounded-full
-                    bg-gradient-to-br ${pt.gradient} text-white
+                    bg-[var(--app-panel)] ${pt.gradient} text-white
                     flex items-center justify-center shadow-md
                   `}
                 >

@@ -105,7 +105,7 @@ export default function SalvageCamera({
         if (videoRef.current) (videoRef.current as any).srcObject = null;
       } catch {}
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [open]);
 
   useEffect(() => {
@@ -209,8 +209,8 @@ export default function SalvageCamera({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 backdrop-blur-sm overflow-hidden">
-      <div className="relative w-full sm:w-[98%] max-w-none sm:max-w-2xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl h-[100dvh] sm:h-[96dvh] max-h-[100dvh] sm:max-h-[96dvh] overflow-hidden flex flex-col rounded-none sm:rounded-2xl border-0 sm:border border-rose-200/30 bg-black/30 ring-0 sm:ring-1 ring-black/50 shadow-2xl">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90  overflow-hidden">
+      <div className="relative w-full sm:w-[98%] max-w-none sm:max-w-2xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl h-[100dvh] sm:h-[96dvh] max-h-[100dvh] sm:max-h-[96dvh] overflow-hidden flex flex-col rounded-none sm:rounded-lg border-0 sm:border border-blue-200/30 bg-black/30 ring-0 sm:ring-1  shadow-sm">
         <div className="relative flex-1 min-h-0 bg-black">
           <video
             ref={videoRef}
@@ -225,7 +225,7 @@ export default function SalvageCamera({
             }
           />
           {isSimulatingFlash && (
-            <div className="absolute inset-0 bg-white/80 animate-pulse" />
+            <div className="absolute inset-0 bg-[var(--app-panel)] animate-pulse" />
           )}
 
           {/* Top overlay */}
@@ -233,7 +233,7 @@ export default function SalvageCamera({
             <button
               type="button"
               onClick={exitAndClose}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 backdrop-blur ring-1 ring-white/20 hover:bg-white/15"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1  ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
               title="Exit"
             >
               <X className="h-3.5 w-3.5" />
@@ -246,7 +246,7 @@ export default function SalvageCamera({
                   o === "portrait" ? "landscape" : "portrait"
                 )
               }
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 backdrop-blur ring-1 ring-white/20 hover:bg-white/15"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1  ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
               title="Toggle orientation"
             >
               <RotateCw className="h-3.5 w-3.5" />
@@ -273,7 +273,7 @@ export default function SalvageCamera({
                   }
                 } catch {}
               }}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 backdrop-blur ring-1 ring-white/20 hover:bg-white/15"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1  ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
               title="Flash"
             >
               {flashOn ? (
@@ -287,7 +287,7 @@ export default function SalvageCamera({
 
           {/* Zoom */}
           <div
-            className="pointer-events-auto absolute left-2 right-2 z-20 rounded-xl bg-white/10 p-2 ring-1 ring-white/20 backdrop-blur flex flex-wrap items-center gap-2"
+            className="pointer-events-auto absolute left-2 right-2 z-20 rounded-xl bg-[var(--app-panel)] p-2 ring-1 ring-white/20  flex flex-wrap items-center gap-2"
             style={{ bottom: `calc(120px + env(safe-area-inset-bottom))` }}
           >
             <ZoomOut className="h-4 w-4 text-white/90" />
@@ -298,7 +298,7 @@ export default function SalvageCamera({
               step={0.1}
               value={zoom}
               onChange={(e) => setZoom(parseFloat(e.target.value))}
-              className="flex-1 min-w-[140px] accent-rose-500 cursor-pointer"
+              className="flex-1 min-w-[140px] accent-blue-500 cursor-pointer"
             />
             <ZoomIn className="h-4 w-4 text-white/90" />
             <div className="ml-2 w-10 text-right text-[11px] text-white/90">
@@ -308,7 +308,7 @@ export default function SalvageCamera({
 
           {/* Bottom controls */}
           <div
-            className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 backdrop-blur"
+            className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 "
             style={{
               bottom: "env(safe-area-inset-bottom)",
               paddingBottom: "max(env(safe-area-inset-bottom), 8px)",
@@ -327,7 +327,7 @@ export default function SalvageCamera({
               <button
                 type="button"
                 onClick={done}
-                className="h-12 w-12 inline-flex items-center justify-center rounded-2xl bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_6px_0_0_rgba(190,18,60,0.45)] ring-2 ring-rose-300/60 hover:from-rose-400 hover:to-rose-600 focus:outline-none cursor-pointer"
+                className="h-12 w-12 inline-flex items-center justify-center rounded-lg bg-[var(--app-panel)] from-blue-500 to-blue-600 text-white shadow-sm ring-2 ring-blue-300/60 hover:from-blue-400 hover:to-blue-600 focus:outline-none cursor-pointer"
                 aria-label="Done"
                 title="Done"
               >
@@ -348,7 +348,7 @@ export default function SalvageCamera({
               <button
                 type="button"
                 onClick={capture}
-                className="h-11 inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-b from-rose-500 to-rose-600 px-3 text-sm font-semibold text-white shadow-[0_5px_0_0_rgba(190,18,60,0.45)]"
+                className="h-11 inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-[var(--app-panel)] from-blue-500 to-blue-600 px-3 text-sm font-semibold text-white shadow-sm"
                 title="Capture"
               >
                 <Camera className="h-5 w-5" /> Capture
@@ -356,7 +356,7 @@ export default function SalvageCamera({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="h-11 inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-white/90 border border-gray-200 px-3 text-sm font-semibold text-gray-800 shadow hover:bg-white"
+                className="h-11 inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-[var(--app-panel)] border border-[var(--app-border)] px-3 text-sm font-semibold text-[var(--app-text)] shadow hover:bg-[var(--app-panel)]"
               >
                 <Upload className="h-5 w-5" /> Manual Upload
               </button>
@@ -391,7 +391,7 @@ export default function SalvageCamera({
                   key={i}
                   className="relative group rounded-lg overflow-hidden border border-white/10"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img
                     src={url}
                     alt={f.name}
@@ -401,7 +401,7 @@ export default function SalvageCamera({
                   <button
                     type="button"
                     onClick={() => removeAt(i)}
-                    className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white shadow-lg hover:bg-black/80 transition"
+                    className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white shadow-sm hover:bg-black/80 transition"
                     aria-label="Remove"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

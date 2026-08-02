@@ -1,10 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { AuthService } from "@/services/auth";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Hash, Loader2, Lock, Mail } from "lucide-react";
+import { AuthService } from "@/services/auth";
 import { useAuthContext } from "@/context/AuthContext";
+import AuthLightShell, {
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_PRIMARY_BUTTON_CLASS,
+  AUTH_SECONDARY_BUTTON_CLASS,
+  AuthFormHeading,
+  AuthNotice,
+  AuthSpinner,
+} from "@/components/auth/AuthLightShell";
+
+const RECOVERY_FEATURES = [
+  "Short-lived reset codes",
+  "Secure account recovery",
+  "Device approval protection",
+];
 
 export default function ForgotPasswordForm() {
   const router = useRouter();
@@ -18,50 +34,53 @@ export default function ForgotPasswordForm() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"request" | "reset">("request");
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError(null);
     setMessage(null);
+
+    if (step === "reset") {
+      if (!code.trim()) {
+        setError("Enter the reset code sent to your email.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters.");
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+    }
+
     setLoading(true);
+    const normalizedEmail = email.trim().toLowerCase();
     try {
-      const normalizedEmail = email.trim().toLowerCase();
       if (step === "request") {
-        const res = await AuthService.forgotPassword({ email: normalizedEmail });
+        const response = await AuthService.forgotPassword({ email: normalizedEmail });
         setEmail(normalizedEmail);
         setStep("reset");
-        setMessage(
-          res.message || "If an account exists, a password reset code has been sent."
-        );
+        setMessage(response.message || "If an account exists, a password reset code has been sent.");
       } else {
-        if (!code.trim()) {
-          setError("Enter the reset code sent to your email.");
-          return;
-        }
-        if (password.length < 6) {
-          setError("Password must be at least 6 characters.");
-          return;
-        }
-        if (password !== confirmPassword) {
-          setError("Passwords do not match.");
-          return;
-        }
-        const res = await AuthService.resetPasswordByCode({
+        const response = await AuthService.resetPasswordByCode({
           email: normalizedEmail,
           code: code.trim(),
           password,
         });
-        acceptAuthResponse(res);
-        setMessage(res.message || "Password reset successful.");
-        setTimeout(
-          () => router.replace(res.authState === "authenticated" ? "/me" : "/device-access"),
+        acceptAuthResponse(response);
+        setMessage(response.message || "Password reset successful.");
+        window.setTimeout(
+          () => router.replace(response.authState === "authenticated" ? "/me" : "/device-access"),
           800
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (step === "request") {
         setMessage("If an account exists, a password reset code has been sent.");
+        setStep("reset");
       } else {
-        setError(err?.message || "Failed to reset password.");
+        setError(err instanceof Error ? err.message : "Failed to reset password.");
       }
     } finally {
       setLoading(false);
@@ -74,9 +93,9 @@ export default function ForgotPasswordForm() {
     setLoading(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      const res = await AuthService.forgotPassword({ email: normalizedEmail });
+      const response = await AuthService.forgotPassword({ email: normalizedEmail });
       setEmail(normalizedEmail);
-      setMessage(res.message || "A new password reset code has been sent.");
+      setMessage(response.message || "A new password reset code has been sent.");
     } catch {
       setMessage("If an account exists, a password reset code has been sent.");
     } finally {
@@ -85,136 +104,121 @@ export default function ForgotPasswordForm() {
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="mx-auto w-full max-w-md space-y-5 rounded-xl border border-gray-200 bg-white/90 p-6 shadow-lg backdrop-blur"
+    <AuthLightShell
+      title="Recover your workspace without losing momentum."
+      description="Reset access through a short-lived email code, then return to the work already waiting for you."
+      features={RECOVERY_FEATURES}
     >
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-gray-900">Reset Password</h1>
-        <p className="text-sm text-gray-600">
-          {step === "request"
-            ? "Enter your email to receive a password reset code"
-            : "Enter the code from your email and choose a new password"}
+      <form onSubmit={onSubmit}>
+        <AuthFormHeading
+          label="Account recovery"
+          title={step === "request" ? "Reset your password" : "Choose a new password"}
+          description={
+            step === "request"
+              ? "Enter your account email and we will send you a reset code."
+              : "Enter the code from your email and set a new password."
+          }
+        />
+
+        {error ? (
+          <div className="mt-7"><AuthNotice tone="error">{error}</AuthNotice></div>
+        ) : null}
+        {message ? (
+          <div className="mt-7"><AuthNotice tone="success">{message}</AuthNotice></div>
+        ) : null}
+
+        <div className="mt-8 space-y-5">
+          <label className="block">
+            <span className={AUTH_LABEL_CLASS}>Email address</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              className={AUTH_INPUT_CLASS}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              disabled={step === "reset" || loading}
+            />
+          </label>
+
+          {step === "reset" ? (
+            <>
+              <label className="block">
+                <span className={AUTH_LABEL_CLASS}>Reset code</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code"
+                  className={`${AUTH_INPUT_CLASS} font-mono tracking-[0.22em]`}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value.replace(/\D+/g, "").slice(0, 6))}
+                  required
+                  disabled={loading}
+                />
+              </label>
+              <label className="block">
+                <span className={AUTH_LABEL_CLASS}>New password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="At least 6 characters"
+                  className={AUTH_INPUT_CLASS}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={6}
+                  required
+                  disabled={loading}
+                />
+              </label>
+              <label className="block">
+                <span className={AUTH_LABEL_CLASS}>Confirm password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Repeat your password"
+                  className={AUTH_INPUT_CLASS}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  minLength={6}
+                  required
+                  disabled={loading}
+                />
+              </label>
+            </>
+          ) : null}
+        </div>
+
+        <button type="submit" disabled={loading} className={`mt-8 w-full ${AUTH_PRIMARY_BUTTON_CLASS}`}>
+          {loading ? <AuthSpinner /> : null}
+          <span>
+            {loading
+              ? step === "request" ? "Sending code..." : "Updating password..."
+              : step === "request" ? "Send reset code" : "Update password"}
+          </span>
+          {loading ? null : <ArrowRight className="h-4 w-4" />}
+        </button>
+
+        {step === "reset" ? (
+          <button
+            type="button"
+            onClick={() => void onResendCode()}
+            disabled={loading}
+            className={`mt-3 w-full ${AUTH_SECONDARY_BUTTON_CLASS}`}
+          >
+            Resend reset code
+          </button>
+        ) : null}
+
+        <p className="mt-7 text-center text-sm text-[var(--app-text-muted)]">
+          Remembered your password?{" "}
+          <Link className="font-medium text-[var(--app-accent)] hover:underline hover:underline-offset-4" href="/login">
+            Back to sign in
+          </Link>
         </p>
-      </div>
-      {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-md border border-green-300 bg-green-50 p-2 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">Email</label>
-        <div className="relative">
-          <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={step === "reset" || loading}
-          />
-        </div>
-      </div>
-
-      {step === "reset" && (
-        <>
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Reset Code</label>
-            <div className="relative">
-              <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="6-digit code"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D+/g, "").slice(0, 6))}
-                required
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">New Password</label>
-            <div className="relative">
-              <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="password"
-                autoComplete="new-password"
-                placeholder="••••••••"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={6}
-                required
-                disabled={loading}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
-            <div className="relative">
-              <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="password"
-                autoComplete="new-password"
-                placeholder="••••••••"
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                minLength={6}
-                required
-                disabled={loading}
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-red-500 disabled:opacity-50"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" /> {step === "request" ? "Sending..." : "Updating..."}
-          </>
-        ) : (
-          step === "request" ? "Send reset code" : "Update password"
-        )}
-      </button>
-      {step === "reset" && (
-        <button
-          type="button"
-          onClick={onResendCode}
-          disabled={loading}
-          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          Resend reset code
-        </button>
-      )}
-      <div className="text-sm">
-        Remembered your password?{" "}
-        <button
-          type="button"
-          className="text-red-600 hover:underline"
-          onClick={() => router.push("/login")}
-        >
-          Back to sign in
-        </button>
-      </div>
-    </form>
+      </form>
+    </AuthLightShell>
   );
 }

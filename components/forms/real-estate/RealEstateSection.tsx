@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import PropertyTypeSelector, {
   type PropertyType,
 } from "./PropertyTypeSelector";

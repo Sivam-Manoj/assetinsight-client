@@ -20,7 +20,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   cancelSmartUpload,
   completeSmartUpload,
@@ -94,7 +94,7 @@ function ImagePreview({
   }, [file]);
   return src ? (
     // A local object URL has no useful Next Image optimization path.
-    // eslint-disable-next-line @next/next/no-img-element
+
     <img src={src} alt={alt} className={className} draggable={false} />
   ) : (
     <div className={className} aria-hidden="true" />
@@ -623,7 +623,7 @@ export default function SmartUploadWorkspace({
             </div>
           ) : !draft ? (
             <section
-              className={`grid min-h-[58vh] place-items-center rounded-lg border-2 border-dashed px-5 py-12 text-center transition ${
+              className={`grid min-h-[58vh] place-items-center rounded-lg border border-dashed px-5 py-12 text-center transition ${
                 dragActive
                   ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)]"
                   : "border-[var(--app-control-border)] bg-[var(--app-panel)]"
@@ -814,7 +814,7 @@ export default function SmartUploadWorkspace({
                           type="button"
                           onClick={() => void toggleDivider(item.fileId)}
                           disabled={Boolean(busyFileId)}
-                          className={`group relative aspect-square overflow-hidden rounded-md border-2 bg-[var(--app-panel-alt)] focus:outline-none focus:ring-2 focus:ring-[var(--app-accent-ring)] ${
+                          className={`group relative aspect-square overflow-hidden rounded-md border bg-[var(--app-panel-alt)] focus:outline-none focus:ring-2 focus:ring-[var(--app-accent-ring)] ${
                             isDivider
                               ? "border-[var(--app-accent)]"
                               : "border-transparent"

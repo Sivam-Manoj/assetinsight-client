@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Dialog from "@mui/material/Dialog";
+import { Dialog } from "@/components/ui/legacy";
 
 export type AnnBox = {
   id: string;
@@ -309,7 +309,7 @@ export default function ImageAnnotator({
               <button
                 type="button"
                 onClick={deleteActive}
-                className="inline-flex items-center rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/15"
+                className="inline-flex items-center rounded bg-[var(--app-panel)] px-2 py-1 text-xs hover:bg-[var(--app-panel)]"
                 title="Delete selected focus area"
               >
                 Delete Area
@@ -325,7 +325,7 @@ export default function ImageAnnotator({
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex items-center rounded bg-white/10 px-3 py-1.5 text-xs text-white hover:bg-white/15"
+              className="inline-flex items-center rounded bg-[var(--app-panel)] px-3 py-1.5 text-xs text-white hover:bg-[var(--app-panel)]"
             >
               Cancel
             </button>
@@ -349,14 +349,14 @@ export default function ImageAnnotator({
                 <div
                   key={b.id}
                   data-box
-                  className={`absolute ${activeId === b.id ? "ring-2 ring-red-400" : ""} cursor-move`}
+                  className={`absolute ${activeId === b.id ? "ring-2 ring-blue-400" : ""} cursor-move`}
                   style={{
                     left: `${b.x * 100}%`,
                     top: `${b.y * 100}%`,
                     width: `${b.w * 100}%`,
                     height: `${b.h * 100}%`,
-                    border: "2px solid rgba(248,113,113,0.95)",
-                    boxShadow: activeId === b.id ? "0 0 0 2px rgba(248,113,113,0.5) inset" : undefined,
+                    border: "2px solid rgba(37,99,235,0.95)",
+                    boxShadow: activeId === b.id ? "0 0 0 2px rgba(37,99,235,0.42) inset" : undefined,
                   }}
                   onPointerDown={(e) => {
                     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -372,7 +372,7 @@ export default function ImageAnnotator({
                         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                         startResize(e as any, b.id, corner);
                       }}
-                      className="pointer-events-auto absolute h-4 w-4 bg-red-500 border border-white rounded-sm"
+                      className="pointer-events-auto absolute h-4 w-4 bg-blue-600 border border-white rounded-sm"
                       style={{
                         left: corner.includes("l") ? -8 : undefined,
                         right: corner.includes("r") ? -8 : undefined,

@@ -456,6 +456,14 @@ export const AuctioneerService = {
     return (Array.isArray(values) ? values : []).map(normalizeIncomingItem);
   },
 
+  async getIncomingSummary(): Promise<{ availableCount: number }> {
+    const response = await API.get("/auctioneer/incoming/summary");
+    const payload = asRecord(unwrap(response.data));
+    return {
+      availableCount: Math.max(0, Number(payload.availableCount) || 0),
+    };
+  },
+
   async claim(cycleKey: string, reportType: AuctioneerReportType) {
     const response = await API.post(
       `/auctioneer/incoming/${encodeURIComponent(cycleKey)}/claim`,

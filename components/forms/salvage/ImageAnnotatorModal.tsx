@@ -41,7 +41,7 @@ export default function ImageAnnotatorModal({
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [mode, setMode] = useState<AnnotatorMode>("draw");
-  const [color, setColor] = useState<string>("#ef4444"); // rose-500
+  const [color, setColor] = useState<string>("#2563eb"); // cobalt
   const [size, setSize] = useState<number>(12);
   const [actions, setActions] = useState<Action[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -63,7 +63,7 @@ export default function ImageAnnotatorModal({
   const [pendingText, setPendingText] = useState<string>("");
   // Edit existing text state
   const [editTextIndex, setEditTextIndex] = useState<number | null>(null);
-  const [editTextColor, setEditTextColor] = useState<string>("#ef4444");
+  const [editTextColor, setEditTextColor] = useState<string>("#2563eb");
   const [editTextSize, setEditTextSize] = useState<number>(
     TEXT_ADD_DEFAULT_SIZE
   );
@@ -165,7 +165,7 @@ export default function ImageAnnotatorModal({
     canvas.width = imgEl.naturalWidth || imgEl.width;
     canvas.height = imgEl.naturalHeight || imgEl.height;
     redraw();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [imgEl]);
 
   // Prevent page scroll while modal is open
@@ -181,7 +181,7 @@ export default function ImageAnnotatorModal({
   // Redraw whenever actions change
   useEffect(() => {
     redraw();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [actions]);
 
   function redraw() {
@@ -674,17 +674,17 @@ export default function ImageAnnotatorModal({
 
   // compute display sizing: fit within viewport (mobile friendly)
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-6xl h-[96dvh] sm:h-[90vh] mx-0 sm:mx-2 rounded-none sm:rounded-2xl bg-white shadow-xl ring-1 ring-black/10 flex flex-col">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 ">
+      <div className="relative w-full max-w-6xl h-[96dvh] sm:h-[90vh] mx-0 sm:mx-2 rounded-none sm:rounded-lg bg-[var(--app-panel)] shadow-sm ring-1  flex flex-col">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2 sm:px-3 py-2 border-b border-gray-200">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-2 sm:px-3 py-2 border-b border-[var(--app-border)]">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ${
                 mode === "draw"
-                  ? "bg-rose-600 text-white ring-rose-600"
-                  : "bg-white text-gray-700 ring-gray-200"
+                  ? "bg-blue-600 text-white ring-blue-600"
+                  : "bg-[var(--app-panel)] text-[var(--app-text-muted)] ring-gray-200"
               }`}
               onClick={() => setMode("draw")}
               title="Draw"
@@ -695,8 +695,8 @@ export default function ImageAnnotatorModal({
               type="button"
               className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ring-1 ${
                 mode === "text"
-                  ? "bg-rose-600 text-white ring-rose-600"
-                  : "bg-white text-gray-700 ring-gray-200"
+                  ? "bg-blue-600 text-white ring-blue-600"
+                  : "bg-[var(--app-panel)] text-[var(--app-text-muted)] ring-gray-200"
               }`}
               onClick={() => setMode("text")}
               title="Add Text"
@@ -704,7 +704,7 @@ export default function ImageAnnotatorModal({
               <Type className="h-4 w-4" /> Text
             </button>
             <div className="flex items-center gap-2 ml-2">
-              <Palette className="h-4 w-4 text-gray-500" />
+              <Palette className="h-4 w-4 text-[var(--app-text-muted)]" />
               <input
                 type="color"
                 value={color}
@@ -720,14 +720,14 @@ export default function ImageAnnotatorModal({
                 onChange={(e) => setSize(parseInt(e.target.value))}
                 className="w-28"
               />
-              <span className="text-xs text-gray-600 w-8">{size}px</span>
+              <span className="text-xs text-[var(--app-text-muted)] w-8">{size}px</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               type="button"
               onClick={undo}
-              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded-md bg-[var(--app-panel)] px-2 py-1 text-xs font-medium text-[var(--app-text-muted)] ring-1 ring-gray-200 hover:bg-[var(--app-panel-alt)]"
               title="Undo"
             >
               <Undo2 className="h-4 w-4" /> Undo
@@ -735,7 +735,7 @@ export default function ImageAnnotatorModal({
             <button
               type="button"
               onClick={clearAll}
-              className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+              className="inline-flex items-center gap-1 rounded-md bg-[var(--app-panel)] px-2 py-1 text-xs font-medium text-[var(--app-text-muted)] ring-1 ring-gray-200 hover:bg-[var(--app-panel-alt)]"
               title="Clear"
             >
               <Eraser className="h-4 w-4" /> Clear
@@ -743,7 +743,7 @@ export default function ImageAnnotatorModal({
             <button
               type="button"
               onClick={saveAnnotated}
-              className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white ring-1 ring-rose-600 hover:bg-rose-500"
+              className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white ring-1 ring-blue-600 hover:bg-blue-500"
               title="Save"
             >
               <Save className="h-4 w-4" /> Save
@@ -751,7 +751,7 @@ export default function ImageAnnotatorModal({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+              className="inline-flex items-center gap-1 rounded-md bg-[var(--app-panel)] px-2 py-1 text-xs font-medium text-[var(--app-text-muted)] ring-1 ring-gray-200 hover:bg-[var(--app-panel-alt)]"
               title="Close"
             >
               <X className="h-4 w-4" /> Close
@@ -780,7 +780,7 @@ export default function ImageAnnotatorModal({
             }}
           >
             {/* Base image */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             {imgEl && (
               <img
                 src={imgEl.src}
@@ -828,7 +828,7 @@ export default function ImageAnnotatorModal({
                       top: pendingTextCssPos.y,
                     }}
                   >
-                    <div className="rounded-lg border border-gray-200 bg-white/95 p-2 shadow-lg ring-1 ring-black/5 w-[240px] sm:w-[280px]">
+                    <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2 shadow-sm ring-1  w-[240px] sm:w-[280px]">
                       <input
                         ref={inputRef}
                         value={pendingText}
@@ -842,12 +842,12 @@ export default function ImageAnnotatorModal({
                           }
                         }}
                         placeholder="Type here..."
-                        className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs sm:text-sm shadow focus:outline-none focus:ring-2 focus:ring-rose-300"
+                        className="w-full rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 py-1.5 text-xs sm:text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-300"
                       />
                       <div className="mt-2 flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          className="rounded-md bg-gray-100 px-2 py-1 text-[11px] sm:text-xs text-gray-700 hover:bg-gray-200"
+                          className="rounded-md bg-[var(--app-panel-alt)] px-2 py-1 text-[11px] sm:text-xs text-[var(--app-text-muted)] hover:bg-gray-200"
                           onClick={() => {
                             setPendingText("");
                             setPendingTextCanvasPos(null);
@@ -858,7 +858,7 @@ export default function ImageAnnotatorModal({
                         </button>
                         <button
                           type="button"
-                          className="rounded-md bg-rose-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-rose-500"
+                          className="rounded-md bg-blue-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-blue-500"
                           onClick={commitText}
                         >
                           Add
@@ -889,7 +889,7 @@ export default function ImageAnnotatorModal({
                             top: Math.max(0, cssTop - 28),
                           }}
                         >
-                          <div className="inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-1 text-white shadow-lg">
+                          <div className="inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-1 text-white shadow-sm">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -934,16 +934,16 @@ export default function ImageAnnotatorModal({
                         top: textEditorCssPos.y,
                       }}
                     >
-                      <div className="rounded-lg border border-gray-200 bg-white/95 p-2 shadow-lg ring-1 ring-black/5 w-[240px] sm:w-[280px]">
+                      <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2 shadow-sm ring-1  w-[240px] sm:w-[280px]">
                         <div className="flex items-center gap-2">
-                          <label className="text-xs text-gray-600">Color</label>
+                          <label className="text-xs text-[var(--app-text-muted)]">Color</label>
                           <input
                             type="color"
                             value={editTextColor}
                             onChange={(e) => setEditTextColor(e.target.value)}
                             className="h-6 w-8"
                           />
-                          <label className="ml-2 text-xs text-gray-600">
+                          <label className="ml-2 text-xs text-[var(--app-text-muted)]">
                             Size
                           </label>
                           <input
@@ -957,14 +957,14 @@ export default function ImageAnnotatorModal({
                             }
                             className="flex-1"
                           />
-                          <div className="w-10 text-right text-xs text-gray-600">
+                          <div className="w-10 text-right text-xs text-[var(--app-text-muted)]">
                             {editTextSize}px
                           </div>
                         </div>
                         <div className="mt-2 flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded-md bg-gray-100 px-2 py-1 text-[11px] sm:text-xs text-gray-700 hover:bg-gray-200"
+                            className="rounded-md bg-[var(--app-panel-alt)] px-2 py-1 text-[11px] sm:text-xs text-[var(--app-text-muted)] hover:bg-gray-200"
                             onClick={() => {
                               setEditTextIndex(null);
                               setTextEditorCssPos(null);
@@ -974,7 +974,7 @@ export default function ImageAnnotatorModal({
                           </button>
                           <button
                             type="button"
-                            className="rounded-md bg-rose-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-rose-500"
+                            className="rounded-md bg-blue-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-blue-500"
                             onClick={() => {
                               setActions((prev) =>
                                 prev.map((a, i) =>
@@ -1033,7 +1033,7 @@ export default function ImageAnnotatorModal({
                             top: Math.max(0, cssTop - 28),
                           }}
                         >
-                          <div className="inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-1 text-white shadow-lg">
+                          <div className="inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-1 text-white shadow-sm">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1078,16 +1078,16 @@ export default function ImageAnnotatorModal({
                         top: textEditorCssPos.y,
                       }}
                     >
-                      <div className="rounded-lg border border-gray-200 bg-white/95 p-2 shadow-lg ring-1 ring-black/5 w-[240px] sm:w-[280px]">
+                      <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2 shadow-sm ring-1  w-[240px] sm:w-[280px]">
                         <div className="flex items-center gap-2">
-                          <label className="text-xs text-gray-600">Color</label>
+                          <label className="text-xs text-[var(--app-text-muted)]">Color</label>
                           <input
                             type="color"
                             value={editTextColor}
                             onChange={(e) => setEditTextColor(e.target.value)}
                             className="h-6 w-8"
                           />
-                          <label className="ml-2 text-xs text-gray-600">
+                          <label className="ml-2 text-xs text-[var(--app-text-muted)]">
                             Size
                           </label>
                           <input
@@ -1101,14 +1101,14 @@ export default function ImageAnnotatorModal({
                             }
                             className="flex-1"
                           />
-                          <div className="w-10 text-right text-xs text-gray-600">
+                          <div className="w-10 text-right text-xs text-[var(--app-text-muted)]">
                             {editTextSize}px
                           </div>
                         </div>
                         <div className="mt-2 flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            className="rounded-md bg-gray-100 px-2 py-1 text-[11px] sm:text-xs text-gray-700 hover:bg-gray-200"
+                            className="rounded-md bg-[var(--app-panel-alt)] px-2 py-1 text-[11px] sm:text-xs text-[var(--app-text-muted)] hover:bg-gray-200"
                             onClick={() => {
                               setEditTextIndex(null);
                               setTextEditorCssPos(null);
@@ -1118,7 +1118,7 @@ export default function ImageAnnotatorModal({
                           </button>
                           <button
                             type="button"
-                            className="rounded-md bg-rose-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-rose-500"
+                            className="rounded-md bg-blue-600 px-2 py-1 text-[11px] sm:text-xs font-semibold text-white hover:bg-blue-500"
                             onClick={() => {
                               setActions((prev) =>
                                 prev.map((a, i) =>

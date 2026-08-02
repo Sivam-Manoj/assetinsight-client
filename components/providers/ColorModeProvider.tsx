@@ -2,191 +2,98 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { ThemeProvider, createTheme } from "@mui/material";
+import {
+  THEME_COOKIE_KEY,
+  THEME_STORAGE_KEY,
+  type ThemeMode,
+} from "./theme";
 
-type ColorMode = "light" | "dark";
+export {
+  THEME_COOKIE_KEY,
+  THEME_STORAGE_KEY,
+  type ThemeMode,
+} from "./theme";
 
 type ColorModeContextValue = {
-  mode: ColorMode;
-  resolvedTheme: ColorMode;
-  setMode: (mode: ColorMode) => void;
+  mode: ThemeMode;
+  resolvedTheme: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
   toggleMode: () => void;
 };
 
-const STORAGE_KEY = "cv-color-mode";
+const ColorModeContext = createContext<ColorModeContextValue | null>(null);
 
-const ColorModeContext = createContext<ColorModeContextValue | undefined>(
-  undefined
-);
-
-function getSystemMode(): ColorMode {
+function systemTheme(): ThemeMode {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
 }
 
-export function ColorModeProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [mode, setModeState] = useState<ColorMode>("light");
-  const [hydrated, setHydrated] = useState(false);
+function storedTheme(): ThemeMode | null {
+  if (typeof window === "undefined") return null;
+  const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "dark" || value === "light" ? value : null;
+}
+
+function initialTheme(): ThemeMode {
+  if (typeof document === "undefined") return "light";
+  const value = document.documentElement.dataset.theme;
+  return value === "dark" || value === "light"
+    ? value
+    : storedTheme() ?? systemTheme();
+}
+
+export function ColorModeProvider({ children }: { children: React.ReactNode }) {
+  const [mode, setModeState] = useState<ThemeMode>("light");
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    const stored =
-      typeof window !== "undefined"
-        ? (window.localStorage.getItem(STORAGE_KEY) as ColorMode | null)
-        : null;
-    const nextMode =
-      stored === "dark" || stored === "light" ? stored : getSystemMode();
-    setModeState(nextMode);
-    setHydrated(true);
+    setModeState(initialTheme());
+    setInitialized(true);
   }, []);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    document.documentElement.dataset.theme = mode;
-    window.localStorage.setItem(STORAGE_KEY, mode);
-  }, [hydrated, mode]);
+  const setMode = useCallback((nextMode: ThemeMode) => {
+    setModeState(nextMode);
+    document.documentElement.dataset.theme = nextMode;
+    document.documentElement.style.colorScheme = nextMode;
+    window.localStorage.setItem(THEME_STORAGE_KEY, nextMode);
+    document.cookie = `${THEME_COOKIE_KEY}=${nextMode}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  }, []);
+
+  const toggleMode = useCallback(() => {
+    setMode(mode === "light" ? "dark" : "light");
+  }, [mode, setMode]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        setModeState(media.matches ? "dark" : "light");
-      }
+      if (!storedTheme()) setModeState(media.matches ? "dark" : "light");
     };
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, []);
 
-  const setMode = (nextMode: ColorMode) => setModeState(nextMode);
-  const toggleMode = () =>
-    setModeState((current) => (current === "light" ? "dark" : "light"));
+  useEffect(() => {
+    if (!initialized) return;
+    document.documentElement.dataset.theme = mode;
+    document.documentElement.style.colorScheme = mode;
+  }, [initialized, mode]);
 
-  const theme = useMemo(() => {
-    const isDark = mode === "dark";
-
-    return createTheme({
-      palette: {
-        mode,
-        primary: {
-          main: isDark ? "#fb7185" : "#e11d48",
-          light: isDark ? "#fda4af" : "#fb7185",
-          dark: isDark ? "#be123c" : "#9f1239",
-        },
-        secondary: {
-          main: isDark ? "#60a5fa" : "#2563eb",
-        },
-        success: {
-          main: isDark ? "#4ade80" : "#059669",
-        },
-        warning: {
-          main: isDark ? "#fbbf24" : "#d97706",
-        },
-        error: {
-          main: isDark ? "#f87171" : "#dc2626",
-        },
-        background: {
-          default: isDark ? "#07111f" : "#eef3f9",
-          paper: isDark ? "#0f1b2d" : "#ffffff",
-        },
-        text: {
-          primary: isDark ? "#e5eefc" : "#0f172a",
-          secondary: isDark ? "#94a3b8" : "#475569",
-        },
-        divider: isDark
-          ? "rgba(148, 163, 184, 0.16)"
-          : "rgba(15, 23, 42, 0.08)",
-      },
-      shape: {
-        borderRadius: 2,
-      },
-      typography: {
-        fontFamily:
-          "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
-        h1: {
-          fontWeight: 800,
-          letterSpacing: "-0.04em",
-        },
-        h2: {
-          fontWeight: 800,
-          letterSpacing: "-0.03em",
-        },
-        h3: {
-          fontWeight: 700,
-          letterSpacing: "-0.02em",
-        },
-        button: {
-          fontWeight: 700,
-          textTransform: "none",
-        },
-      },
-      components: {
-        MuiPaper: {
-          styleOverrides: {
-            root: {
-              backgroundImage: "none",
-            },
-          },
-        },
-        MuiButton: {
-          styleOverrides: {
-            root: {
-              borderRadius: 10,
-              boxShadow: "none",
-            },
-          },
-        },
-        MuiDrawer: {
-          styleOverrides: {
-            paper: {
-              backgroundImage: "none",
-            },
-          },
-        },
-        MuiChip: {
-          styleOverrides: {
-            root: {
-              borderRadius: 10,
-            },
-          },
-        },
-        MuiOutlinedInput: {
-          styleOverrides: {
-            root: {
-              borderRadius: 8,
-            },
-          },
-        },
-      },
-    });
-  }, [mode]);
-
-  const contextValue = useMemo<ColorModeContextValue>(
-    () => ({
-      mode,
-      resolvedTheme: mode,
-      setMode,
-      toggleMode,
-    }),
-    [mode]
+  const value = useMemo(
+    () => ({ mode, resolvedTheme: mode, setMode, toggleMode }),
+    [mode, setMode, toggleMode]
   );
 
   return (
-    <ColorModeContext.Provider value={contextValue}>
-      <ThemeProvider theme={theme}>
-        {children}
-      </ThemeProvider>
+    <ColorModeContext.Provider value={value}>
+      {children}
     </ColorModeContext.Provider>
   );
 }

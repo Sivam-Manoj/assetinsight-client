@@ -1,86 +1,43 @@
 "use client";
 
-import React, { CSSProperties, useEffect, useMemo, useState } from "react";
-import Lottie from "lottie-react";
+import type { CSSProperties } from "react";
 
 export type LottiePlayerProps = {
-  // Pass a public path like "/signinAnimation.json"
-  src?: any;
-  // Or pass already-imported animation data
-  animationData?: any;
+  /** Retained for backward compatibility while legacy animation call sites migrate. */
+  src?: unknown;
+  /** Retained for backward compatibility while legacy animation call sites migrate. */
+  animationData?: unknown;
   loop?: boolean;
   autoplay?: boolean;
   className?: string;
   style?: CSSProperties;
-  // Optional fixed sizes
   width?: number;
   height?: number;
 };
 
+/**
+ * Lightweight compatibility shell for former Lottie placements.
+ *
+ * ClearValue no longer downloads or runs animation JSON. The element preserves an
+ * explicitly requested layout box so older call sites do not shift while remaining
+ * inert and invisible to assistive technology.
+ */
 export default function LottiePlayer({
-  src,
-  animationData,
-  loop = true,
-  autoplay = true,
   className,
   style,
   width,
   height,
 }: LottiePlayerProps) {
-  const [data, setData] = useState<any | null>(animationData ?? null);
-  const [errored, setErrored] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!src || data) return;
-      try {
-        const res = await fetch(src);
-        if (!res.ok) throw new Error(`Failed to load animation: ${res.status}`);
-        const json = await res.json();
-        if (!cancelled) setData(json);
-      } catch (e) {
-        if (!cancelled) setErrored(true);
-        // eslint-disable-next-line no-console
-        console.error("LottiePlayer: failed to load src", src, e);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
-
-  const mergedStyle = useMemo<CSSProperties>(() => {
-    const base: CSSProperties = { display: "block" };
-    if (width) base.width = width;
-    if (height) base.height = height;
-    return { ...base, ...style };
-  }, [style, width, height]);
-
-  if (errored) {
-    return null;
-  }
-
-  if (!data) {
-    // Lightweight placeholder to preserve layout
-    return (
-      <div
-        className={className}
-        style={{ ...mergedStyle, background: "transparent" }}
-        aria-hidden
-      />
-    );
-  }
-
   return (
-    <Lottie
-      animationData={data}
-      loop={loop}
-      autoplay={autoplay}
+    <span
       className={className}
-      style={mergedStyle}
+      style={{
+        display: "block",
+        width: width ?? style?.width,
+        height: height ?? style?.height,
+        ...style,
+      }}
+      aria-hidden="true"
     />
   );
 }

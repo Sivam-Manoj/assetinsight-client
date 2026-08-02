@@ -23,8 +23,8 @@ export default function BuildingDetailsSection({
   const fields = [hd.year_built, hd.square_footage, hd.lot_size_sqft, hd.number_of_rooms, hd.number_of_full_bathrooms, hd.number_of_half_bathrooms];
   const filledCount = fields.filter((f) => f && f.toString().trim() !== "").length;
 
-  const inputClass = "w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(251,113,133,0.15)] transition-all placeholder:text-gray-400 hover:border-gray-400";
-  const labelClass = "block text-[11px] font-bold text-gray-600 mb-1.5 tracking-wide uppercase drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]";
+  const inputClass = "w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-[var(--app-text)] shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-400 focus:shadow-sm transition-all placeholder:text-[var(--app-text-muted)] hover:border-gray-400";
+  const labelClass = "block text-[11px] font-bold text-[var(--app-text-muted)] mb-1.5 tracking-wide uppercase drop-shadow-sm";
 
   return (
     <CollapsibleSection title="Building Details" icon={<Building2 />} filledCount={filledCount} totalCount={fields.length} required>

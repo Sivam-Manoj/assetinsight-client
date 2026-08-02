@@ -1,0 +1,355 @@
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { SWRConfig } from "swr";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  AuctioneerIncomingItem,
+  AuctioneerWorkItemSetup,
+} from "@/services/auctioneer";
+import IncomingPage from "./page";
+
+const mocks = vi.hoisted(() => ({
+  getIncoming: vi.fn(),
+  getStatus: vi.fn(),
+  getIncomingSummary: vi.fn(),
+  claim: vi.fn(),
+  getSetup: vi.fn(),
+  releaseClaim: vi.fn(),
+  routerPush: vi.fn(),
+  authUser: {
+    _id: "user-1",
+    email: "appraiser@example.com",
+    username: "Alex Morgan",
+  },
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mocks.routerPush,
+    replace: vi.fn(),
+  }),
+}));
+
+vi.mock("next/dynamic", () => ({
+  default: () => {
+    function DeferredReportForm() {
+      return <div data-testid="deferred-report-form">Report form loaded</div>;
+    }
+    return DeferredReportForm;
+  },
+}));
+
+vi.mock("@/components/BottomDrawer", () => ({
+  default: ({
+    open,
+    title,
+    children,
+  }: {
+    open: boolean;
+    title?: React.ReactNode;
+    children: React.ReactNode;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="Report workflow">
+        <h2>{title}</h2>
+        {children}
+      </div>
+    ) : null,
+}));
+
+vi.mock("@/context/AuthContext", () => ({
+  useAuthContext: () => ({
+    user: mocks.authUser,
+    loading: false,
+  }),
+}));
+
+vi.mock("@/services/auctioneer", () => {
+  const service = {
+    getIncoming: mocks.getIncoming,
+    getStatus: mocks.getStatus,
+    getIncomingSummary: mocks.getIncomingSummary,
+    claim: mocks.claim,
+    getSetup: mocks.getSetup,
+    releaseClaim: mocks.releaseClaim,
+  };
+  return {
+    default: service,
+    AuctioneerService: service,
+  };
+});
+
+const availableItem: AuctioneerIncomingItem = {
+  cycleKey: "cycle-100",
+  contractId: "contract-100",
+  contractNo: "CV-100",
+  customerName: "Northfield Plant Ltd",
+  eventId: "event-100",
+  eventTitle: "Fleet dispersal",
+  eventDate: "2026-08-12T10:00:00.000Z",
+  location: "Leeds",
+  kind: "scheduleA",
+  lotCount: 14,
+  status: "available",
+};
+
+const claimedItem: AuctioneerIncomingItem = {
+  ...availableItem,
+  cycleKey: "cycle-claimed",
+  workItemId: "work-claimed",
+  contractNo: "CV-200",
+  status: "claimed",
+  claimedByMe: true,
+  claimedBy: {
+    _id: "user-1",
+    username: "Alex Morgan",
+  },
+  selectedReportType: "asset",
+};
+
+function setupFor(
+  item: AuctioneerIncomingItem,
+  reportType: "asset" | "lotListing" = "asset"
+): AuctioneerWorkItemSetup {
+  return {
+    workItemId: item.workItemId || "work-100",
+    cycleKey: item.cycleKey,
+    kind: item.kind,
+    reportType,
+    contract: {
+      id: item.contractId,
+      contractNo: item.contractNo,
+      customerName: item.customerName,
+      eventId: item.eventId,
+      eventTitle: item.eventTitle,
+      eventDate: item.eventDate,
+      location: item.location,
+    },
+    lots: [],
+  };
+}
+
+function renderIncoming() {
+  return render(
+    <SWRConfig
+      value={{
+        provider: () => new Map(),
+        dedupingInterval: 0,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        shouldRetryOnError: false,
+      }}
+    >
+      <IncomingPage />
+    </SWRConfig>
+  );
+}
+
+async function selectContract(contractNo: string) {
+  const review = await screen.findByRole("button", {
+    name: `Review ${contractNo}`,
+  });
+  fireEvent.click(review);
+  const panel = screen.getByRole("complementary", {
+    name: "Selected contract",
+  });
+  await waitFor(() => expect(panel).toHaveAttribute("data-open", "true"));
+  return panel;
+}
+
+describe("Incoming", () => {
+  beforeEach(() => {
+    mocks.getIncoming.mockReset();
+    mocks.getStatus.mockReset();
+    mocks.getIncomingSummary.mockReset();
+    mocks.claim.mockReset();
+    mocks.getSetup.mockReset();
+    mocks.releaseClaim.mockReset();
+    mocks.routerPush.mockReset();
+
+    mocks.getIncoming.mockResolvedValue([availableItem]);
+    mocks.getStatus.mockResolvedValue({
+      enabled: true,
+      configured: true,
+      reachable: true,
+    });
+    mocks.claim.mockResolvedValue(setupFor(availableItem));
+    mocks.getSetup.mockResolvedValue(setupFor(claimedItem));
+    mocks.releaseClaim.mockResolvedValue(undefined);
+  });
+
+  it("shows a lightweight loading state until the queue and status resolve", async () => {
+    let resolveIncoming!: (items: AuctioneerIncomingItem[]) => void;
+    let resolveStatus!: (status: {
+      enabled: boolean;
+      configured: boolean;
+    }) => void;
+    mocks.getIncoming.mockReturnValue(
+      new Promise<AuctioneerIncomingItem[]>((resolve) => {
+        resolveIncoming = resolve;
+      })
+    );
+    mocks.getStatus.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      })
+    );
+
+    renderIncoming();
+    expect(
+      screen.getByRole("status", { name: "" })
+    ).toHaveTextContent(/Loading incoming contracts/);
+
+    await act(async () => {
+      resolveIncoming([]);
+      resolveStatus({ enabled: true, configured: true });
+    });
+    expect(await screen.findByText("No incoming contracts")).toBeInTheDocument();
+  });
+
+  it("renders an empty queue without hiding the workspace", async () => {
+    mocks.getIncoming.mockResolvedValue([]);
+    renderIncoming();
+
+    expect(await screen.findByRole("heading", { name: "Incoming" })).toBeInTheDocument();
+    expect(screen.getByText("No incoming contracts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeEnabled();
+  });
+
+  it.each([
+    [
+      { enabled: false, configured: true },
+      "Incoming is currently disabled by your administrator.",
+    ],
+    [
+      { enabled: true, configured: false },
+      "Incoming needs an Auctioneer connection before contracts can be loaded.",
+    ],
+  ])(
+    "explains an unavailable integration",
+    async (status, message) => {
+      mocks.getIncoming.mockResolvedValue([]);
+      mocks.getStatus.mockResolvedValue(status);
+      renderIncoming();
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.getByText("Incoming is not configured")).toBeInTheDocument();
+    }
+  );
+
+  it("surfaces a reachable-status failure as an actionable error", async () => {
+    mocks.getIncoming.mockRejectedValue(new Error("network down"));
+    mocks.getStatus.mockResolvedValue({
+      enabled: true,
+      configured: true,
+      reachable: false,
+      message: "Auctioneer is temporarily offline.",
+    });
+    renderIncoming();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Auctioneer is temporarily offline."
+    );
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeEnabled();
+  });
+
+  it("selects a report type and claims an available contract", async () => {
+    mocks.claim.mockResolvedValue(setupFor(availableItem, "lotListing"));
+    renderIncoming();
+    const panel = await selectContract("CV-100");
+
+    const lotListing = within(panel).getByRole("radio", {
+      name: /Lot listing/,
+    });
+    fireEvent.click(lotListing);
+    expect(lotListing).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(
+      within(panel).getByRole("button", {
+        name: "Claim and create report",
+      })
+    );
+
+    await waitFor(() =>
+      expect(mocks.claim).toHaveBeenCalledWith("cycle-100", "lotListing")
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Report workflow" })
+    ).toHaveTextContent("Lot listing");
+    expect(screen.getByTestId("deferred-report-form")).toBeInTheDocument();
+  });
+
+  it("refreshes the queue and explains a claim conflict", async () => {
+    mocks.claim.mockRejectedValue({
+      response: { status: 409, data: { message: "already claimed" } },
+    });
+    renderIncoming();
+    const panel = await selectContract("CV-100");
+
+    fireEvent.click(
+      within(panel).getByRole("button", {
+        name: "Claim and create report",
+      })
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Another user claimed this contract first. The queue has been refreshed."
+    );
+    expect(mocks.getIncoming.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("resumes a work item already claimed by the current user", async () => {
+    mocks.getIncoming.mockResolvedValue([claimedItem]);
+    renderIncoming();
+    const panel = await selectContract("CV-200");
+
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Resume report" })
+    );
+
+    await waitFor(() =>
+      expect(mocks.getSetup).toHaveBeenCalledWith("work-claimed")
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Report workflow" })
+    ).toHaveTextContent("Asset report");
+  });
+
+  it("releases a claimed work item and immediately refreshes", async () => {
+    mocks.getIncoming.mockResolvedValue([claimedItem]);
+    renderIncoming();
+    const panel = await selectContract("CV-200");
+
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Release claim" })
+    );
+
+    await waitFor(() =>
+      expect(mocks.releaseClaim).toHaveBeenCalledWith("work-claimed")
+    );
+    expect(mocks.getIncoming.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("opens an existing report rather than recreating it", async () => {
+    mocks.getIncoming.mockResolvedValue([
+      {
+        ...claimedItem,
+        status: "report_created",
+      },
+    ]);
+    renderIncoming();
+    const panel = await selectContract("CV-200");
+
+    fireEvent.click(
+      within(panel).getByRole("button", { name: "Open report" })
+    );
+
+    expect(mocks.routerPush).toHaveBeenCalledWith("/reports");
+    expect(mocks.claim).not.toHaveBeenCalled();
+  });
+});

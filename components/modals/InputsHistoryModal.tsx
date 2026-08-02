@@ -1,28 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FileText, History, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  Avatar,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  Stack,
-  Typography,
-} from "@mui/material";
-import {
-  ArticleRounded,
-  CloseRounded,
-  DeleteOutlineRounded,
-  HistoryRounded,
-} from "@mui/icons-material";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SavedInputService,
   type AssetFormData,
@@ -30,7 +10,7 @@ import {
   type RealEstateFormData,
   type SavedInput,
 } from "@/services/savedInputs";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 
 type Props = {
   isOpen: boolean;
@@ -46,14 +26,30 @@ export default function InputsHistoryModal({
   formType,
 }: Props) {
   const router = useRouter();
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [savedInputs, setSavedInputs] = useState<SavedInput[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (isOpen && !dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    } else if (!isOpen && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen) {
       void fetchSavedInputs();
     }
+    // fetchSavedInputs intentionally reads the latest formType whenever the modal opens.
+
   }, [isOpen, formType]);
 
   const fetchSavedInputs = async () => {
@@ -62,9 +58,7 @@ export default function InputsHistoryModal({
       const inputs = await SavedInputService.getAll(formType);
       setSavedInputs(inputs);
     } catch (error: any) {
-      toast.error(
-        error?.response?.data?.message || "Failed to load drafts"
-      );
+      toast.error(error?.response?.data?.message || "Failed to load drafts");
     } finally {
       setLoading(false);
     }
@@ -88,7 +82,7 @@ export default function InputsHistoryModal({
     onLoadInput(savedInput);
     onClose();
     router.push("/dashboard");
-    setTimeout(() => {
+    window.setTimeout(() => {
       const eventName =
         savedInput.formType === "realEstate"
           ? "load-realestate-input"
@@ -98,7 +92,10 @@ export default function InputsHistoryModal({
   };
 
   const totalLabel = useMemo(
-    () => `${savedInputs.length} saved ${savedInputs.length === 1 ? "entry" : "entries"}`,
+    () =>
+      `${savedInputs.length} saved ${
+        savedInputs.length === 1 ? "entry" : "entries"
+      }`,
     [savedInputs.length]
   );
 
@@ -120,187 +117,227 @@ export default function InputsHistoryModal({
     const asset = item.formData as AssetFormData;
     const realEstate = item.formData as RealEstateFormData;
     return (
-      <Stack spacing={0.5}>
+      <div style={{ display: "grid", gap: 3 }}>
         {asset.clientName ? (
-          <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
-            Client: {asset.clientName}
-          </Typography>
+          <span className="app-muted">Client: {asset.clientName}</span>
         ) : null}
         {asset.contractNo ? (
-          <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
-            Contract: {asset.contractNo}
-          </Typography>
+          <span className="app-muted">Contract: {asset.contractNo}</span>
         ) : null}
         {realEstate.property_details?.address ? (
-          <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
+          <span className="app-muted">
             Address: {realEstate.property_details.address}
-          </Typography>
+          </span>
         ) : null}
-      </Stack>
+      </div>
     );
   };
 
   return (
-    <Dialog
-      open={isOpen}
-      onClose={onClose}
-      fullWidth
-      maxWidth="md"
-      slotProps={{
-        paper: {
-          sx: {
-            borderRadius: 6,
-            border: "1px solid var(--app-border)",
-            bgcolor: "var(--app-panel)",
-            backgroundImage:
-              "radial-gradient(circle at top left, rgba(225,29,72,0.08), transparent 22%), radial-gradient(circle at bottom right, rgba(37,99,235,0.08), transparent 20%)",
-            boxShadow: "var(--app-shadow-modal)",
-          },
-        },
+    <dialog
+      ref={dialogRef}
+      className="app-dialog"
+      aria-labelledby="drafts-dialog-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      style={{
+        width: "min(760px, calc(100% - 32px))",
+        padding: 0,
+        color: "var(--app-text)",
       }}
     >
-      <DialogTitle sx={{ px: 3, pt: 3, pb: 2 }}>
-        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-            <Avatar
-              variant="rounded"
-              sx={{
-                width: 48,
-                height: 48,
-                borderRadius: 4,
-                bgcolor: "var(--app-accent-soft)",
-                color: "var(--app-accent)",
-              }}
+      <header
+        className="app-dialog__header"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span
+            aria-hidden
+            style={{
+              width: 44,
+              height: 44,
+              display: "grid",
+              placeItems: "center",
+              borderRadius: 8,
+              background: "var(--app-accent-soft)",
+              color: "var(--app-accent)",
+            }}
+          >
+            <History size={21} />
+          </span>
+          <div>
+            <h2
+              id="drafts-dialog-title"
+              style={{ margin: 0, fontSize: "1.05rem", fontWeight: 750 }}
             >
-              <HistoryRounded />
-            </Avatar>
-            <Stack>
-              <Typography variant="h6" sx={{ color: "var(--app-text)" }}>
-                Drafts
-              </Typography>
-              <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
-                {totalLabel}
-              </Typography>
-            </Stack>
-          </Stack>
-          <IconButton onClick={onClose}>
-            <CloseRounded />
-          </IconButton>
-        </Stack>
-      </DialogTitle>
-      <Divider sx={{ borderColor: "var(--app-border)" }} />
-      <DialogContent sx={{ px: 2, py: 2.5 }}>
+              Drafts
+            </h2>
+            <p className="app-muted" style={{ margin: "3px 0 0", fontSize: 13 }}>
+              {totalLabel}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="app-button app-button--icon"
+          onClick={onClose}
+          aria-label="Close drafts"
+          autoFocus
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </header>
+
+      <div className="app-dialog__body" style={{ padding: 16 }}>
         {loading ? (
-          <Typography sx={{ color: "var(--app-text-muted)", p: 2 }}>
-            Loading saved drafts...
-          </Typography>
+          <div
+            className="app-muted"
+            role="status"
+            style={{ minHeight: 180, display: "grid", placeItems: "center" }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <span className="app-spinner" aria-hidden />
+              Loading saved drafts…
+            </span>
+          </div>
         ) : savedInputs.length === 0 ? (
-          <Stack spacing={1.5} sx={{ py: 8, alignItems: "center" }}>
-            <Avatar
-              variant="rounded"
-              sx={{
-                width: 64,
-                height: 64,
-                borderRadius: 5,
-                bgcolor: "rgba(148, 163, 184, 0.12)",
-                color: "var(--app-text-muted)",
-              }}
-            >
-              <ArticleRounded />
-            </Avatar>
-            <Typography variant="h6" sx={{ color: "var(--app-text)" }}>
-              No saved drafts yet
-            </Typography>
-            <Typography sx={{ color: "var(--app-text-muted)" }}>
-              Drafts will appear here so you can resume work quickly.
-            </Typography>
-          </Stack>
-        ) : (
-          <List sx={{ p: 0 }}>
-            {savedInputs.map((item, index) => (
-              <ListItem
-                key={item._id}
-                disablePadding
-                secondaryAction={
-                  <IconButton
-                    edge="end"
-                    color="error"
-                    onClick={() => handleDelete(item._id, item.name)}
-                    disabled={deleting === item._id}
-                  >
-                    <DeleteOutlineRounded />
-                  </IconButton>
-                }
-                sx={{
-                  mb: index === savedInputs.length - 1 ? 0 : 1.25,
-                  border: "1px solid var(--app-border)",
-                  borderRadius: 4,
-                  bgcolor: "var(--app-panel-soft)",
+          <div
+            style={{
+              minHeight: 260,
+              display: "grid",
+              placeItems: "center",
+              textAlign: "center",
+            }}
+          >
+            <div>
+              <span
+                aria-hidden
+                style={{
+                  width: 56,
+                  height: 56,
+                  display: "grid",
+                  placeItems: "center",
+                  margin: "0 auto 14px",
+                  borderRadius: 8,
+                  background: "var(--app-panel-alt)",
+                  color: "var(--app-text-muted)",
                 }}
               >
-                <ListItemButton
+                <FileText size={25} />
+              </span>
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>No saved drafts yet</h3>
+              <p className="app-muted" style={{ margin: "7px 0 0" }}>
+                Drafts will appear here so you can resume work quickly.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ul
+            aria-label="Saved drafts"
+            style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 10 }}
+          >
+            {savedInputs.map((item) => (
+              <li
+                key={item._id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                  alignItems: "stretch",
+                  border: "1px solid var(--app-border)",
+                  borderRadius: 8,
+                  background: "var(--app-panel)",
+                  overflow: "hidden",
+                }}
+              >
+                <button
+                  type="button"
                   onClick={() => handleLoad(item)}
-                  sx={{
-                    borderRadius: 4,
-                    py: 2,
-                    pr: 8,
-                    alignItems: "flex-start",
+                  style={{
+                    minWidth: 0,
+                    padding: 14,
+                    border: 0,
+                    background: "transparent",
+                    color: "inherit",
+                    textAlign: "left",
+                    cursor: "pointer",
                   }}
                 >
-                  <ListItemText
-                    primary={
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        spacing={1}
-                        sx={{ alignItems: { xs: "flex-start", sm: "center" } }}
-                      >
-                        <Typography sx={{ fontWeight: 800, color: "var(--app-text)" }}>
-                          {item.name}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            px: 1.25,
-                            py: 0.5,
-                            borderRadius: 99,
-                            bgcolor:
-                              item.formType === "realEstate"
-                                ? "rgba(5,150,105,0.12)"
-                                : "rgba(37,99,235,0.12)",
-                            color:
-                              item.formType === "realEstate" ? "#059669" : "#2563eb",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {item.formType === "realEstate" ? "Real Estate" : "Asset"}
-                        </Typography>
-                      </Stack>
-                    }
-                    secondary={
-                      <Stack spacing={1.25} sx={{ mt: 1 }}>
-                        {renderSummary(item)}
-                        <Typography variant="caption" sx={{ color: "var(--app-text-muted)" }}>
-                          Saved {formatDateTime(item.createdAt)}
-                        </Typography>
-                      </Stack>
-                    }
-                  />
-                </ListItemButton>
-              </ListItem>
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    <strong>{item.name}</strong>
+                    <span
+                      className={`app-chip ${
+                        item.formType === "realEstate"
+                          ? "app-chip--success"
+                          : "app-chip--info"
+                      }`}
+                    >
+                      {item.formType === "realEstate" ? "Real Estate" : "Asset"}
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      display: "grid",
+                      gap: 7,
+                      marginTop: 9,
+                      fontSize: 13,
+                    }}
+                  >
+                    {renderSummary(item)}
+                    <span className="app-muted">
+                      Saved {formatDateTime(item.createdAt)}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="app-button app-button--icon app-button--danger"
+                  onClick={() => void handleDelete(item._id, item.name)}
+                  disabled={deleting === item._id}
+                  aria-label={`Delete ${item.name}`}
+                  style={{
+                    alignSelf: "center",
+                    marginRight: 12,
+                    borderColor: "transparent",
+                  }}
+                >
+                  {deleting === item._id ? (
+                    <span className="app-spinner" aria-hidden />
+                  ) : (
+                    <Trash2 size={17} aria-hidden />
+                  )}
+                </button>
+              </li>
             ))}
-          </List>
+          </ul>
         )}
-      </DialogContent>
-      <Divider sx={{ borderColor: "var(--app-border)" }} />
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ px: 3, py: 2, justifyContent: "flex-end" }}
-      >
-        <Button onClick={onClose} variant="outlined">
+      </div>
+
+      <footer className="app-dialog__footer">
+        <button
+          type="button"
+          className="app-button app-button--secondary"
+          onClick={onClose}
+        >
           Close
-        </Button>
-      </Stack>
-    </Dialog>
+        </button>
+      </footer>
+    </dialog>
   );
 }

@@ -27,16 +27,16 @@ export default function PropertyDetailsSection({
   const allFields = [...propertyFields, ...dateFields];
   const filledCount = allFields.filter((f) => f && f.toString().trim() !== "").length;
 
-  const inputClass = "w-full rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.1),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(251,113,133,0.15)] transition-all placeholder:text-gray-400 hover:border-gray-400";
-  const labelClass = "block text-[11px] font-bold text-gray-600 mb-1.5 tracking-wide uppercase drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]";
+  const inputClass = "w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] from-gray-50 via-white to-gray-100 px-3 py-2.5 text-sm text-[var(--app-text)] shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-400 focus:shadow-sm transition-all placeholder:text-[var(--app-text-muted)] hover:border-gray-400";
+  const labelClass = "block text-[11px] font-bold text-[var(--app-text-muted)] mb-1.5 tracking-wide uppercase drop-shadow-sm";
 
   return (
     <CollapsibleSection title="Property Details" icon={<Home />} filledCount={filledCount} totalCount={allFields.length} required>
       {/* Language */}
-      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
-        <span className="text-[11px] text-gray-500">Lang:</span>
+      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[var(--app-border)]">
+        <span className="text-[11px] text-[var(--app-text-muted)]">Lang:</span>
         <select
-          className="rounded-lg border-2 border-gray-300/80 bg-gradient-to-b from-gray-50 via-white to-gray-100 px-2.5 py-1.5 text-xs text-gray-900 shadow-[inset_0_2px_4px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-400 transition-all cursor-pointer hover:border-gray-400"
+          className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] from-gray-50 via-white to-gray-100 px-2.5 py-1.5 text-xs text-[var(--app-text)] shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-400 transition-all cursor-pointer hover:border-gray-400"
           value={details.language || "en"}
           onChange={(e) => onLanguageChange(e.target.value as "en" | "fr" | "es")}
         >
@@ -82,7 +82,7 @@ export default function PropertyDetailsSection({
       </div>
 
       {/* Dates */}
-      <div className="mt-2 pt-2 border-t border-gray-100">
+      <div className="mt-2 pt-2 border-t border-[var(--app-border)]">
         <div className="grid gap-2 grid-cols-3">
           <div>
             <label className={labelClass}>Report Date *</label>

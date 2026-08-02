@@ -47,7 +47,7 @@ export const ImageMediaCard = memo(function ImageMediaCard({
     <article className="min-w-0 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] [content-visibility:auto] [contain-intrinsic-size:0_210px]">
       <div className="relative aspect-[4/3] overflow-hidden bg-[var(--app-panel-alt)]">
         {url ? (
-          // eslint-disable-next-line @next/next/no-img-element
+
           <img src={url} alt={file.name} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--app-text-muted)]">

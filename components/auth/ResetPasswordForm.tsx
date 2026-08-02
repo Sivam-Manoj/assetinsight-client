@@ -2,9 +2,23 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { AuthService } from "@/services/auth";
-import { Eye, EyeOff, Lock, Loader2 } from "lucide-react";
 import { useAuthContext } from "@/context/AuthContext";
+import AuthLightShell, {
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_PRIMARY_BUTTON_CLASS,
+  AuthFormHeading,
+  AuthNotice,
+  AuthSpinner,
+} from "@/components/auth/AuthLightShell";
+
+const RESET_FEATURES = [
+  "Encrypted account access",
+  "Secure recovery links",
+  "Device approval protection",
+];
 
 export default function ResetPasswordForm({ token }: { token: string }) {
   const { acceptAuthResponse } = useAuthContext();
@@ -17,110 +31,124 @@ export default function ResetPasswordForm({ token }: { token: string }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError(null);
     setMessage(null);
-    if (password.length < 6)
-      return setError("Password must be at least 6 characters");
-    if (password !== confirm) return setError("Passwords do not match");
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await AuthService.resetPassword({ token, password });
-      acceptAuthResponse(res);
-      setMessage(res.message || "Password reset successful");
-      setTimeout(
-        () => router.replace(res.authState === "authenticated" ? "/me" : "/device-access"),
+      const response = await AuthService.resetPassword({ token, password });
+      acceptAuthResponse(response);
+      setMessage(response.message || "Password reset successful.");
+      window.setTimeout(
+        () => router.replace(response.authState === "authenticated" ? "/me" : "/device-access"),
         800
       );
-    } catch (err: any) {
-      setError(err?.message || "Failed to reset password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to reset password");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="mx-auto w-full max-w-md space-y-5 rounded-xl border border-gray-200 bg-white/90 p-6 shadow-lg backdrop-blur"
+    <AuthLightShell
+      title="Secure your account and get back to work."
+      description="Choose a strong new password, then continue to the same reports and valuation workflows."
+      features={RESET_FEATURES}
     >
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-gray-900">Reset Password</h1>
-        <p className="text-sm text-gray-600">Set a new password for your account</p>
-      </div>
-      {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-md border border-green-300 bg-green-50 p-2 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">New Password</label>
-        <div className="relative">
-          <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type={showPassword ? "text" : "password"}
-            placeholder="••••••••"
-            autoComplete="new-password"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 pr-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+      <form onSubmit={onSubmit}>
+        <AuthFormHeading
+          label="Reset password"
+          title="Choose a new password"
+          description="Use at least six characters and keep it unique to Asset Insight."
+        />
+
+        {error ? <div className="mt-7"><AuthNotice tone="error">{error}</AuthNotice></div> : null}
+        {message ? <div className="mt-7"><AuthNotice tone="success">{message}</AuthNotice></div> : null}
+
+        <div className="mt-8 space-y-5">
+          <PasswordField
+            label="New password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={6}
-            required
+            onChange={setPassword}
+            visible={showPassword}
+            onToggle={() => setShowPassword((current) => !current)}
+            disabled={loading}
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword((s) => !s)}
-            aria-label={showPassword ? "Hide password" : "Show password"}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:text-gray-700"
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-        <p className="text-xs text-gray-500">Minimum 6 characters.</p>
-      </div>
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
-        <div className="relative">
-          <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type={showConfirm ? "text" : "password"}
-            placeholder="••••••••"
-            autoComplete="new-password"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 pr-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+          <PasswordField
+            label="Confirm password"
             value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            minLength={6}
-            required
+            onChange={setConfirm}
+            visible={showConfirm}
+            onToggle={() => setShowConfirm((current) => !current)}
+            disabled={loading}
           />
-          <button
-            type="button"
-            onClick={() => setShowConfirm((s) => !s)}
-            aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:text-gray-700"
-          >
-            {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
         </div>
-      </div>
-      <button
-        type="submit"
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-red-500 disabled:opacity-50"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Updating...
-          </>
-        ) : (
-          "Update password"
-        )}
-      </button>
-    </form>
+
+        <button type="submit" disabled={loading} className={`mt-8 w-full ${AUTH_PRIMARY_BUTTON_CLASS}`}>
+          {loading ? <AuthSpinner /> : null}
+          <span>{loading ? "Updating password..." : "Update password"}</span>
+          {loading ? null : <ArrowRight className="h-4 w-4" />}
+        </button>
+      </form>
+    </AuthLightShell>
+  );
+}
+
+function PasswordField({
+  label,
+  value,
+  onChange,
+  visible,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}) {
+  const inputId = `reset-${label.toLowerCase().replace(/\s+/g, "-")}`;
+
+  return (
+    <div className="block">
+      <label htmlFor={inputId} className={AUTH_LABEL_CLASS}>
+        {label}
+      </label>
+      <span className="relative block">
+        <input
+          id={inputId}
+          type={visible ? "text" : "password"}
+          placeholder="At least 6 characters"
+          autoComplete="new-password"
+          className={`${AUTH_INPUT_CLASS} pr-14`}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          minLength={6}
+          required
+          disabled={disabled}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={visible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-md text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]"
+        >
+          {visible ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+        </button>
+      </span>
+    </div>
   );
 }

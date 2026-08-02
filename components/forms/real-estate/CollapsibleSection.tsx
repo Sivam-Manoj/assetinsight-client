@@ -26,21 +26,21 @@ export default function CollapsibleSection({
   const hasPartial = filledCount > 0 && filledCount < totalCount;
 
   const variantStyles = {
-    default: "border-gray-300/90 bg-gradient-to-b from-white via-gray-50/60 to-gray-100/80",
-    success: "border-emerald-300/90 bg-gradient-to-b from-emerald-50/40 via-white to-emerald-100/50",
-    warning: "border-amber-300/90 bg-gradient-to-b from-amber-50/40 via-white to-amber-100/50",
-    info: "border-blue-300/90 bg-gradient-to-b from-blue-50/40 via-white to-blue-100/50",
+    default: "border-[var(--app-border)] bg-[var(--app-panel)] from-white via-gray-50/60 to-gray-100/80",
+    success: "border-emerald-300/90 bg-[var(--app-panel)] from-emerald-50/40 via-white to-emerald-100/50",
+    warning: "border-amber-300/90 bg-[var(--app-panel)] from-amber-50/40 via-white to-amber-100/50",
+    info: "border-blue-300/90 bg-[var(--app-panel)] from-blue-50/40 via-white to-blue-100/50",
   };
 
   return (
-    <div className={`rounded-xl border-2 shadow-[0_4px_12px_rgba(0,0,0,0.1),0_2px_4px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,1)] overflow-hidden ${variantStyles[variant]}`}>
+    <div className={`rounded-xl border shadow-sm overflow-hidden ${variantStyles[variant]}`}>
       {/* Header - Always visible, not clickable */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-gray-100/90 via-gray-50/70 to-white/80 border-b-2 border-gray-200/70 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.03)]">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--app-panel)] from-gray-100/90 via-gray-50/70 to-white/80 border-b-2 border-[var(--app-border)] shadow-sm">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="flex-shrink-0 text-gray-600 [&>svg]:h-4 [&>svg]:w-4 drop-shadow-sm">{icon}</span>
-          <span className="font-semibold text-sm text-gray-800 truncate">{title}</span>
+          <span className="flex-shrink-0 text-[var(--app-text-muted)] [&>svg]:h-4 [&>svg]:w-4 drop-shadow-sm">{icon}</span>
+          <span className="font-semibold text-sm text-[var(--app-text)] truncate">{title}</span>
           {required && (
-            <span className="flex-shrink-0 text-[9px] font-medium text-rose-500 bg-rose-50 px-1 py-0.5 rounded shadow-sm">
+            <span className="flex-shrink-0 text-[9px] font-medium text-blue-500 bg-blue-50 px-1 py-0.5 rounded shadow-sm">
               *
             </span>
           )}
@@ -59,7 +59,7 @@ export default function CollapsibleSection({
                   {filledCount}/{totalCount}
                 </span>
               ) : (
-                <span className="flex items-center gap-0.5 text-[10px] font-medium text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full shadow-sm">
+                <span className="flex items-center gap-0.5 text-[10px] font-medium text-[var(--app-text-muted)] bg-[var(--app-panel-alt)] px-1.5 py-0.5 rounded-full shadow-sm">
                   <AlertCircle className="h-2.5 w-2.5" />
                   {totalCount} fields
                 </span>
@@ -70,7 +70,7 @@ export default function CollapsibleSection({
       </div>
 
       {/* Content - Always expanded */}
-      <div className="px-4 py-4 bg-gradient-to-b from-transparent to-gray-50/30">{children}</div>
+      <div className="px-4 py-4 bg-[var(--app-panel)] from-transparent to-gray-50/30">{children}</div>
     </div>
   );
 }

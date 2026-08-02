@@ -17,6 +17,10 @@ vi.mock("@/context/AuthContext", () => ({
   useAuthContext: vi.fn(),
 }));
 
+vi.mock("@/components/auth/ThemeToggle", () => ({
+  default: () => null,
+}));
+
 vi.mock("@/lib/device-access", () => ({
   buildBasicDeviceContext: vi.fn(() => new Promise(() => undefined)),
   CameraVerificationError: class CameraVerificationError extends Error {},

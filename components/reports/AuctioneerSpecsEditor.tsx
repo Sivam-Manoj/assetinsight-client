@@ -184,11 +184,11 @@ export default function AuctioneerSpecsEditor({
   const accentClasses =
     accent === "purple"
       ? "border-purple-200 bg-purple-50/50 text-purple-900"
-      : "border-rose-200 bg-rose-50/50 text-rose-900";
+      : "border-blue-200 bg-blue-50/50 text-blue-900";
   const focusClass =
     accent === "purple"
       ? "focus:ring-purple-500"
-      : "focus:ring-rose-500";
+      : "focus:ring-blue-500";
 
   const categoryChipText = categorySpec
     ? `${categorySpec.childCategory} - ${fields.length} fields`
@@ -200,7 +200,7 @@ export default function AuctioneerSpecsEditor({
   const accentButtonClass =
     accent === "purple"
       ? "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500"
-      : "bg-rose-600 hover:bg-rose-700 focus:ring-rose-500";
+      : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500";
   const safeDamageAnalysis = sanitizeDamageAnalysisText(damageAnalysis);
 
   const openExpandedEditor = (fieldName: string) => {
@@ -306,7 +306,7 @@ export default function AuctioneerSpecsEditor({
     expandedEditor && typeof document !== "undefined"
       ? createPortal(
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 px-4 py-6 "
             role="dialog"
             aria-modal="true"
             aria-labelledby="auctioneer-spec-expanded-title"
@@ -314,8 +314,8 @@ export default function AuctioneerSpecsEditor({
               if (event.target === event.currentTarget) closeExpandedEditor();
             }}
           >
-            <div className="flex max-h-[86vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10">
-              <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-5 py-4">
+            <div className="flex max-h-[86vh] w-full max-w-xl flex-col overflow-hidden rounded-lg bg-[var(--app-panel)] shadow-sm ring-1 ">
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--app-border)] bg-[var(--app-panel-alt)] px-5 py-4">
                 <div className="min-w-0">
                   <p
                     id="auctioneer-spec-expanded-title"
@@ -323,7 +323,7 @@ export default function AuctioneerSpecsEditor({
                   >
                     {expandedEditor.isNew ? "ADD CONDITION REPORT FIELD" : expandedEditor.fieldName}
                   </p>
-                  <p className="mt-1 truncate text-xs text-gray-500">
+                  <p className="mt-1 truncate text-xs text-[var(--app-text-muted)]">
                     {[
                       lotLabel ? `Lot ${lotLabel}` : "",
                       lotTitle,
@@ -333,7 +333,7 @@ export default function AuctioneerSpecsEditor({
                 <button
                   type="button"
                   onClick={closeExpandedEditor}
-                  className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full border border-gray-200 bg-white text-lg font-bold leading-none text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                  className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full border border-[var(--app-border)] bg-[var(--app-panel)] text-lg font-bold leading-none text-[var(--app-text-muted)] transition hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text)]"
                   aria-label="Close editor"
                 >
                   x
@@ -342,7 +342,7 @@ export default function AuctioneerSpecsEditor({
               <div className="min-h-0 flex-1 px-5 py-4">
                 {expandedEditor.isNew && (
                   <div className="mb-3">
-                    <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-600">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
                       Field name
                     </label>
                     <input
@@ -352,7 +352,7 @@ export default function AuctioneerSpecsEditor({
                           prev ? { ...prev, draftFieldName: event.target.value, error: undefined, notice: undefined } : prev
                         )
                       }
-                      className={`w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                      className={`w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)] outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
                       placeholder="Example: Engine Hours"
                       autoFocus
                     />
@@ -365,7 +365,7 @@ export default function AuctioneerSpecsEditor({
                       prev ? { ...prev, value: event.target.value, error: undefined, notice: undefined } : prev
                     )
                   }
-                  className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
+                  className={`max-h-[44vh] min-h-[180px] w-full resize-y rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-3 text-sm leading-6 text-[var(--app-text)] outline-none transition focus:border-transparent focus:ring-2 ${focusClass}`}
                   placeholder="Edit the full field value"
                   autoFocus={!expandedEditor.isNew}
                 />
@@ -380,7 +380,7 @@ export default function AuctioneerSpecsEditor({
                   </p>
                 )}
               </div>
-              <div className="flex flex-col gap-2 border-t border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
                   onClick={expandedEditor.isNew ? closeExpandedEditor : deleteExpandedField}
@@ -396,7 +396,7 @@ export default function AuctioneerSpecsEditor({
                   <button
                     type="button"
                     onClick={closeExpandedEditor}
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
+                    className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-2 text-sm font-bold text-[var(--app-text-muted)] transition hover:bg-[var(--app-panel-alt)]"
                   >
                     Cancel
                   </button>
@@ -423,7 +423,7 @@ export default function AuctioneerSpecsEditor({
             <p className="text-xs font-black uppercase tracking-wide">
               CONDITION REPORT
             </p>
-            <p className="mt-0.5 text-[11px] text-gray-600">
+            <p className="mt-0.5 text-[11px] text-[var(--app-text-muted)]">
               {categorySpec
                 ? `Category fields for ${categorySpec.childCategory}`
                 : lot?.categories
@@ -432,9 +432,9 @@ export default function AuctioneerSpecsEditor({
             </p>
           </div>
           <span
-            className={`w-fit rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold ring-1 ${
+            className={`w-fit rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold ring-1 ${
               categorySpec
-                ? "text-gray-800 ring-black/10"
+                ? "text-[var(--app-text)] "
                 : "text-amber-800 ring-amber-200"
             }`}
           >
@@ -446,7 +446,7 @@ export default function AuctioneerSpecsEditor({
           <button
             type="button"
             onClick={openAddFieldEditor}
-            className="rounded-lg border border-dashed border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 transition hover:border-gray-400 hover:bg-gray-50"
+            className="rounded-lg border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-1.5 text-xs font-bold text-[var(--app-text-muted)] transition hover:border-gray-400 hover:bg-[var(--app-panel-alt)]"
           >
             + Add field
           </button>
@@ -465,13 +465,13 @@ export default function AuctioneerSpecsEditor({
             </p>
           </div>
         ) : includeDamageAnalysis && onDamageAnalysisChange ? (
-          <div className="mb-3 rounded-lg border border-red-200 bg-white p-3 text-gray-900">
+          <div className="mb-3 rounded-lg border border-red-200 bg-[var(--app-panel)] p-3 text-[var(--app-text)]">
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-red-700">
                   Damages
                 </p>
-                <p className="mt-0.5 text-[11px] font-medium text-gray-600">
+                <p className="mt-0.5 text-[11px] font-medium text-[var(--app-text-muted)]">
                   Manual damage notes for the CR damages section.
                 </p>
               </div>
@@ -486,7 +486,7 @@ export default function AuctioneerSpecsEditor({
             <button
               type="button"
               onClick={() => openDamageEditor()}
-              className={`min-h-10 w-full rounded-md border border-red-100 bg-red-50/60 px-2.5 py-2 text-left text-xs text-gray-900 outline-none transition hover:border-red-200 hover:bg-red-50 focus:border-transparent focus:ring-2 ${focusClass}`}
+              className={`min-h-10 w-full rounded-md border border-red-100 bg-red-50/60 px-2.5 py-2 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-red-200 hover:bg-red-50 focus:border-transparent focus:ring-2 ${focusClass}`}
               title="Click to open large damage editor"
             >
               <span className="block whitespace-pre-wrap break-words">
@@ -501,7 +501,7 @@ export default function AuctioneerSpecsEditor({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {visibleFields.map((fieldName) => (
                 <div key={fieldName} className="block">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-gray-700">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-medium text-[var(--app-text-muted)]">
                     <span className="min-w-0 break-words">{fieldName}</span>
                     <button
                       type="button"
@@ -529,7 +529,7 @@ export default function AuctioneerSpecsEditor({
                         openExpandedEditor(fieldName);
                       }
                     }}
-                    className={`min-h-9 w-full rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-left text-xs text-gray-900 outline-none transition hover:border-gray-400 hover:bg-gray-50 focus:border-transparent focus:ring-2 ${focusClass}`}
+                    className={`min-h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2.5 py-1.5 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-gray-400 hover:bg-[var(--app-panel-alt)] focus:border-transparent focus:ring-2 ${focusClass}`}
                     title="Click to open large editor"
                   >
                     <span className="block truncate">
@@ -541,7 +541,7 @@ export default function AuctioneerSpecsEditor({
             </div>
           </div>
         ) : (
-          <div className="rounded-md border border-dashed border-gray-300 bg-white/70 px-3 py-4 text-xs text-gray-600">
+          <div className="rounded-md border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-4 text-xs text-[var(--app-text-muted)]">
             No category fields are available yet.
           </div>
         )}

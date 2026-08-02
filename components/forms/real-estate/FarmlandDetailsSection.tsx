@@ -19,8 +19,8 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
   const fields = [fd?.total_title_acres, fd?.cultivated_acres, fd?.rm_area, fd?.soil_class, fd?.crop_type, fd?.access_quality, fd?.distance_to_city_km];
   const filledCount = fields.filter((f) => f !== undefined && f !== null && f !== "").length;
 
-  const inputClass = "w-full rounded-lg border-2 border-emerald-300/80 bg-gradient-to-b from-emerald-50/50 via-white to-emerald-100/40 px-3 py-2.5 text-sm text-gray-900 shadow-[inset_0_3px_6px_rgba(0,0,0,0.08),inset_0_-2px_4px_rgba(255,255,255,0.9),0_1px_3px_rgba(0,0,0,0.06)] focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-400 focus:shadow-[inset_0_3px_6px_rgba(0,0,0,0.08),inset_0_-2px_4px_rgba(255,255,255,0.9),0_0_0_4px_rgba(52,211,153,0.15)] transition-all placeholder:text-gray-400 hover:border-emerald-400";
-  const labelClass = "block text-[11px] font-bold text-gray-600 mb-1.5 tracking-wide uppercase drop-shadow-[0_1px_0_rgba(255,255,255,0.8)]";
+  const inputClass = "w-full rounded-lg border border-emerald-300/80 bg-[var(--app-panel)] from-emerald-50/50 via-white to-emerald-100/40 px-3 py-2.5 text-sm text-[var(--app-text)] shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-400 focus:shadow-sm transition-all placeholder:text-[var(--app-text-muted)] hover:border-emerald-400";
+  const labelClass = "block text-[11px] font-bold text-[var(--app-text-muted)] mb-1.5 tracking-wide uppercase drop-shadow-sm";
 
   return (
     <CollapsibleSection title="Farmland" icon={<Wheat className="text-emerald-600" />} filledCount={filledCount} totalCount={fields.length} variant="success" required>
@@ -68,12 +68,12 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
             <input required type="number" className={inputClass} value={fd?.distance_to_city_km || ""} onChange={(e) => onChange("distance_to_city_km", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="25" />
           </div>
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-emerald-600" checked={fd?.is_rented || false} onChange={(e) => onChange("is_rented", e.target.checked)} />
+            <label className="flex items-center gap-1.5 text-[11px] text-[var(--app-text-muted)] cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-[var(--app-border)] text-emerald-600" checked={fd?.is_rented || false} onChange={(e) => onChange("is_rented", e.target.checked)} />
               Rented
             </label>
-            <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-emerald-600" checked={fd?.irrigation || false} onChange={(e) => onChange("irrigation", e.target.checked)} />
+            <label className="flex items-center gap-1.5 text-[11px] text-[var(--app-text-muted)] cursor-pointer">
+              <input type="checkbox" className="h-4 w-4 rounded border-[var(--app-border)] text-emerald-600" checked={fd?.irrigation || false} onChange={(e) => onChange("irrigation", e.target.checked)} />
               Irrigation
             </label>
           </div>
@@ -89,11 +89,11 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
         <div className="border-t border-emerald-200 pt-3">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Valuation Approaches</span>
-            <span className="text-[10px] text-gray-500 ml-auto">(Select one or more)</span>
+            <span className="text-xs font-bold text-[var(--app-text-muted)] uppercase tracking-wide">Valuation Approaches</span>
+            <span className="text-[10px] text-[var(--app-text-muted)] ml-auto">(Select one or more)</span>
           </div>
           <div className="space-y-2">
-            <label className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-emerald-200 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/50 transition-colors">
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/50 transition-colors">
               <input 
                 type="checkbox" 
                 className="h-4 w-4 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500" 
@@ -101,11 +101,11 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                 onChange={(e) => onChange("use_direct_comparable", e.target.checked)} 
               />
               <div>
-                <span className="text-sm font-semibold text-gray-800">1. Direct Comparable Approach</span>
-                <p className="text-[10px] text-gray-500">Software finds comparable farmland sales and calculates adjustments</p>
+                <span className="text-sm font-semibold text-[var(--app-text)]">1. Direct Comparable Approach</span>
+                <p className="text-[10px] text-[var(--app-text-muted)]">Software finds comparable farmland sales and calculates adjustments</p>
               </div>
             </label>
-            <label className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-amber-200 bg-amber-50/50 cursor-pointer hover:bg-amber-100/50 transition-colors">
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 cursor-pointer hover:bg-amber-100/50 transition-colors">
               <input 
                 type="checkbox" 
                 className="h-4 w-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500" 
@@ -113,11 +113,11 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                 onChange={(e) => onChange("use_income_approach", e.target.checked)} 
               />
               <div>
-                <span className="text-sm font-semibold text-gray-800">2. Income Capitalization Approach</span>
-                <p className="text-[10px] text-gray-500">For rented/cultivated portions - calculates value based on rental income</p>
+                <span className="text-sm font-semibold text-[var(--app-text)]">2. Income Capitalization Approach</span>
+                <p className="text-[10px] text-[var(--app-text-muted)]">For rented/cultivated portions - calculates value based on rental income</p>
               </div>
             </label>
-            <label className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-blue-200 bg-blue-50/50 cursor-pointer hover:bg-blue-100/50 transition-colors">
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-blue-200 bg-blue-50/50 cursor-pointer hover:bg-blue-100/50 transition-colors">
               <input 
                 type="checkbox" 
                 className="h-4 w-4 rounded border-blue-400 text-blue-600 focus:ring-blue-500" 
@@ -125,8 +125,8 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                 onChange={(e) => onChange("use_cost_approach", e.target.checked)} 
               />
               <div>
-                <span className="text-sm font-semibold text-gray-800">3. Cost Approach</span>
-                <p className="text-[10px] text-gray-500">Software calculates land value, replacement cost, and depreciation automatically</p>
+                <span className="text-sm font-semibold text-[var(--app-text)]">3. Cost Approach</span>
+                <p className="text-[10px] text-[var(--app-text-muted)]">Software calculates land value, replacement cost, and depreciation automatically</p>
               </div>
             </label>
           </div>
@@ -134,10 +134,10 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
 
         {/* Direct Comparable Subject Details (shown when approach is selected) */}
         {fd?.use_direct_comparable && (
-          <div className="border-2 border-emerald-300 rounded-xl p-3 bg-gradient-to-br from-emerald-50/80 to-white">
+          <div className="border border-emerald-300 rounded-xl p-3 bg-[var(--app-panel)] from-emerald-50/80 to-white">
             <div className="flex items-center gap-2 mb-3">
               <FileText className="h-4 w-4 text-emerald-600" />
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Subject Property Details</span>
+              <span className="text-xs font-bold text-[var(--app-text-muted)] uppercase tracking-wide">Subject Property Details</span>
             </div>
             <div className="grid gap-2 grid-cols-1 lg:grid-cols-2">
               <div>
@@ -181,10 +181,10 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
 
         {/* Income Capitalization Approach Details (shown when approach is selected) */}
         {fd?.use_income_approach && (
-          <div className="border-2 border-amber-300 rounded-xl p-3 bg-gradient-to-br from-amber-50/80 to-white">
+          <div className="border border-amber-300 rounded-xl p-3 bg-[var(--app-panel)] from-amber-50/80 to-white">
             <div className="flex items-center gap-2 mb-3">
               <DollarSign className="h-4 w-4 text-amber-600" />
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Income Capitalization Inputs</span>
+              <span className="text-xs font-bold text-[var(--app-text-muted)] uppercase tracking-wide">Income Capitalization Inputs</span>
             </div>
             <div className="grid gap-2 grid-cols-2 lg:grid-cols-4">
               <div>
@@ -246,10 +246,10 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
 
         {/* Cost Approach info (shown when approach is selected) */}
         {fd?.use_cost_approach && (
-          <div className="border-2 border-blue-300 rounded-xl p-3 bg-gradient-to-br from-blue-50/80 to-white">
+          <div className="border border-blue-300 rounded-xl p-3 bg-[var(--app-panel)] from-blue-50/80 to-white">
             <div className="flex items-center gap-2 mb-2">
               <Building2 className="h-4 w-4 text-blue-600" />
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Cost Approach (Software-Calculated)</span>
+              <span className="text-xs font-bold text-[var(--app-text-muted)] uppercase tracking-wide">Cost Approach (Software-Calculated)</span>
             </div>
             <div className="p-2 rounded-lg bg-blue-100/50 border border-blue-200">
               <p className="text-[10px] text-blue-700">
@@ -261,8 +261,8 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
 
         {/* Reconciliation note when multiple approaches selected */}
         {((fd?.use_direct_comparable ? 1 : 0) + (fd?.use_income_approach ? 1 : 0) + (fd?.use_cost_approach ? 1 : 0)) >= 2 && (
-          <div className="p-3 rounded-lg bg-gradient-to-r from-emerald-100/50 via-amber-100/50 to-blue-100/50 border border-gray-200">
-            <p className="text-xs text-gray-700">
+          <div className="p-3 rounded-lg bg-[var(--app-panel)] from-emerald-100/50 via-amber-100/50 to-blue-100/50 border border-[var(--app-border)]">
+            <p className="text-xs text-[var(--app-text-muted)]">
               <strong>📊 Reconciliation:</strong> When multiple approaches are selected, the final value will be reconciled using weighted averages based on the reliability of each approach for this property type.
             </p>
           </div>

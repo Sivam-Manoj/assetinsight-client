@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Save, Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2, GitMerge as MergeIcon } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   getPreviewData, 
   updatePreviewData, 
@@ -219,13 +219,13 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-[var(--app-panel)] p-3 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <label className="block text-xs sm:text-sm font-semibold text-gray-800">
+          <label className="block text-xs sm:text-sm font-semibold text-[var(--app-text)]">
             Appraiser Signature
           </label>
-          <p className="mt-0.5 text-xs text-gray-500">
+          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
             This signature is added to the DOCX appraisal signature areas.
           </p>
         </div>
@@ -252,7 +252,7 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
         }`}
         aria-label="Draw appraiser signature"
       />
-      <p className="mt-2 text-xs text-gray-500">
+      <p className="mt-2 text-xs text-[var(--app-text-muted)]">
         {value ? "Saved signature ready for DOCX generation." : "Draw inside the box, then save changes."}
       </p>
     </div>
@@ -935,7 +935,7 @@ export default function PreviewModal({
     <button
       type="button"
       onClick={() => openLotFieldEditor(lotIndex, field, variant)}
-      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-rose-300 hover:text-rose-700"
+      className="rounded-md border border-slate-200 bg-[var(--app-panel)] px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
       aria-label={`Open ${lotTextFieldMeta[field].label} editor`}
     >
       Edit
@@ -958,7 +958,7 @@ export default function PreviewModal({
         readOnly
         onFocus={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
         onClick={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
-        className={`w-full cursor-text border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-900 transition-all placeholder:text-gray-400 hover:border-rose-300 focus:border-transparent focus:ring-2 focus:ring-rose-500 ${
+        className={`w-full cursor-text border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm leading-5 text-[var(--app-text)] transition-all placeholder:text-[var(--app-text-muted)] hover:border-blue-300 focus:border-transparent focus:ring-2 focus:ring-blue-500 ${
           isDesktop
             ? "min-h-[104px] min-w-0 rounded-md resize-none"
             : "min-h-[120px] rounded-lg resize-y"
@@ -1190,7 +1190,7 @@ export default function PreviewModal({
       )}
 
       {specPdfUrl && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-[var(--app-panel)] px-4 py-3 shadow-sm">
           <div className="mr-auto">
             <p className="text-sm font-semibold text-slate-900">CR</p>
           </div>
@@ -1205,7 +1205,7 @@ export default function PreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadSpecPdf()}
-            className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             <Download className="h-4 w-4" />
             Download CR
@@ -1213,7 +1213,7 @@ export default function PreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadCrDocx()}
-            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-[var(--app-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
             title={crDocxUrl ? "Download editable CR Word file" : "Generate and download editable CR Word file"}
           >
             <Download className="h-4 w-4" />
@@ -1224,7 +1224,7 @@ export default function PreviewModal({
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin h-8 w-8 border-4 border-rose-600 border-t-transparent rounded-full"></div>
+          <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
         </div>
       ) : (
         <>
@@ -1236,14 +1236,14 @@ export default function PreviewModal({
           {/* Report Details */}
           <div className="space-y-6 max-w-none pb-28">
             {/* Basic Information Section */}
-            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-blue-600">👤</span>
                 Basic Information
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Client Name *
                   </label>
                   <input
@@ -1251,7 +1251,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("client_name")}
                     value={previewData?.client_name || ""}
                     onChange={(e) => updateField("client_name", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., ABC Corporation"
                   />
                   {!previewData?.client_name && (
@@ -1259,7 +1259,7 @@ export default function PreviewModal({
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Owner Name
                   </label>
                   <input
@@ -1267,12 +1267,12 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("owner_name")}
                     value={previewData?.owner_name || ""}
                     onChange={(e) => updateField("owner_name", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., John Smith"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Contract Number
                   </label>
                   <input
@@ -1280,12 +1280,12 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("contract_no")}
                     value={previewData?.contract_no || ""}
                     onChange={(e) => updateField("contract_no", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., C-2024-001"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Bank
                   </label>
                   <button
@@ -1295,19 +1295,19 @@ export default function PreviewModal({
                     }
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                       previewData?.bank_photos_enabled
-                        ? "border-rose-400 bg-rose-50 text-rose-700"
-                        : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
                     }`}
                     aria-pressed={!!previewData?.bank_photos_enabled}
                   >
                     <span>Include all photos in CR</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-xs shadow-sm">
+                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs shadow-sm">
                       {previewData?.bank_photos_enabled ? "On" : "Off"}
                     </span>
                   </button>
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Industry
                   </label>
                   <input
@@ -1315,7 +1315,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("industry")}
                     value={previewData?.industry || ""}
                     onChange={(e) => updateField("industry", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., Construction, Manufacturing"
                   />
                 </div>
@@ -1323,14 +1323,14 @@ export default function PreviewModal({
             </div>
 
             {/* Dates & Financial Section */}
-            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-green-600">📅</span>
                 Dates & Financial
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Effective Date
                   </label>
                   <input
@@ -1338,11 +1338,11 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("effective_date")}
                     value={previewData?.effective_date?.split("T")[0] || ""}
                     onChange={(e) => updateField("effective_date", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Inspection Date
                   </label>
                   <input
@@ -1350,18 +1350,18 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("inspection_date")}
                     value={previewData?.inspection_date?.split("T")[0] || ""}
                     onChange={(e) => updateField("inspection_date", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Currency
                   </label>
                   <select
                     {...getFocusTrackingProps("currency")}
                     value={previewData?.currency || "CAD"}
                     onChange={(e) => handleCurrencyChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   >
                     <option value="CAD">CAD - Canadian Dollar</option>
                     <option value="USD">USD - US Dollar</option>
@@ -1371,7 +1371,7 @@ export default function PreviewModal({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Total Appraised Value
                   </label>
                   <input
@@ -1379,7 +1379,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("total_appraised_value")}
                     value={previewData?.total_appraised_value || previewData?.total_value || ""}
                     onChange={(e) => updateField("total_appraised_value", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., $100,000 or CAD 100,000"
                   />
                 </div>
@@ -1387,14 +1387,14 @@ export default function PreviewModal({
             </div>
 
             {/* Appraisal Details Section */}
-            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-purple-600">📋</span>
                 Appraisal Details
               </h3>
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Appraisal Purpose
                   </label>
                   <input
@@ -1402,13 +1402,13 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("appraisal_purpose")}
                     value={previewData?.appraisal_purpose || ""}
                     onChange={(e) => updateField("appraisal_purpose", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., Insurance, Sale, Financing, Internal Review"
                   />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                       Appraiser Name
                     </label>
                     <input
@@ -1416,12 +1416,12 @@ export default function PreviewModal({
                       {...getFocusTrackingProps("appraiser")}
                       value={previewData?.appraiser || ""}
                       onChange={(e) => updateField("appraiser", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       placeholder="e.g., John Appraiser, CPA"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                    <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                       Appraisal Company
                     </label>
                     <input
@@ -1429,7 +1429,7 @@ export default function PreviewModal({
                       {...getFocusTrackingProps("appraisal_company")}
                       value={previewData?.appraisal_company || ""}
                       onChange={(e) => updateField("appraisal_company", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                       placeholder="e.g., Asset Insight Appraisals"
                     />
                   </div>
@@ -1445,14 +1445,14 @@ export default function PreviewModal({
             </div>
 
             {/* Additional Report Details */}
-            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-[var(--app-shadow-card)] backdrop-blur sm:p-6">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-amber-600">📝</span>
                 Additional Details
               </h3>
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Prepared For
                   </label>
                   <input
@@ -1460,12 +1460,12 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("prepared_for")}
                     value={previewData?.prepared_for || ""}
                     onChange={(e) => updateField("prepared_for", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., Client Contact / Company"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Factors Affecting Value - Age & Condition
                   </label>
                   <textarea
@@ -1473,12 +1473,12 @@ export default function PreviewModal({
                     value={previewData?.factors_age_condition || ""}
                     onChange={(e) => updateField("factors_age_condition", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Describe age and condition..."
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Factors Affecting Value - Quality
                   </label>
                   <textarea
@@ -1486,12 +1486,12 @@ export default function PreviewModal({
                     value={previewData?.factors_quality || ""}
                     onChange={(e) => updateField("factors_quality", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Describe quality..."
                   />
                 </div>
                 <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
                     Factors Affecting Value - Analysis
                   </label>
                   <textarea
@@ -1499,7 +1499,7 @@ export default function PreviewModal({
                     value={previewData?.factors_analysis || ""}
                     onChange={(e) => updateField("factors_analysis", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="Provide overall analysis..."
                   />
                 </div>
@@ -1509,32 +1509,32 @@ export default function PreviewModal({
             {/* Software narrative fields removed to match DOCX inputs */}
 
             {/* Quick Stats */}
-            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
-              <h4 className="text-sm font-bold text-gray-900 mb-3">📊 Report Statistics</h4>
+            <div className="bg-[var(--app-panel)] from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
+              <h4 className="text-sm font-bold text-[var(--app-text)] mb-3">📊 Report Statistics</h4>
               <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{previewData?.lots?.length || 0}</div>
-                  <div className="text-xs text-gray-600">Total Lots</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Total Lots</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{previewData?.currency || "CAD"}</div>
-                  <div className="text-xs text-gray-600">Currency</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Currency</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">{previewData?.language?.toUpperCase() || "EN"}</div>
-                  <div className="text-xs text-gray-600">Language</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Language</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{previewData?.total_appraised_value ? "✓" : "-"}</div>
-                  <div className="text-xs text-gray-600">Value Set</div>
+                  <div className="text-2xl font-bold text-blue-600">{previewData?.total_appraised_value ? "✓" : "-"}</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Value Set</div>
                 </div>
                 <div className="text-center">
                   <div className="text-sm font-semibold text-blue-700">{(groupingMode || previewData?.grouping_mode || "mixed").toString()}</div>
-                  <div className="text-xs text-gray-600">Grouping</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Grouping</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-cyan-600">{imageCount ?? "-"}</div>
-                  <div className="text-xs text-gray-600">Images</div>
+                  <div className="text-xs text-[var(--app-text-muted)]">Images</div>
                 </div>
               </div>
             </div>
@@ -1605,11 +1605,11 @@ export default function PreviewModal({
                     <ChevronRight className="h-8 w-8" />
                   </button>
                 )}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
+                { }
                 <img
                   src={galleryLotImages.entries[galleryLotImages.currentIdx]?.url}
                   alt={`Photo ${galleryLotImages.currentIdx + 1}`}
-                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-2xl"
+                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-sm"
                 />
               </div>
 
@@ -1627,7 +1627,7 @@ export default function PreviewModal({
                           : 'opacity-60 hover:opacity-100'
                       }`}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      { }
                       <img src={entry.url} alt={`Photo ${i + 1} thumbnail`} className="w-full h-full object-cover" />
                     </button>
                   ))}
@@ -1639,7 +1639,7 @@ export default function PreviewModal({
           {/* Assets/Lots */}
           <div className="mt-6 space-y-4 max-w-none">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-base sm:text-lg font-bold text-gray-900">Assets / Lots</h3>
+              <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)]">Assets / Lots</h3>
               <button
                 type="button"
                 onClick={addLot}
@@ -1654,14 +1654,14 @@ export default function PreviewModal({
                 <div className="md:hidden space-y-5">
                   {groupedLots.map((group) => (
                     <div key={group.gid}>
-                      <div className="mb-2 text-sm font-semibold text-gray-900">
+                      <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
                       <div className="space-y-3">
                         {group.items.map(({ lot, idx }) => (
-                          <div key={idx} className="rounded-[1.25rem] border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-3 shadow-[var(--app-shadow-card)]">
+                          <div key={idx} className="rounded-[1.25rem] border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-3 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                              <div className="text-sm font-semibold text-gray-900">Lot {getLotDisplayNumber(lot, idx)}</div>
+                              <div className="text-sm font-semibold text-[var(--app-text)]">Lot {getLotDisplayNumber(lot, idx)}</div>
                               <button
                                 onClick={() => deleteLot(idx)}
                                 aria-label={`Delete lot ${idx + 1}`}
@@ -1684,7 +1684,7 @@ export default function PreviewModal({
                               return (
                                 <div className="mb-3">
                                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                                    <label className="flex items-center gap-2 text-xs text-gray-600">
+                                    <label className="flex items-center gap-2 text-xs text-[var(--app-text-muted)]">
                                       <Image className="h-3.5 w-3.5" />
                                       Photos ({lotImages.length})
                                     </label>
@@ -1703,7 +1703,7 @@ export default function PreviewModal({
                                       type="button"
                                       disabled={uploadingLotKey === lotUploadKey}
                                       onClick={() => document.getElementById(uploadInputId)?.click()}
-                                      className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                      className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
                                     >
                                       <Upload className="h-3 w-3" />
                                       {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -1715,10 +1715,10 @@ export default function PreviewModal({
                                       {lotImages.slice(0, 20).map(({ url, globalIndex }, imgIdx) => (
                                         <div
                                           key={imgIdx}
-                                          className="group relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
+                                          className="group relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
                                           onClick={() => openLotGallery(imgIdx)}
                                         >
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          { }
                                           <img src={url} alt={`Photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
                                           <button
                                             type="button"
@@ -1737,11 +1737,11 @@ export default function PreviewModal({
                                       {lotImages.length > 20 && (
                                         <button
                                           type="button"
-                                          className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-100 border-2 border-gray-300 cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
+                                          className="flex-shrink-0 w-20 h-20 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
                                           onClick={() => openLotGallery(20)}
                                           aria-label={`Open ${lotImages.length - 20} more photos`}
                                         >
-                                          <span className="text-sm font-semibold text-gray-600">+{lotImages.length - 20}</span>
+                                          <span className="text-sm font-semibold text-[var(--app-text-muted)]">+{lotImages.length - 20}</span>
                                         </button>
                                       )}
                                     </div>
@@ -1753,7 +1753,7 @@ export default function PreviewModal({
                             <div className="space-y-2">
                               <div>
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                  <label className="block text-xs text-gray-600">Lot #</label>
+                                  <label className="block text-xs text-[var(--app-text-muted)]">Lot #</label>
                                   {renderFieldEditorButton(idx, "lot_number", "mobile")}
                                 </div>
                                 <input
@@ -1761,17 +1761,17 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-mobile`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm ${
+                                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
                                     isDuplicateLotNumber(lot, idx)
                                       ? "border-amber-500 bg-amber-50"
-                                      : "border-gray-300"
+                                      : "border-[var(--app-border)]"
                                   }`}
                                   placeholder={String(idx + 1)}
                                 />
                               </div>
                               <div>
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                  <label className="block text-xs text-gray-600">Title</label>
+                                  <label className="block text-xs text-[var(--app-text-muted)]">Title</label>
                                   {renderFieldEditorButton(idx, "title", "mobile")}
                                 </div>
                                 <input
@@ -1779,13 +1779,13 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-title-mobile`)}
                                   value={lot.title || ""}
                                   onChange={(e) => updateLot(idx, "title", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Title"
                                 />
                               </div>
                               <div>
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                  <label className="block text-xs text-gray-600">Category</label>
+                                  <label className="block text-xs text-[var(--app-text-muted)]">Category</label>
                                   {renderFieldEditorButton(idx, "categories", "mobile")}
                                 </div>
                                 <input
@@ -1794,16 +1794,16 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-category-mobile`)}
                                   value={lot.categories || ""}
                                   onChange={(e) => updateLot(idx, "categories", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Auctioneer Import category"
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Description</label>
+                                <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
                                 {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
                               </div>
                               <div>
-                                <label className="block text-xs text-gray-600 mb-1">Specs</label>
+                                <label className="block text-xs text-[var(--app-text-muted)] mb-1">Specs</label>
                                 {renderExpandableLotTextarea(lot, idx, "details", "mobile")}
                               </div>
                               <AuctioneerSpecsEditor
@@ -1825,7 +1825,7 @@ export default function PreviewModal({
                               />
                               <div>
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                  <label className="block text-xs text-gray-600">Value</label>
+                                  <label className="block text-xs text-[var(--app-text-muted)]">Value</label>
                                   {renderFieldEditorButton(idx, "estimated_value", "mobile")}
                                 </div>
                                 <input
@@ -1833,7 +1833,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-mobile`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
                               </div>
@@ -1849,11 +1849,11 @@ export default function PreviewModal({
                 <div className="hidden md:block space-y-6">
                   {groupedLots.map((group) => (
                     <div key={group.gid} className="overflow-hidden">
-                      <div className="mb-2 text-sm font-semibold text-gray-900">
+                      <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
-                      <table className="w-full table-fixed text-sm border border-gray-200 rounded-lg overflow-hidden">
-                        <thead className="bg-gray-50 text-gray-700">
+                      <table className="w-full table-fixed text-sm border border-[var(--app-border)] rounded-lg overflow-hidden">
+                        <thead className="bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
                           <tr>
                             <th className="w-[7%] px-2 py-2 text-left">Lot #</th>
                             <th className="w-[13%] px-2 py-2 text-left">Photos</th>
@@ -1879,17 +1879,17 @@ export default function PreviewModal({
                             };
                             return (
                             <React.Fragment key={idx}>
-                            <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                              <td className="px-2 py-2 text-gray-800 font-medium align-top">
+                            <tr className={i % 2 === 0 ? "bg-[var(--app-panel)]" : "bg-[var(--app-panel-alt)]"}>
+                              <td className="px-2 py-2 text-[var(--app-text)] font-medium align-top">
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-desktop`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm font-semibold ${
+                                  className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-semibold ${
                                     isDuplicateLotNumber(lot, idx)
                                       ? "border-amber-500 bg-amber-50"
-                                      : "border-gray-300"
+                                      : "border-[var(--app-border)]"
                                   }`}
                                   placeholder={String(idx + 1)}
                                 />
@@ -1913,10 +1913,10 @@ export default function PreviewModal({
                                       {lotImages.slice(0, 6).map(({ url, globalIndex }, imgI) => (
                                         <div
                                           key={imgI}
-                                          className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex-shrink-0"
+                                          className="relative w-14 h-14 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex-shrink-0"
                                           onClick={() => openLotGallery(imgI)}
                                         >
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          { }
                                           <img src={url} alt={`Photo ${imgI + 1}`} className="w-full h-full object-cover" />
                                           <button
                                             type="button"
@@ -1935,21 +1935,21 @@ export default function PreviewModal({
                                       {lotImages.length > 6 && (
                                         <button
                                           type="button"
-                                          className="w-14 h-14 rounded-lg bg-gray-100 border-2 border-gray-300 cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
+                                          className="w-14 h-14 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
                                           onClick={() => openLotGallery(6)}
                                           aria-label={`Open ${lotImages.length - 6} more photos`}
                                         >
-                                          <span className="text-xs font-bold text-gray-600">+{lotImages.length - 6}</span>
+                                          <span className="text-xs font-bold text-[var(--app-text-muted)]">+{lotImages.length - 6}</span>
                                         </button>
                                       )}
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
-                                      <span className="text-[10px] text-gray-500">{lotImages.length} photo{lotImages.length !== 1 ? 's' : ''}</span>
+                                      <span className="text-[10px] text-[var(--app-text-muted)]">{lotImages.length} photo{lotImages.length !== 1 ? 's' : ''}</span>
                                       <button
                                         type="button"
                                         disabled={uploadingLotKey === lotUploadKey}
                                         onClick={() => document.getElementById(uploadInputId)?.click()}
-                                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-2 py-1 text-[10px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2 py-1 text-[10px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
                                       >
                                         <Upload className="h-3 w-3" />
                                         {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload"}
@@ -1961,7 +1961,7 @@ export default function PreviewModal({
                                     type="button"
                                     disabled={uploadingLotKey === lotUploadKey}
                                     onClick={() => document.getElementById(uploadInputId)?.click()}
-                                    className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                    className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
                                   >
                                     <Upload className="h-3.5 w-3.5" />
                                     {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -1974,7 +1974,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-title-desktop`)}
                                   value={lot.title || ""}
                                   onChange={(e) => updateLot(idx, "title", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Title"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "title", "desktop")}</div>
@@ -1986,7 +1986,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-category-desktop`)}
                                   value={lot.categories || ""}
                                   onChange={(e) => updateLot(idx, "categories", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Category"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "categories", "desktop")}</div>
@@ -2005,7 +2005,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-desktop`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "estimated_value", "desktop")}</div>
@@ -2020,7 +2020,7 @@ export default function PreviewModal({
                                 </button>
                               </td>
                             </tr>
-                            <tr className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <tr className={i % 2 === 0 ? "bg-[var(--app-panel)]" : "bg-[var(--app-panel-alt)]"}>
                               <td colSpan={9} className="px-3 pb-4">
                                 <AuctioneerSpecsEditor
                                   lot={lot}
@@ -2050,18 +2050,18 @@ export default function PreviewModal({
                 </div>
               </>
             ) : (
-              <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+              <div className="text-center py-16 bg-[var(--app-panel-alt)] rounded-xl border border-dashed border-[var(--app-border)]">
                 <div className="text-6xl mb-4">📦</div>
-                <p className="text-gray-600 font-medium">No lots data available</p>
-                <p className="text-sm text-gray-500 mt-1">Software analysis didn't extract any lot information</p>
+                <p className="text-[var(--app-text-muted)] font-medium">No lots data available</p>
+                <p className="text-sm text-[var(--app-text-muted)] mt-1">Software analysis didn't extract any lot information</p>
               </div>
             )}
           </div>
 
           {/* Valuation */}
           <div className="mt-6 space-y-4 max-w-none">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900">Valuation</h3>
-            <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+            <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)]">Valuation</h3>
+            <div className="flex items-center gap-3 p-3 border border-[var(--app-border)] rounded-lg bg-[var(--app-panel-alt)]">
               <input
                 id="include-valuation"
                 type="checkbox"
@@ -2069,7 +2069,7 @@ export default function PreviewModal({
                 onChange={(e) => updateField("include_valuation_table", e.target.checked)}
                 className="h-4 w-4"
               />
-              <label htmlFor="include-valuation" className="text-sm text-gray-800">Include Valuation Comparison Table</label>
+              <label htmlFor="include-valuation" className="text-sm text-[var(--app-text)]">Include Valuation Comparison Table</label>
             </div>
             {previewData?.include_valuation_table ? (
               <>
@@ -2089,29 +2089,29 @@ export default function PreviewModal({
                   </div>
                 </div>
                 {previewData?.valuation_data && (
-                  <div className="p-4 border border-gray-200 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-2">
+                  <div className="p-4 border border-[var(--app-border)] rounded-lg">
+                    <h4 className="font-semibold text-[var(--app-text)] mb-2">
                       Base Fair Market Value
                     </h4>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-600">{previewData?.currency || "CAD"}</span>
+                      <span className="text-sm text-[var(--app-text-muted)]">{previewData?.currency || "CAD"}</span>
                       <input
                         type="number"
                         min={0}
                         {...getFocusTrackingProps("valuation-baseFMV")}
                         value={Number(previewData.valuation_data.baseFMV || 0)}
                         onChange={(e) => updateValuationBase(Number(e.target.value))}
-                        className="w-56 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent transition-all tabular-nums"
+                        className="w-56 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all tabular-nums"
                       />
                     </div>
                   </div>
                 )}
                 {Array.isArray(previewData?.valuation_data?.methods) && previewData.valuation_data.methods.length > 0 && (
-                  <div className="p-4 border border-gray-200 rounded-lg">
-                    <h4 className="font-semibold text-gray-900 mb-3">Comparison Table</h4>
+                  <div className="p-4 border border-[var(--app-border)] rounded-lg">
+                    <h4 className="font-semibold text-[var(--app-text)] mb-3">Comparison Table</h4>
                     <div className="overflow-x-auto">
-                      <table className="min-w-full table-fixed text-sm border border-gray-200 rounded-md overflow-hidden">
-                        <thead className="bg-gray-50 text-gray-700">
+                      <table className="min-w-full table-fixed text-sm border border-[var(--app-border)] rounded-md overflow-hidden">
+                        <thead className="bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
                           <tr>
                             <th className="px-3 py-2 text-left font-medium w-[26%]">Method</th>
                             <th className="px-3 py-2 text-left font-medium w-[16%]">Value</th>
@@ -2122,7 +2122,7 @@ export default function PreviewModal({
                         </thead>
                         <tbody>
                           {previewData.valuation_data.methods.map((m: any, i: number) => (
-                            <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                            <tr key={i} className={i % 2 === 0 ? "bg-[var(--app-panel)]" : "bg-[var(--app-panel-alt)]"}>
                               <td className="px-3 py-2 align-top">
                                 <div className="mb-1">
                                   <input
@@ -2130,33 +2130,33 @@ export default function PreviewModal({
                                     {...getFocusTrackingProps(`valuation-${i}-fullName`)}
                                     value={m.fullName || ""}
                                     onChange={(e) => updateValuationMethod(i, "fullName", e.target.value)}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                    className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     placeholder="Full method name"
                                   />
                                 </div>
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="inline-flex items-center rounded-md bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 text-[11px] font-semibold">{m.method || "—"}</span>
-                                  <span className="text-[11px] text-gray-500">Code</span>
+                                  <span className="inline-flex items-center rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold">{m.method || "—"}</span>
+                                  <span className="text-[11px] text-[var(--app-text-muted)]">Code</span>
                                 </div>
                                 <textarea
                                   {...getFocusTrackingProps(`valuation-${i}-description`)}
                                   value={m.description || ""}
                                   onChange={(e) => updateValuationMethod(i, "description", e.target.value)}
-                                  className="mt-1 w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
+                                  className="mt-1 w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
                                   placeholder="Short description"
                                   rows={2}
                                 />
                               </td>
                               <td className="px-3 py-2 align-top">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs text-gray-600">{previewData?.currency || 'CAD'}</span>
+                                  <span className="text-xs text-[var(--app-text-muted)]">{previewData?.currency || 'CAD'}</span>
                                   <input
                                     type="number"
                                     min={0}
                                     {...getFocusTrackingProps(`valuation-${i}-value`)}
                                     value={Number(m.value || 0)}
                                     onChange={(e) => updateValuationMethod(i, "value", Number(e.target.value))}
-                                    className="w-44 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm tabular-nums"
+                                    className="w-44 px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm tabular-nums"
                                   />
                                 </div>
                               </td>
@@ -2165,7 +2165,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-saleConditions`)}
                                   value={m.saleConditions || ""}
                                   onChange={(e) => updateValuationMethod(i, "saleConditions", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
                                   placeholder="Conditions"
                                   rows={2}
                                 />
@@ -2176,7 +2176,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-timeline`)}
                                   value={m.timeline || ""}
                                   onChange={(e) => updateValuationMethod(i, "timeline", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Timeline"
                                 />
                               </td>
@@ -2186,7 +2186,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-useCase`)}
                                   value={m.useCase || ""}
                                   onChange={(e) => updateValuationMethod(i, "useCase", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="Use Case"
                                 />
                               </td>
@@ -2199,7 +2199,7 @@ export default function PreviewModal({
                 )}
               </>
             ) : (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-[var(--app-text-muted)]">
                 No valuation data selected for this report
               </div>
             )}
@@ -2207,50 +2207,50 @@ export default function PreviewModal({
 
           {/* Summary */}
           <div className="mt-6 space-y-6 max-w-none">
-            <div className="rounded-xl border border-[var(--app-border)] bg-[linear-gradient(135deg,rgba(225,29,72,0.10),rgba(37,99,235,0.06))] p-6 shadow-[var(--app-shadow-card)]">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
+            <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] p-6 shadow-sm">
+              <h3 className="text-lg font-bold text-[var(--app-text)] mb-4">
                 Report Summary
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-gray-600">Client</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Client</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.client_name || "Not specified"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Owner</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Owner</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.owner_name || "Not specified"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Effective Date</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Effective Date</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.effective_date?.split("T")[0] || "Not set"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Inspection Date</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Inspection Date</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.inspection_date?.split("T")[0] || "Not set"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Industry</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Industry</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.industry || "Not specified"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Total Lots</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Total Lots</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.lots?.length || 0}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Currency</p>
-                  <p className="font-semibold text-gray-900">
+                  <p className="text-sm text-[var(--app-text-muted)]">Currency</p>
+                  <p className="font-semibold text-[var(--app-text)]">
                     {previewData?.currency || "CAD"}
                   </p>
                 </div>
@@ -2258,8 +2258,8 @@ export default function PreviewModal({
             </div>
 
             <div className="rounded-[1.25rem] border border-[var(--app-border)] bg-[rgba(148,163,184,0.08)] p-4">
-              <h4 className="font-semibold text-gray-900 mb-2">Next Steps</h4>
-              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
+              <h4 className="font-semibold text-[var(--app-text)] mb-2">Next Steps</h4>
+              <ol className="list-decimal list-inside space-y-1 text-sm text-[var(--app-text-muted)]">
                 <li>Review the data</li>
                 <li>Make any necessary edits</li>
                 <li>Save your changes</li>
@@ -2278,16 +2278,16 @@ export default function PreviewModal({
 
             return (
               <div
-                className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/45 px-3 py-6 backdrop-blur-sm sm:px-6"
+                className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/45 px-3 py-6  sm:px-6"
                 onMouseDown={closeExpandedLotTextEditor}
               >
                 <div
-                  className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                  className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-sm"
                   onMouseDown={(event) => event.stopPropagation()}
                 >
-                  <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-4 py-3 sm:px-5">
+                  <div className="flex items-start justify-between gap-4 border-b border-[var(--app-border)] px-4 py-3 sm:px-5">
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
                         Lot {lotNumber}
                       </p>
                       <h4 className="mt-0.5 text-lg font-bold text-gray-950">
@@ -2298,7 +2298,7 @@ export default function PreviewModal({
                       type="button"
                       onClick={closeExpandedLotTextEditor}
                       aria-label="Close editor"
-                      className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                      className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-[var(--app-border)] bg-[var(--app-panel-alt)] text-[var(--app-text-muted)] transition-colors hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text)]"
                     >
                       <X className="h-5 w-5" />
                     </button>
@@ -2309,7 +2309,7 @@ export default function PreviewModal({
                       autoFocus
                       value={lot[field] || ""}
                       onChange={(event) => updateLot(lotIndex, field, event.target.value)}
-                      className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-gray-300 bg-white px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-rose-500"
+                      className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-[var(--app-text-muted)] focus:border-transparent focus:ring-2 focus:ring-blue-500"
                       placeholder={meta.placeholder}
                     />
                   </div>
@@ -2319,10 +2319,10 @@ export default function PreviewModal({
           })()}
 
           {/* Actions */}
-          <div className="sticky bottom-0 z-10 mt-6 flex flex-col gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-4 pb-1 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <div className="sticky bottom-0 z-10 mt-6 flex flex-col gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-4 pb-1  sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={onClose}
-              className="order-2 sm:order-1 px-4 py-2.5 text-gray-700 hover:text-gray-900 font-medium transition-colors hover:bg-white rounded-lg"
+              className="order-2 sm:order-1 px-4 py-2.5 text-[var(--app-text-muted)] hover:text-[var(--app-text)] font-medium transition-colors hover:bg-[var(--app-panel)] rounded-lg"
             >
               Cancel
             </button>
@@ -2337,7 +2337,7 @@ export default function PreviewModal({
                 onClick={handleSaveChanges}
                 disabled={!hasChanges || saving || workflowLocked}
                 aria-label="Save changes"
-                className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-md hover:shadow-lg text-sm sm:text-base"
+                className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-md hover:shadow-sm text-sm sm:text-base"
               >
                 <Save className="h-4 w-4" />
                 <span className="hidden sm:inline">{saving ? "Saving..." : "Save Changes"}</span>
@@ -2353,10 +2353,10 @@ export default function PreviewModal({
                       ? "Resubmit report"
                       : "Submit report"
                 }
-                className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg transition-all hover:shadow-xl text-sm sm:text-base ${
+                className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm transition-all hover:shadow-sm text-sm sm:text-base ${
                   isResubmitMode 
-                    ? "bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-500/30"
-                    : "bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-rose-500/30"
+                    ? "bg-[var(--app-panel)] from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-500/30"
+                    : "bg-[var(--app-panel)] from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-blue-500/30"
                 }`}
               >
                 {isResubmitMode ? <RefreshCw className="h-4 w-4" /> : <Send className="h-4 w-4" />}

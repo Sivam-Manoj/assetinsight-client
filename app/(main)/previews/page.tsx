@@ -3,31 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  LinearProgress,
-  Stack,
-  Tab,
-  Tabs,
-  Typography,
-} from "@mui/material";
-import {
-  AutoAwesomeRounded,
-  DeleteOutlineRounded,
-  EditRounded,
-  MergeRounded,
-  RefreshRounded,
-  SendRounded,
-  VisibilityRounded,
-} from "@mui/icons-material";
-import { toast } from "react-toastify";
+  Download,
+  FileSearch,
+  Merge,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import {
   deleteAssetReport,
   getAssetReports,
@@ -46,20 +30,20 @@ import {
   RealEstateService,
   type RealEstateReport,
 } from "@/services/realEstate";
-import {
-  EmptyState,
-  PageHeader,
-  SectionPanel,
-  StatusPill,
-  SurfaceCard,
-} from "@/components/common/WorkspaceUI";
-import StatusBadge from "@/components/reports/StatusBadge";
-import PreviewModal from "@/components/reports/PreviewModal";
-import RealEstatePreviewModal from "@/components/reports/RealEstatePreviewModal";
-import LotListingPreviewModal from "@/components/reports/LotListingPreviewModal";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
+  { ssr: false }
+);
+const PreviewModal = dynamic(() => import("@/components/reports/PreviewModal"), {
+  ssr: false,
+});
+const RealEstatePreviewModal = dynamic(
+  () => import("@/components/reports/RealEstatePreviewModal"),
+  { ssr: false }
+);
+const LotListingPreviewModal = dynamic(
+  () => import("@/components/reports/LotListingPreviewModal"),
   { ssr: false }
 );
 
@@ -437,426 +421,520 @@ export default function PreviewsPage() {
     };
   }, [newReports, submittedReports]);
 
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (!dialog) return;
+    if (deleteTarget && !dialog.open) dialog.showModal();
+    if (!deleteTarget && dialog.open) dialog.close();
+  }, [deleteTarget]);
+
   if (loading) {
     return (
-      <Box sx={{ minHeight: "60vh", display: "grid", placeItems: "center" }}>
-        <Stack spacing={2} sx={{ alignItems: "center" }}>
-          <CircularProgress />
-          <Typography sx={{ color: "var(--app-text-muted)" }}>
-            Loading previews...
-          </Typography>
-        </Stack>
-      </Box>
+      <div
+        className="grid min-h-[60vh] place-items-center"
+        role="status"
+        aria-label="Loading previews"
+      >
+        <div className="flex items-center gap-2 text-sm text-[var(--app-text-muted)]">
+          <RefreshCw className="size-4 animate-spin text-[var(--app-accent)]" />
+          Loading previews...
+        </div>
+      </div>
     );
   }
 
   return (
-    <Stack spacing={3}>
-      <PageHeader
-        eyebrow="Review workspace"
-        title="Report previews"
-        description="Review new outputs, submit reports for approval, and manage already submitted preview packages from one responsive queue."
-        action={
-          <Button
-            variant="outlined"
-            startIcon={
-              refreshing ? (
-                <CircularProgress color="inherit" size={16} />
-              ) : (
-                <RefreshRounded />
-              )
-            }
-            onClick={() => void handleManualRefresh()}
-            disabled={loading || refreshing}
-            sx={{ whiteSpace: "nowrap" }}
-          >
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </Button>
-        }
-      />
+    <main className="w-full min-w-0 space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-accent)]">
+            Review workspace
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+            Report previews
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-[var(--app-text-muted)]">
+            Review new outputs, submit reports for approval, and manage already
+            submitted preview packages.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => void handleManualRefresh()}
+          disabled={refreshing}
+        >
+          <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </header>
 
-      <Box
-        sx={{
-          display: "grid",
-          gap: 2,
-          gridTemplateColumns: {
-            xs: "1fr",
-            sm: "repeat(2, minmax(0, 1fr))",
-            xl: "repeat(4, minmax(0, 1fr))",
-          },
-        }}
+      <section
+        aria-label="Preview summary"
+        className="grid grid-cols-2 gap-3 xl:grid-cols-4"
       >
         {[
-          { label: "New", value: summary.newCount, color: "#2563eb" },
-          { label: "Pending approval", value: summary.pendingCount, color: "#d97706" },
-          { label: "Approved", value: summary.approvedCount, color: "#059669" },
-          { label: "Declined", value: summary.declinedCount, color: "#dc2626" },
+          {
+            label: "New",
+            value: summary.newCount,
+            tone: "text-[var(--app-accent)] bg-[var(--app-accent-soft)]",
+          },
+          {
+            label: "Pending approval",
+            value: summary.pendingCount,
+            tone: "text-[var(--app-warning)] bg-[var(--app-warning-soft)]",
+          },
+          {
+            label: "Approved",
+            value: summary.approvedCount,
+            tone: "text-[var(--app-success)] bg-[var(--app-success-soft)]",
+          },
+          {
+            label: "Declined",
+            value: summary.declinedCount,
+            tone: "text-[var(--app-danger)] bg-[var(--app-danger-soft)]",
+          },
         ].map((item) => (
-          <SurfaceCard key={item.label} sx={{ p: 2.5 }}>
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
-              <Box>
-                <Typography sx={{ color: "var(--app-text-muted)", fontWeight: 700 }}>
-                  {item.label}
-                </Typography>
-                <Typography variant="h4" sx={{ color: "var(--app-text)", mt: 1 }}>
-                  {item.value}
-                </Typography>
-              </Box>
-              <Avatar
-                variant="rounded"
-                sx={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: 4,
-                  bgcolor: `${item.color}1F`,
-                  color: item.color,
-                }}
-              >
-                <AutoAwesomeRounded />
-              </Avatar>
-            </Stack>
-          </SurfaceCard>
+          <article
+            key={item.label}
+            className="flex items-center justify-between rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+          >
+            <div>
+              <p className="text-xs font-semibold text-[var(--app-text-muted)] sm:text-sm">
+                {item.label}
+              </p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--app-text)]">
+                {item.value}
+              </p>
+            </div>
+            <span
+              className={`grid size-9 place-items-center rounded-lg sm:size-10 ${item.tone}`}
+              aria-hidden="true"
+            >
+              <Sparkles className="size-4" />
+            </span>
+          </article>
         ))}
-      </Box>
+      </section>
 
-      <SectionPanel
-        title="Preview queue"
-        subtitle="Switch between new previews and submitted items awaiting the next step."
-      >
-        <Tabs
-          value={activeTab}
-          onChange={(_, value) => setActiveTab(value)}
-          sx={{ mb: 2.5 }}
+      <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+        <div className="border-b border-[var(--app-border)] px-4 pt-4 sm:px-5">
+          <h2 className="font-semibold text-[var(--app-text)]">Preview queue</h2>
+          <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+            Switch between new previews and submitted items awaiting the next
+            step.
+          </p>
+          <div
+            className="mt-4 flex gap-1"
+            role="tablist"
+            aria-label="Preview queue"
+          >
+            {[
+              { id: "new" as const, label: "New", count: newReports.length },
+              {
+                id: "submitted" as const,
+                label: "Submitted",
+                count: submittedReports.length,
+              },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                id={`preview-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls="preview-tabpanel"
+                className={`border-b-2 px-3 py-2.5 text-sm font-semibold ${
+                  activeTab === tab.id
+                    ? "border-[var(--app-accent)] text-[var(--app-accent)]"
+                    : "border-transparent text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                }`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          id="preview-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`preview-tab-${activeTab}`}
         >
-          <Tab value="new" label={`New (${newReports.length})`} />
-          <Tab value="submitted" label={`Submitted (${submittedReports.length})`} />
-        </Tabs>
-
-        {reports.length === 0 ? (
-          <EmptyState
-            title={
-              activeTab === "new" ? "No new previews" : "No submitted previews"
-            }
-            description={
-              activeTab === "new"
-                ? "Generate a new report to begin the review and submission flow."
-                : "Submitted previews and approvals will appear here."
-            }
-            action={
-              activeTab === "new" ? (
-                <Button href="/dashboard" variant="contained">
+          {reports.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <FileSearch className="mx-auto size-6 text-[var(--app-text-muted)]" />
+              <h3 className="mt-3 font-semibold text-[var(--app-text)]">
+                {activeTab === "new"
+                  ? "No new previews"
+                  : "No submitted previews"}
+              </h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-[var(--app-text-muted)]">
+                {activeTab === "new"
+                  ? "Generate a new report to begin the review and submission flow."
+                  : "Submitted previews and approvals will appear here."}
+              </p>
+              {activeTab === "new" ? (
+                <a
+                  href="/dashboard"
+                  className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90"
+                >
                   Create new report
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <Stack spacing={2}>
-            {reports.map((report) => {
-              const info = summaryForReport(report);
-              const jobActive = isWorkflowActive(report);
-              const jobFailed =
-                (report as any).workflow_stage === "error" ||
-                report.status === "error" ||
-                (report as any).job_status === "error";
-              const canRetryFailedJob =
-                jobFailed &&
-                (report.reportType === "asset" || report.reportType === "lotListing") &&
-                Boolean(
-                  (report as any).preview_data ||
-                    (Array.isArray((report as any).lots) && (report as any).lots.length > 0)
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--app-border)]">
+              {reports.map((report) => {
+                const info = summaryForReport(report);
+                const jobActive = isWorkflowActive(report);
+                const jobFailed =
+                  (report as any).workflow_stage === "error" ||
+                  report.status === "error" ||
+                  (report as any).job_status === "error";
+                const canRetryFailedJob =
+                  jobFailed &&
+                  (report.reportType === "asset" ||
+                    report.reportType === "lotListing") &&
+                  Boolean(
+                    (report as any).preview_data ||
+                      (Array.isArray((report as any).lots) &&
+                        (report as any).lots.length > 0)
+                  );
+                const badgeStatus = workflowBadgeStatus(report);
+                const badgeLabel =
+                  WORKFLOW_LABELS[(report as any).workflow_stage] ||
+                  String(badgeStatus).replace(/_/g, " ");
+                const badgeTone =
+                  badgeStatus === "error" || badgeStatus === "declined"
+                    ? "bg-[var(--app-danger-soft)] text-[var(--app-danger)]"
+                    : badgeStatus === "approved"
+                      ? "bg-[var(--app-success-soft)] text-[var(--app-success)]"
+                      : badgeStatus === "pending_approval"
+                        ? "bg-[var(--app-warning-soft)] text-[var(--app-warning)]"
+                        : "bg-[var(--app-accent-soft)] text-[var(--app-accent)]";
+                const progress = Math.max(
+                  2,
+                  Number(
+                    (report as any).workflow_progress_percent ??
+                      (report as any).generation_progress?.progressPercent ??
+                      0
+                  )
                 );
 
-              return (
-                <SurfaceCard key={report._id} sx={{ p: 2.5 }}>
-                  <Stack spacing={2}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      spacing={2}
-                      sx={{ justifyContent: "space-between" }}
-                    >
-                      <Stack spacing={1.4} sx={{ minWidth: 0 }}>
-                        <Stack
-                          direction={{ xs: "column", sm: "row" }}
-                          spacing={1}
-                          sx={{ alignItems: { xs: "flex-start", sm: "center" } }}
-                        >
-                          <StatusPill label={info.typeLabel} color="info" />
-                          <StatusBadge
-                            status={workflowBadgeStatus(report) as any}
-                            label={WORKFLOW_LABELS[(report as any).workflow_stage]}
-                          />
-                          {report.reportType === "asset" && (report as any).is_merged_report ? (
-                            <StatusPill
-                              label={`Merged · ${Array.isArray((report as any).merged_from_report_ids) ? (report as any).merged_from_report_ids.length : 2} sources`}
-                              color="info"
-                            />
+                return (
+                  <li key={report._id} className="px-4 py-5 sm:px-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-md bg-[var(--app-accent-soft)] px-2 py-1 text-xs font-semibold text-[var(--app-accent)]">
+                            {info.typeLabel}
+                          </span>
+                          <span
+                            className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${badgeTone}`}
+                          >
+                            {badgeLabel}
+                          </span>
+                          {report.reportType === "asset" &&
+                          (report as any).is_merged_report ? (
+                            <span className="rounded-md border border-[var(--app-border)] px-2 py-1 text-xs font-semibold text-[var(--app-text-muted)]">
+                              Merged ·{" "}
+                              {Array.isArray(
+                                (report as any).merged_from_report_ids
+                              )
+                                ? (report as any).merged_from_report_ids.length
+                                : 2}{" "}
+                              sources
+                            </span>
                           ) : null}
                           {(report as any).preview_transferred_at ? (
-                            <StatusPill label="Assigned by admin" color="warning" />
+                            <span className="rounded-md bg-[var(--app-warning-soft)] px-2 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                              Assigned by admin
+                            </span>
                           ) : null}
-                        </Stack>
-                        <Typography
-                          variant="h6"
-                          sx={{
-                            color: "var(--app-text)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
+                        </div>
+                        <h3 className="mt-2 break-words font-semibold text-[var(--app-text)]">
                           {info.title}
-                        </Typography>
-                        <Typography sx={{ color: "var(--app-text-muted)" }}>
-                          Created {new Date(report.createdAt).toLocaleDateString()}
-                        </Typography>
-                      </Stack>
+                        </h3>
+                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
+                          Created{" "}
+                          {new Date(report.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
 
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        spacing={1.25}
-                        sx={{ alignItems: { xs: "stretch", sm: "center" } }}
-                      >
+                      <div className="flex flex-wrap gap-2 lg:max-w-[520px] lg:justify-end">
                         {report.status === "preview" && !jobActive ? (
-                          <Button
-                            variant="contained"
-                            startIcon={<VisibilityRounded />}
+                          <button
+                            type="button"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
                             onClick={() => handleOpenPreview(report)}
                           >
+                            <FileSearch className="size-3.5" />
                             Review & submit
-                          </Button>
+                          </button>
                         ) : null}
 
                         {report.status === "declined" ? (
-                          <Button
-                            variant="contained"
-                            color="error"
-                            startIcon={<EditRounded />}
+                          <button
+                            type="button"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
                             onClick={() => handleOpenPreview(report)}
                           >
+                            <Pencil className="size-3.5" />
                             Edit & resubmit
-                          </Button>
+                          </button>
                         ) : null}
 
                         {(report.status === "pending_approval" ||
                           report.status === "approved" ||
-                          jobActive) && (
+                          jobActive) &&
+                        !jobActive ? (
                           <>
-                            {!jobActive ? (
-                              <>
-                                <Button
-                                  variant="outlined"
-                                  startIcon={<EditRounded />}
-                                  onClick={() => handleOpenPreview(report, true)}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="text"
-                                  startIcon={<RefreshRounded />}
-                                  onClick={() => handleQuickResubmit(report)}
-                                  disabled={resubmitting === report._id}
-                                >
-                                  {resubmitting === report._id
-                                    ? "Resubmitting..."
-                                    : "Quick resubmit"}
-                                </Button>
-                              </>
-                            ) : (
-                              <Button disabled startIcon={<RefreshRounded />}>
-                                {WORKFLOW_LABELS[(report as any).workflow_stage] ||
-                                  (activeTab === "new" ? "Preparing preview" : "Generating files")}
-                              </Button>
-                            )}
+                            <button
+                              type="button"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                              onClick={() => handleOpenPreview(report, true)}
+                            >
+                              <Pencil className="size-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                              onClick={() => void handleQuickResubmit(report)}
+                              disabled={resubmitting === report._id}
+                            >
+                              <RefreshCw
+                                className={`size-3.5 ${
+                                  resubmitting === report._id
+                                    ? "animate-spin"
+                                    : ""
+                                }`}
+                              />
+                              {resubmitting === report._id
+                                ? "Resubmitting..."
+                                : "Quick resubmit"}
+                            </button>
                           </>
-                        )}
+                        ) : null}
+
+                        {jobActive ? (
+                          <span className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent-soft)] px-3 text-xs font-semibold text-[var(--app-accent)]">
+                            <RefreshCw className="size-3.5 animate-spin" />
+                            {WORKFLOW_LABELS[
+                              (report as any).workflow_stage
+                            ] ||
+                              (activeTab === "new"
+                                ? "Preparing preview"
+                                : "Generating files")}
+                          </span>
+                        ) : null}
 
                         {canRetryFailedJob ? (
-                          <Button
-                            variant="outlined"
-                            startIcon={<RefreshRounded />}
-                            onClick={() => handleQuickResubmit(report)}
+                          <button
+                            type="button"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                            onClick={() => void handleQuickResubmit(report)}
                             disabled={resubmitting === report._id}
                           >
+                            <RefreshCw className="size-3.5" />
                             {resubmitting === report._id
                               ? "Retrying..."
                               : "Retry generation"}
-                          </Button>
+                          </button>
                         ) : null}
 
                         {report.reportType === "asset" && !jobActive ? (
-                          <Button
-                            variant="outlined"
-                            startIcon={<MergeRounded />}
+                          <button
+                            type="button"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
                             onClick={() => setMergeAnchorId(report._id)}
                           >
-                            Merge Assets
-                          </Button>
+                            <Merge className="size-3.5" />
+                            Merge assets
+                          </button>
                         ) : null}
 
-                        <Button
-                          color="error"
-                          variant="text"
-                          startIcon={<DeleteOutlineRounded />}
+                        <button
+                          type="button"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-danger-border)] px-3 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)]"
                           onClick={() => setDeleteTarget(report)}
                         >
+                          <Trash2 className="size-3.5" />
                           Delete
-                        </Button>
-                      </Stack>
-                    </Stack>
+                        </button>
+                      </div>
+                    </div>
 
-                    <Box
-                      sx={{
-                        display: "grid",
-                        gap: 1.5,
-                        gridTemplateColumns: {
-                          xs: "1fr",
-                          sm: "repeat(2, minmax(0, 1fr))",
-                          xl: "repeat(4, minmax(0, 1fr))",
-                        },
-                      }}
-                    >
+                    <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                       {info.fields.map(([label, value]) => (
-                        <Box
+                        <div
                           key={label}
-                          sx={{
-                            p: 1.6,
-                            borderRadius: 3,
-                            bgcolor: "rgba(148,163,184,0.08)",
-                          }}
+                          className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] px-3 py-2.5"
                         >
-                          <Typography
-                            variant="caption"
-                            sx={{ color: "var(--app-text-muted)", fontWeight: 700 }}
-                          >
+                          <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
                             {label}
-                          </Typography>
-                          <Typography sx={{ mt: 0.5, color: "var(--app-text)" }}>
+                          </dt>
+                          <dd className="mt-1 break-words text-sm font-medium text-[var(--app-text)]">
                             {value}
-                          </Typography>
-                        </Box>
+                          </dd>
+                        </div>
                       ))}
-                    </Box>
+                    </dl>
 
-                    {report.status === "declined" && report.decline_reason ? (
-                      <Alert severity="error">{report.decline_reason}</Alert>
+                    {report.status === "declined" &&
+                    report.decline_reason ? (
+                      <div
+                        role="alert"
+                        className="mt-4 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+                      >
+                        {report.decline_reason}
+                      </div>
                     ) : null}
-
-                    {(report as any).workflow_stage === "awaiting_approval" ? (
-                      <Alert severity="warning">
-                        Files are ready and awaiting the assigned report approver.
-                      </Alert>
+                    {(report as any).workflow_stage ===
+                    "awaiting_approval" ? (
+                      <div className="mt-4 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-2.5 text-sm text-[var(--app-warning)]">
+                        Files are ready and awaiting the assigned report
+                        approver.
+                      </div>
                     ) : null}
                     {(report as any).workflow_stage === "awaiting_release" ? (
-                      <Alert severity="warning">
+                      <div className="mt-4 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-2.5 text-sm text-[var(--app-warning)]">
                         Approved and awaiting the assigned release manager.
-                      </Alert>
+                      </div>
                     ) : null}
+
                     {jobActive ? (
-                      <Box sx={{ p: 1.6, borderRadius: 2, bgcolor: "rgba(37,99,235,0.07)" }}>
-                        <Stack direction="row" spacing={1} sx={{ justifyContent: "space-between" }}>
-                          <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
+                      <div className="mt-4 rounded-lg bg-[var(--app-accent-soft)] px-3 py-3">
+                        <div className="flex justify-between gap-3 text-xs font-semibold text-[var(--app-accent)]">
+                          <span>
                             {(report as any).workflow_message ||
                               (report as any).generation_progress?.message ||
-                              (activeTab === "new" ? "Preparing preview" : "Generating files")}
-                          </Typography>
-                          <Typography sx={{ fontWeight: 800, color: "#2563eb" }}>
-                            {Math.round(Number(
-                              (report as any).workflow_progress_percent ??
-                                (report as any).generation_progress?.progressPercent ??
-                                0
-                            ))}%
-                          </Typography>
-                        </Stack>
-                        <LinearProgress
-                          variant="determinate"
-                          value={Math.max(2, Number(
-                            (report as any).workflow_progress_percent ??
-                              (report as any).generation_progress?.progressPercent ??
-                              0
-                          ))}
-                          sx={{ mt: 1, height: 7, borderRadius: 1 }}
-                        />
+                              (activeTab === "new"
+                                ? "Preparing preview"
+                                : "Generating files")}
+                          </span>
+                          <span>{Math.round(progress)}%</span>
+                        </div>
+                        <div
+                          className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--app-border)]"
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={Math.round(progress)}
+                        >
+                          <span
+                            className="block h-full rounded-full bg-[var(--app-accent)]"
+                            style={{ width: `${Math.min(100, progress)}%` }}
+                          />
+                        </div>
                         {(report as any).generation_progress?.totalLots ? (
-                          <Typography variant="caption" sx={{ mt: 0.8, display: "block", color: "var(--app-text-muted)" }}>
-                            Lot {(report as any).generation_progress.currentLot || 0} of {(report as any).generation_progress.totalLots}
-                          </Typography>
+                          <p className="mt-1.5 text-xs text-[var(--app-text-muted)]">
+                            Lot{" "}
+                            {(report as any).generation_progress.currentLot ||
+                              0}{" "}
+                            of{" "}
+                            {(report as any).generation_progress.totalLots}
+                          </p>
                         ) : null}
-                      </Box>
+                      </div>
                     ) : null}
                     {jobFailed ? (
-                      <Alert severity="error">
+                      <div
+                        role="alert"
+                        className="mt-4 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+                      >
                         {(report as any).job_error ||
                           (report as any).error_message ||
                           "This report failed to process. Please try again or contact an admin."}
-                      </Alert>
+                      </div>
                     ) : null}
 
-                    {!jobActive && ((report as any).preview_files?.spec_pdf || (report as any).preview_files?.cr_docx || (report as any).preview_files?.docx) ? (
-                      <Stack direction="row" spacing={1}>
-                        {(report as any).preview_files?.spec_pdf ? (
-                          <Button
-                            component="a"
-                            href={(report as any).preview_files.spec_pdf}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            size="small"
-                            startIcon={<SendRounded />}
-                          >
-                            CR
-                          </Button>
-                        ) : null}
-                        {(report as any).preview_files?.cr_docx ? (
-                          <Button
-                            component="a"
-                            href={(report as any).preview_files.cr_docx}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            size="small"
-                            startIcon={<SendRounded />}
-                          >
-                            CR DOCX
-                          </Button>
-                        ) : null}
-                        {(report as any).preview_files?.docx ? (
-                          <Button
-                            component="a"
-                            href={(report as any).preview_files.docx}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            size="small"
-                            startIcon={<SendRounded />}
-                          >
-                            Download DOCX
-                          </Button>
-                        ) : null}
-                      </Stack>
+                    {!jobActive &&
+                    ((report as any).preview_files?.spec_pdf ||
+                      (report as any).preview_files?.cr_docx ||
+                      (report as any).preview_files?.docx) ? (
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--app-border)] pt-3">
+                        {[
+                          [
+                            "CR",
+                            (report as any).preview_files?.spec_pdf,
+                          ],
+                          [
+                            "CR DOCX",
+                            (report as any).preview_files?.cr_docx,
+                          ],
+                          [
+                            "Download DOCX",
+                            (report as any).preview_files?.docx,
+                          ],
+                        ].map(([label, href]) =>
+                          href ? (
+                            <a
+                              key={label}
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]"
+                            >
+                              <Download className="size-3.5" />
+                              {label}
+                            </a>
+                          ) : null
+                        )}
+                      </div>
                     ) : null}
-                  </Stack>
-                </SurfaceCard>
-              );
-            })}
-          </Stack>
-        )}
-      </SectionPanel>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
 
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete preview?</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ color: "var(--app-text-muted)" }}>
-            This will permanently remove the selected preview and its associated data.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button
-            color="error"
-            onClick={handleDeleteReport}
-            disabled={deleting === deleteTarget?._id}
-          >
-            {deleting === deleteTarget?._id ? "Deleting..." : "Delete"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <dialog
+        ref={deleteDialogRef}
+        aria-labelledby="delete-preview-title"
+        className="m-auto w-[min(92vw,460px)] rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-0 text-[var(--app-text)] shadow-[var(--app-shadow-modal)] backdrop:bg-[var(--app-overlay)]"
+        onCancel={(event) => {
+          if (deleting) event.preventDefault();
+          else setDeleteTarget(null);
+        }}
+        onClose={() => {
+          if (deleteTarget && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <div className="p-5">
+          <h2 id="delete-preview-title" className="text-lg font-bold">
+            Delete preview?
+          </h2>
+          <p className="mt-2 text-sm text-[var(--app-text-muted)]">
+            This permanently removes the selected preview and its associated
+            data.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              className="min-h-10 rounded-lg border border-[var(--app-border)] px-4 text-sm font-semibold hover:bg-[var(--app-panel-alt)]"
+              onClick={() => setDeleteTarget(null)}
+              disabled={Boolean(deleting)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="min-h-10 rounded-lg bg-[var(--app-danger)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              onClick={() => void handleDeleteReport()}
+              disabled={deleting === deleteTarget?._id}
+            >
+              {deleting === deleteTarget?._id ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </div>
+      </dialog>
 
       {selectedReportId && previewModalOpen ? (
         <PreviewModal
@@ -884,17 +962,19 @@ export default function PreviewsPage() {
           isResubmitMode={isResubmitMode}
         />
       ) : null}
-      <AssetMergeDialog
-        open={Boolean(mergeAnchorId)}
-        anchorReportId={mergeAnchorId}
-        onClose={() => setMergeAnchorId(null)}
-        onCreated={() => {
-          setMergeAnchorId(null);
-          setActiveTab("new");
-          requestReportsRefetch();
-          void loadReports();
-        }}
-      />
-    </Stack>
+      {mergeAnchorId ? (
+        <AssetMergeDialog
+          open
+          anchorReportId={mergeAnchorId}
+          onClose={() => setMergeAnchorId(null)}
+          onCreated={() => {
+            setMergeAnchorId(null);
+            setActiveTab("new");
+            requestReportsRefetch();
+            void loadReports();
+          }}
+        />
+      ) : null}
+    </main>
   );
 }

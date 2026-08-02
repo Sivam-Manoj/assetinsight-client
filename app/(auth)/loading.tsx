@@ -1,10 +1,13 @@
+import BrandLockup from "@/components/auth/BrandLockup";
+
 export default function Loading() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-rose-50 to-white">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-rose-200 border-t-rose-600" />
-        <p className="text-sm text-rose-700">Loading...</p>
+    <main className="grid min-h-screen place-items-center bg-[var(--app-bg)] px-5 text-[var(--app-text)]">
+      <div className="flex flex-col items-center gap-6">
+        <BrandLockup compact />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--app-border)] border-t-[var(--app-accent)]" />
+        <p className="text-sm text-[var(--app-text-muted)]">Loading secure access...</p>
       </div>
-    </div>
+    </main>
   );
 }

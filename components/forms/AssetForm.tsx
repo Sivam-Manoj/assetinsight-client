@@ -9,9 +9,9 @@ import {
   useState,
 } from "react";
 import dynamic from "next/dynamic";
-import { Menu, MenuItem } from "@mui/material";
+import { Menu, MenuItem } from "@/components/ui/legacy";
 import { MoreHorizontal, Save, ScanLine } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   AssetService,
   type AssetCreateDetails,
@@ -19,8 +19,13 @@ import {
 import {
   SavedInputService,
   type AssetFormData,
+  type DraftFileMetadata,
   type DraftImageData,
+  type DraftResponse,
+  type DraftUploadBatch,
   type SavedInput,
+  getDraftFileMetadata,
+  getKnownDraftFileId,
 } from "@/services/savedInputs";
 import { useAuthContext } from "@/context/AuthContext";
 import { SERVER_BASE } from "@/lib/config";
@@ -92,10 +97,19 @@ type SectionId = "report" | "factors" | "comparison" | "media";
 type ValuationMethod = "FML" | "TKV" | "OLV" | "FLV";
 
 type FileDescriptor = {
+  clientFileId?: string;
   name: string;
   size: number;
   mimeType: string;
   lastModified: number;
+};
+
+type DraftMediaType = "main" | "extra" | "video";
+
+type DraftMediaLocation = DraftFileMetadata & {
+  lotId: string;
+  type: DraftMediaType;
+  index: number;
 };
 
 type SerializedLot = {
@@ -161,6 +175,7 @@ type AssetDraftEnvelope = {
   deviceId: string;
   formData: AssetDraftFormData;
   lots: MixedLot[];
+  mediaMetadata?: DraftMediaLocation[];
 };
 
 type DraftSnapshot = {
@@ -179,11 +194,69 @@ const isoDate = (date: Date) => {
 };
 
 const describeFile = (file: File): FileDescriptor => ({
+  ...getDraftFileMetadata(file),
   name: file.name,
   size: file.size,
   mimeType: file.type,
   lastModified: file.lastModified || 0,
 });
+
+const draftMediaCacheKey = (
+  lotId: string,
+  type: DraftMediaType,
+  clientFileId: string
+) => JSON.stringify([lotId, type, clientFileId]);
+
+const getLotFileBucket = (lot: MixedLot, type: DraftMediaType) => {
+  if (type === "main") return lot.files;
+  if (type === "extra") return lot.extraFiles;
+  return lot.videoFiles || [];
+};
+
+const getSerializedLotBucket = (
+  lot: SerializedLot,
+  type: DraftMediaType
+) => {
+  if (type === "main") return lot.mainFiles;
+  if (type === "extra") return lot.extraFiles;
+  return lot.videoFiles;
+};
+
+const listDraftMediaLocations = (
+  lots: MixedLot[]
+): DraftMediaLocation[] =>
+  lots.flatMap((lot) =>
+    (["main", "extra", "video"] as const).flatMap((type) =>
+      getLotFileBucket(lot, type).map((file, index) => ({
+        ...getDraftFileMetadata(file),
+        lotId: lot.id,
+        type,
+        index,
+      }))
+    )
+  );
+
+const applyDraftMediaLocations = (
+  lots: MixedLot[],
+  locations: DraftMediaLocation[] = []
+) => {
+  const byLocation = new Map(
+    locations.map((item) => [
+      JSON.stringify([item.lotId, item.type, item.index]),
+      item,
+    ])
+  );
+  for (const lot of lots) {
+    for (const type of ["main", "extra", "video"] as const) {
+      getLotFileBucket(lot, type).forEach((file, index) => {
+        const persisted = byLocation.get(
+          JSON.stringify([lot.id, type, index])
+        );
+        if (persisted) getDraftFileMetadata(file, persisted);
+      });
+    }
+  }
+};
 
 const getDeviceId = () => {
   if (typeof window === "undefined") return "";
@@ -216,10 +289,12 @@ const urlToFile = async (
   const response = await fetch(resolvedUrl);
   if (!response.ok) throw new Error(`Unable to restore ${descriptor.name}`);
   const blob = await response.blob();
-  return new File([blob], descriptor.name, {
+  const file = new File([blob], descriptor.name, {
     type: descriptor.mimeType || blob.type,
     lastModified: descriptor.lastModified,
   });
+  getDraftFileMetadata(file, descriptor);
+  return file;
 };
 
 const storageErrorMessage = (error: unknown) => {
@@ -360,6 +435,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const saveInFlightRef = useRef<Promise<void> | null>(null);
   const lastFingerprintRef = useRef<string | null>(null);
   const draftStatusCallbackRef = useRef(onDraftStatusChange);
+  const uploadedDraftMediaRef = useRef<Map<string, DraftImageData>>(new Map());
+  const pendingDraftDeletionUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     draftStatusCallbackRef.current = onDraftStatusChange;
@@ -517,55 +594,249 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         videoFiles: [...(lot.videoFiles || [])],
         annotations: lot.annotations ? { ...lot.annotations } : undefined,
       })),
+      mediaMetadata: listDraftMediaLocations(snapshot.lots),
     };
     await saveScopedDraft(envelope, draftScopeId);
     return null;
   };
 
-  const saveServerTier = async (snapshot: DraftSnapshot) => {
-    if (auctioneer) return;
-    const uploaded: DraftImageData[] = [];
-    const failures: string[] = [];
-    for (const lot of snapshot.lots) {
-      const buckets: Array<{
-        type: "main" | "extra" | "video";
-        files: File[];
-      }> = [
-        { type: "main", files: lot.files },
-        { type: "extra", files: lot.extraFiles },
-        { type: "video", files: lot.videoFiles || [] },
-      ];
-      for (const bucket of buckets) {
-        if (!bucket.files.length) continue;
-        try {
-          uploaded.push(
-            ...(await SavedInputService.uploadDraftImages(
-              bucket.files,
-              lot.id,
-              bucket.type
-            ))
+  const primeUploadedMediaCache = (
+    draft: DraftResponse,
+    lots: MixedLot[]
+  ) => {
+    const serializedLots = Array.isArray((draft.formData as any)?.lots)
+      ? ((draft.formData as any).lots as SerializedLot[])
+      : [];
+    const nextCache = new Map<string, DraftImageData>();
+
+    for (const lot of lots) {
+      const serializedLot = serializedLots.find((item) => item.id === lot.id);
+      for (const type of ["main", "extra", "video"] as const) {
+        const files = getLotFileBucket(lot, type);
+        const descriptors = serializedLot
+          ? getSerializedLotBucket(serializedLot, type) || []
+          : [];
+        const remote = (draft.draftImages || []).filter(
+          (item) => item.lotId === lot.id && item.type === type
+        );
+        const candidates = remote.map((item, index) => {
+          const descriptor = descriptors[index];
+          return {
+            item,
+            descriptor,
+            clientFileId:
+              item.clientFileId || descriptor?.clientFileId,
+            size:
+              typeof item.size === "number" ? item.size : descriptor?.size,
+            lastModified:
+              typeof item.lastModified === "number"
+                ? item.lastModified
+                : descriptor?.lastModified,
+            name: descriptor?.name || item.name,
+            mimeType: descriptor?.mimeType || item.mimeType,
+          };
+        });
+        const usedCandidates = new Set<number>();
+
+        files.forEach((file) => {
+          const knownClientFileId = getKnownDraftFileId(file);
+          const currentMetadata = getDraftFileMetadata(file);
+          let candidateIndex = candidates.findIndex(
+            (candidate, index) =>
+              !usedCandidates.has(index) &&
+              Boolean(candidate.clientFileId) &&
+              candidate.clientFileId === currentMetadata.clientFileId
           );
-        } catch {
-          failures.push(...bucket.files.map((file) => file.name));
-        }
+
+          if (candidateIndex < 0) {
+            candidateIndex = candidates.findIndex((candidate, index) => {
+              if (usedCandidates.has(index)) return false;
+              if (
+                knownClientFileId &&
+                candidate.clientFileId &&
+                knownClientFileId !== candidate.clientFileId
+              ) {
+                return false;
+              }
+              if (candidate.name !== file.name) return false;
+              if (
+                typeof candidate.size === "number" &&
+                candidate.size > 0 &&
+                candidate.size !== file.size
+              ) {
+                return false;
+              }
+              if (
+                typeof candidate.lastModified === "number" &&
+                candidate.lastModified > 0 &&
+                candidate.lastModified !== (file.lastModified || 0)
+              ) {
+                return false;
+              }
+              return (
+                !candidate.mimeType ||
+                !file.type ||
+                candidate.mimeType === file.type
+              );
+            });
+          }
+
+          if (candidateIndex < 0) return;
+          usedCandidates.add(candidateIndex);
+          const candidate = candidates[candidateIndex];
+          const metadata = getDraftFileMetadata(file, {
+            clientFileId:
+              candidate.clientFileId || currentMetadata.clientFileId,
+            size: candidate.size,
+            lastModified: candidate.lastModified,
+          });
+          const normalized = { ...candidate.item, ...metadata };
+          nextCache.set(
+            draftMediaCacheKey(lot.id, type, metadata.clientFileId),
+            normalized
+          );
+        });
       }
     }
-    if (failures.length) {
+
+    uploadedDraftMediaRef.current = nextCache;
+  };
+
+  const saveServerTier = async (snapshot: DraftSnapshot) => {
+    if (auctioneer) return;
+    const cached = uploadedDraftMediaRef.current;
+    const currentMedia = snapshot.lots.flatMap((lot) =>
+      (["main", "extra", "video"] as const).flatMap((type) =>
+        getLotFileBucket(lot, type).map((file) => {
+          const metadata = getDraftFileMetadata(file);
+          return {
+            file,
+            lotId: lot.id,
+            type,
+            metadata,
+            cacheKey: draftMediaCacheKey(
+              lot.id,
+              type,
+              metadata.clientFileId
+            ),
+          };
+        })
+      )
+    );
+    const currentKeys = new Set(currentMedia.map((item) => item.cacheKey));
+    const uploadBatches: DraftUploadBatch[] = [];
+
+    for (const lot of snapshot.lots) {
+      for (const type of ["main", "extra", "video"] as const) {
+        const files = getLotFileBucket(lot, type).filter((file) => {
+          const metadata = getDraftFileMetadata(file);
+          return !cached.has(
+            draftMediaCacheKey(lot.id, type, metadata.clientFileId)
+          );
+        });
+        if (files.length) uploadBatches.push({ files, lotId: lot.id, type });
+      }
+    }
+
+    let uploaded: DraftImageData[] = [];
+    try {
+      uploaded = await SavedInputService.uploadDraftImageBatches(
+        uploadBatches,
+        3
+      );
+    } catch {
+      const failedNames = uploadBatches.flatMap((batch) =>
+        batch.files.map((file) => file.name)
+      );
       throw new Error(
-        `Some media could not be synced (${failures.slice(0, 3).join(", ")}). The previous server draft was preserved.`
+        `Some media could not be synced (${failedNames
+          .slice(0, 3)
+          .join(", ")}). The previous server draft was preserved.`
       );
     }
-    await SavedInputService.saveDraft({
-      formType: "asset",
-      formData: {
-        ...snapshot.formData,
-        draftVersion: 2,
-        draftUserId: userId,
-        draftRevision: snapshot.revision,
-        lots: snapshot.serializedLots,
-      } as any,
-      draftImages: uploaded,
-    });
+
+    const uploadedByKey = new Map(
+      uploaded.flatMap((item) =>
+        item.clientFileId
+          ? [
+              [
+                draftMediaCacheKey(
+                  item.lotId,
+                  item.type,
+                  item.clientFileId
+                ),
+                item,
+              ] as const,
+            ]
+          : []
+      )
+    );
+    const newlyUploadedUrls = uploaded.map((item) => item.url);
+    let activeRemoteMedia: DraftImageData[];
+    try {
+      activeRemoteMedia = currentMedia.map((item) => {
+        const remote =
+          cached.get(item.cacheKey) || uploadedByKey.get(item.cacheKey);
+        if (!remote) {
+          throw new Error(
+            `Unable to match uploaded draft media: ${item.file.name}`
+          );
+        }
+        return {
+          ...remote,
+          ...item.metadata,
+          lotId: item.lotId,
+          type: item.type,
+          name: item.file.name,
+          mimeType: item.file.type || remote.mimeType,
+        };
+      });
+    } catch (matchError) {
+      await SavedInputService.deleteDraftImagesByUrls(
+        newlyUploadedUrls
+      ).catch(() => undefined);
+      throw matchError;
+    }
+
+    try {
+      await SavedInputService.saveDraft({
+        formType: "asset",
+        formData: {
+          ...snapshot.formData,
+          draftVersion: 2,
+          draftUserId: userId,
+          draftRevision: snapshot.revision,
+          lots: snapshot.serializedLots,
+        } as any,
+        draftImages: activeRemoteMedia,
+      });
+    } catch (saveError) {
+      await SavedInputService.deleteDraftImagesByUrls(newlyUploadedUrls).catch(
+        () => undefined
+      );
+      throw saveError;
+    }
+
+    uploadedDraftMediaRef.current = new Map(
+      activeRemoteMedia.map((item) => [
+        draftMediaCacheKey(item.lotId, item.type, item.clientFileId!),
+        item,
+      ])
+    );
+    const removedUrls = [
+      ...pendingDraftDeletionUrlsRef.current,
+      ...[...cached.entries()]
+        .filter(([key]) => !currentKeys.has(key))
+        .map(([, item]) => item.url),
+    ].filter((url, index, urls) => urls.indexOf(url) === index);
+    pendingDraftDeletionUrlsRef.current = [];
+    if (removedUrls.length) {
+      try {
+        await SavedInputService.deleteDraftImagesByUrls(removedUrls);
+      } catch {
+        pendingDraftDeletionUrlsRef.current = removedUrls;
+      }
+    }
   };
 
   const saveRevision = async (revision: number) => {
@@ -817,6 +1088,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         deviceId: legacy.deviceId || getDeviceId(),
         formData: legacy.formData,
         lots: restoredLots,
+        mediaMetadata: listDraftMediaLocations(restoredLots),
       };
 
       // A complete v2 draft is removed only after v3 can be written and read
@@ -836,10 +1108,28 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       }
     }
 
+    const restoredLots = Array.isArray(envelope.lots) ? envelope.lots : [];
+    applyDraftMediaLocations(restoredLots, envelope.mediaMetadata);
+    envelope.mediaMetadata = listDraftMediaLocations(restoredLots);
     restoreFormFields(envelope.formData || {});
-    setMixedLots(Array.isArray(envelope.lots) ? envelope.lots : []);
+    setMixedLots(restoredLots);
     saveRevisionRef.current = envelope.revision || 0;
     committedRevisionRef.current = envelope.revision || 0;
+    if (!auctioneer) {
+      try {
+        const remoteDraft = await SavedInputService.getDraft("asset");
+        const remoteFormData = remoteDraft?.formData as any;
+        if (
+          remoteDraft &&
+          remoteFormData?.draftVersion === 2 &&
+          remoteFormData?.draftUserId === userId
+        ) {
+          primeUploadedMediaCache(remoteDraft, restoredLots);
+        }
+      } catch {
+        // The local draft remains fully usable while server sync is offline.
+      }
+    }
     if (missingMediaCount) {
       setDraftGuidance({
         tone: "warning",
@@ -876,14 +1166,29 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         );
         const files: File[] = [];
         for (let index = 0; index < remote.length; index += 1) {
+          const remoteItem = remote[index];
           const descriptor = descriptors[index] || {
-            name: remote[index].name,
+            name: remoteItem.name,
             size: 0,
-            mimeType: remote[index].mimeType,
+            mimeType: remoteItem.mimeType,
             lastModified: 0,
           };
           try {
-            files.push(await urlToFile(remote[index].url, descriptor));
+            files.push(
+              await urlToFile(remoteItem.url, {
+                ...descriptor,
+                clientFileId:
+                  remoteItem.clientFileId || descriptor.clientFileId,
+                size:
+                  typeof remoteItem.size === "number"
+                    ? remoteItem.size
+                    : descriptor.size,
+                lastModified:
+                  typeof remoteItem.lastModified === "number"
+                    ? remoteItem.lastModified
+                    : descriptor.lastModified,
+              })
+            );
           } catch {
             failedMedia += 1;
           }
@@ -900,6 +1205,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         annotations: lotMeta.annotations || {},
       });
     }
+    primeUploadedMediaCache(draft, restoredLots);
     setMixedLots(restoredLots);
     saveRevisionRef.current = Number(formData.draftRevision || 0);
     committedRevisionRef.current = saveRevisionRef.current;
@@ -920,6 +1226,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     let cancelled = false;
     setDraftHydrated(false);
     lastFingerprintRef.current = null;
+    uploadedDraftMediaRef.current = new Map();
+    pendingDraftDeletionUrlsRef.current = [];
     void (async () => {
       let restored = false;
       try {
@@ -1123,6 +1431,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         throw new Error("The local draft was removed, but the server copy could not be deleted. Please try again.");
       }
     }
+    uploadedDraftMediaRef.current = new Map();
+    pendingDraftDeletionUrlsRef.current = [];
     if (localDeleteError) throw localDeleteError;
   };
 

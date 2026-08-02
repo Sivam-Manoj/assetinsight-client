@@ -1,29 +1,8 @@
 "use client";
 
+import { CircleAlert, Info, Merge, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Checkbox,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  FormControlLabel,
-  IconButton,
-  Radio,
-  Stack,
-  Typography,
-  useMediaQuery,
-  useTheme,
-} from "@mui/material";
-import { CloseRounded, MergeRounded } from "@mui/icons-material";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   getAssetMergeCandidates,
   mergeAssetReports,
@@ -48,12 +27,19 @@ function createRequestId() {
 }
 
 function formatStatus(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export default function AssetMergeDialog({ open, anchorReportId, onClose, onCreated }: Props) {
-  const theme = useTheme();
-  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+export default function AssetMergeDialog({
+  open,
+  anchorReportId,
+  onClose,
+  onCreated,
+}: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const requestIdRef = useRef("");
   const [candidates, setCandidates] = useState<AssetMergeCandidate[]>([]);
   const [contractNo, setContractNo] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -61,7 +47,19 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (open && !dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    } else if (!open && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open || !anchorReportId) return;
@@ -123,7 +121,10 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
 
   const toggleCandidate = (candidate: AssetMergeCandidate) => {
     if (!candidate.eligible) return;
-    if (!selectedIds.includes(candidate.id) && selectedIds.length >= MAX_MERGE_SOURCES) {
+    if (
+      !selectedIds.includes(candidate.id) &&
+      selectedIds.length >= MAX_MERGE_SOURCES
+    ) {
       setError(`Select no more than ${MAX_MERGE_SOURCES} Asset reports.`);
       return;
     }
@@ -167,47 +168,84 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={submitting ? undefined : onClose}
-      fullScreen={fullScreen}
-      fullWidth
-      maxWidth="md"
-      slotProps={{
-        paper: {
-          sx: { borderRadius: fullScreen ? 0 : 2, minHeight: fullScreen ? "100%" : 620 },
-        },
+    <dialog
+      ref={dialogRef}
+      className="app-dialog"
+      aria-labelledby="asset-merge-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!submitting) onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+      style={{
+        width: "min(840px, calc(100% - 32px))",
+        maxHeight: "min(90vh, 800px)",
+        padding: 0,
+        color: "var(--app-text)",
       }}
     >
-      <DialogTitle sx={{ pr: 7 }}>
-        <Typography variant="h6" component="div" sx={{ fontWeight: 900 }}>
-          Merge Asset Reports
-        </Typography>
-        <Typography variant="body2" sx={{ color: "text.secondary", mt: 0.5 }}>
-          Contract {contractNo || "-"}. Source reports remain unchanged.
-        </Typography>
-        <IconButton aria-label="Close" onClick={onClose} disabled={submitting} sx={{ position: "absolute", right: 14, top: 14 }}>
-          <CloseRounded />
-        </IconButton>
-      </DialogTitle>
-      <Divider />
-      <DialogContent sx={{ p: { xs: 2, sm: 3 } }}>
+      <header
+        className="app-dialog__header"
+        style={{ position: "relative", paddingRight: 64 }}
+      >
+        <h2
+          id="asset-merge-title"
+          style={{ margin: 0, fontSize: "1.08rem", fontWeight: 760 }}
+        >
+          Merge Asset reports
+        </h2>
+        <p className="app-muted" style={{ margin: "5px 0 0", fontSize: 13 }}>
+          Contract {contractNo || "—"}. Source reports remain unchanged.
+        </p>
+        <button
+          type="button"
+          className="app-button app-button--icon"
+          aria-label="Close merge reports dialog"
+          onClick={onClose}
+          disabled={submitting}
+          style={{ position: "absolute", top: 14, right: 16 }}
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </header>
+
+      <div className="app-dialog__body">
         {loading ? (
-          <Box sx={{ minHeight: 360, display: "grid", placeItems: "center" }}>
-            <CircularProgress />
-          </Box>
+          <div
+            role="status"
+            className="app-muted"
+            style={{ minHeight: 360, display: "grid", placeItems: "center" }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              <span className="app-spinner" aria-hidden />
+              Loading matching reports…
+            </span>
+          </div>
         ) : (
-          <Stack spacing={2}>
-            {error ? <Alert severity="error">{error}</Alert> : null}
-            <Box
-              sx={{
+          <div style={{ display: "grid", gap: 16 }}>
+            {error ? (
+              <div className="app-alert app-alert--error" role="alert">
+                <CircleAlert
+                  size={18}
+                  aria-hidden
+                  style={{ flex: "0 0 auto", color: "var(--app-danger)" }}
+                />
+                <span>{error}</span>
+              </div>
+            ) : null}
+
+            <dl
+              style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
                 gap: 1,
-                p: 1.5,
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1.5,
+                margin: 0,
+                border: "1px solid var(--app-border)",
+                borderRadius: 8,
+                overflow: "hidden",
+                background: "var(--app-border)",
               }}
             >
               {[
@@ -215,105 +253,249 @@ export default function AssetMergeDialog({ open, anchorReportId, onClose, onCrea
                 ["Lots", totals.lots],
                 ["Images", totals.images],
               ].map(([label, value]) => (
-                <Box key={label} sx={{ textAlign: "center" }}>
-                  <Typography variant="h6" sx={{ fontWeight: 900 }}>{value}</Typography>
-                  <Typography variant="caption" color="text.secondary">{label}</Typography>
-                </Box>
+                <div
+                  key={label}
+                  style={{
+                    padding: 12,
+                    textAlign: "center",
+                    background: "var(--app-panel)",
+                  }}
+                >
+                  <dd style={{ margin: 0, fontSize: 20, fontWeight: 760 }}>
+                    {value}
+                  </dd>
+                  <dt
+                    className="app-muted"
+                    style={{ marginTop: 2, fontSize: 12, fontWeight: 650 }}
+                  >
+                    {label}
+                  </dt>
+                </div>
               ))}
-            </Box>
+            </dl>
+
             {selected.length >= 2 ? (
-              <Alert severity="info">
-                The merged report will be ordered and renumbered automatically as Lot 1 through Lot {totals.lots}.
-              </Alert>
+              <div className="app-alert">
+                <Info
+                  size={18}
+                  aria-hidden
+                  style={{ flex: "0 0 auto", color: "var(--app-info)" }}
+                />
+                <span>
+                  The merged report will be ordered and renumbered automatically
+                  as Lot 1 through Lot {totals.lots}.
+                </span>
+              </div>
             ) : null}
             {eligibleCount < 2 ? (
-              <Alert severity="info">No other eligible Asset reports use this exact contract number.</Alert>
+              <div className="app-alert">
+                <Info
+                  size={18}
+                  aria-hidden
+                  style={{ flex: "0 0 auto", color: "var(--app-info)" }}
+                />
+                <span>
+                  No other eligible Asset reports use this exact contract number.
+                </span>
+              </div>
             ) : null}
-            <Stack spacing={1.25}>
+
+            <div
+              role="list"
+              aria-label="Asset reports available to merge"
+              style={{ display: "grid", gap: 10 }}
+            >
               {candidates.map((candidate) => {
                 const checked = selectedIds.includes(candidate.id);
                 return (
-                  <Box
+                  <article
                     key={candidate.id}
-                    onClick={() => toggleCandidate(candidate)}
-                    sx={{
+                    role="listitem"
+                    style={{
                       display: "grid",
                       gridTemplateColumns: "auto auto minmax(0, 1fr)",
-                      gap: 1.25,
+                      gap: 12,
                       alignItems: "center",
-                      p: 1.5,
-                      border: "1px solid",
-                      borderColor: checked ? "primary.main" : "divider",
-                      bgcolor: checked ? "action.selected" : "background.paper",
-                      borderRadius: 1.5,
-                      cursor: candidate.eligible ? "pointer" : "not-allowed",
+                      padding: 14,
+                      border: `1px solid ${
+                        checked ? "var(--app-accent)" : "var(--app-border)"
+                      }`,
+                      borderRadius: 8,
+                      background: checked
+                        ? "var(--app-accent-soft)"
+                        : "var(--app-panel)",
                       opacity: candidate.eligible ? 1 : 0.58,
                     }}
                   >
-                    <Checkbox checked={checked} disabled={!candidate.eligible} tabIndex={-1} />
-                    <Radio
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!candidate.eligible}
+                      onChange={() => toggleCandidate(candidate)}
+                      aria-label={`Include ${candidate.clientName}`}
+                      style={{ width: 18, height: 18, accentColor: "var(--app-accent)" }}
+                    />
+                    <input
+                      type="radio"
+                      name="primary-asset-report"
                       checked={primaryId === candidate.id}
                       disabled={!checked}
-                      onClick={(event) => event.stopPropagation()}
                       onChange={() => setPrimaryId(candidate.id)}
                       aria-label={`Use ${candidate.clientName} as primary report`}
+                      style={{ width: 18, height: 18, accentColor: "var(--app-accent)" }}
                     />
-                    <Stack direction="row" spacing={1.5} sx={{ minWidth: 0, alignItems: "center" }}>
-                      <Avatar
-                        src={candidate.thumbnailUrl}
-                        variant="rounded"
-                        sx={{ width: 64, height: 52, borderRadius: 1, bgcolor: "action.hover" }}
+                    <div
+                      style={{
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 64,
+                          height: 52,
+                          flex: "0 0 auto",
+                          display: "grid",
+                          placeItems: "center",
+                          overflow: "hidden",
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 7,
+                          background: "var(--app-panel-alt)",
+                          color: "var(--app-text-muted)",
+                        }}
                       >
-                        <MergeRounded />
-                      </Avatar>
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-                          <Typography sx={{ fontWeight: 800 }}>{candidate.clientName}</Typography>
-                          <Chip size="small" label={formatStatus(candidate.status)} />
-                          {candidate.isMergedReport ? <Chip size="small" color="info" label="Merged" /> : null}
-                          {primaryId === candidate.id ? <Chip size="small" color="primary" label="Primary" /> : null}
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {new Date(candidate.createdAt).toLocaleDateString()} · {candidate.lotCount} lots · {candidate.imageCount} images
-                        </Typography>
+                        {candidate.thumbnailUrl ? (
+                          // External candidate images are already served by the API.
+
+                          <img
+                            src={candidate.thumbnailUrl}
+                            alt=""
+                            width={64}
+                            height={52}
+                            loading="lazy"
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <Merge size={20} />
+                        )}
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: 7,
+                          }}
+                        >
+                          <strong>{candidate.clientName}</strong>
+                          <span className="app-chip">
+                            {formatStatus(candidate.status)}
+                          </span>
+                          {candidate.isMergedReport ? (
+                            <span className="app-chip app-chip--info">Merged</span>
+                          ) : null}
+                          {primaryId === candidate.id ? (
+                            <span className="app-chip app-chip--accent">Primary</span>
+                          ) : null}
+                        </div>
+                        <p
+                          className="app-muted"
+                          style={{
+                            margin: "5px 0 0",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontSize: 13,
+                          }}
+                        >
+                          {new Date(candidate.createdAt).toLocaleDateString()} ·{" "}
+                          {candidate.lotCount} lots · {candidate.imageCount} images
+                        </p>
                         {candidate.owner?.email || candidate.owner?.name ? (
-                          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                          <p
+                            className="app-muted"
+                            style={{
+                              margin: "3px 0 0",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              fontSize: 12,
+                            }}
+                          >
                             Created by {candidate.owner.email || candidate.owner.name}
-                          </Typography>
+                          </p>
                         ) : null}
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {candidate.lotNumbers.length ? candidate.lotNumbers.map((value) => `Lot ${value}`).join(", ") : "No lot numbers"}
-                        </Typography>
+                        <p
+                          className="app-muted"
+                          style={{
+                            margin: "3px 0 0",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            fontSize: 12,
+                          }}
+                        >
+                          {candidate.lotNumbers.length
+                            ? candidate.lotNumbers
+                                .map((value) => `Lot ${value}`)
+                                .join(", ")
+                            : "No lot numbers"}
+                        </p>
                         {!candidate.eligible ? (
-                          <Typography variant="caption" color="error.main" sx={{ display: "block" }}>
+                          <p
+                            style={{
+                              margin: "4px 0 0",
+                              color: "var(--app-danger)",
+                              fontSize: 12,
+                            }}
+                          >
                             {candidate.disabledReason}
-                          </Typography>
+                          </p>
                         ) : null}
-                      </Box>
-                    </Stack>
-                  </Box>
+                      </div>
+                    </div>
+                  </article>
                 );
               })}
-            </Stack>
-            <FormControlLabel
-              control={<Radio checked={Boolean(primaryId)} disabled />}
-              label="The Primary report supplies shared client, appraisal, date, location, signature, and report settings."
-            />
-          </Stack>
+            </div>
+
+            <p className="app-muted" style={{ margin: 0, fontSize: 13 }}>
+              The Primary report supplies shared client, appraisal, date, location,
+              signature, and report settings.
+            </p>
+          </div>
         )}
-      </DialogContent>
-      <Divider />
-      <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} disabled={submitting}>Cancel</Button>
-        <Button
-          variant="contained"
-          startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <MergeRounded />}
-          disabled={loading || submitting || selectedIds.length < 2 || !primaryId}
+      </div>
+
+      <footer className="app-dialog__footer">
+        <button
+          type="button"
+          className="app-button app-button--secondary"
+          onClick={onClose}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="app-button app-button--primary"
+          disabled={
+            loading || submitting || selectedIds.length < 2 || !primaryId
+          }
           onClick={() => void submit()}
         >
-          {submitting ? "Creating merged preview..." : "Create merged preview"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+          {submitting ? (
+            <span className="app-spinner" aria-hidden />
+          ) : (
+            <Merge size={17} aria-hidden />
+          )}
+          {submitting ? "Creating merged preview…" : "Create merged preview"}
+        </button>
+      </footer>
+    </dialog>
   );
 }

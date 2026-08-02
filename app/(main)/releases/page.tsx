@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { LockOpen, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Stack,
-  Typography,
-} from "@mui/material";
-import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
-import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
-import { ReportsService, type AssignedRelease } from "@/services/reports";
+import { useEffect, useMemo, useState } from "react";
 import Loading from "@/components/common/Loading";
 import { useAuthContext } from "@/context/AuthContext";
+import { ReportsService, type AssignedRelease } from "@/services/reports";
 
 function formatDate(value?: string) {
   if (!value) return "";
@@ -47,8 +35,12 @@ export default function AssignedReleasesPage() {
     try {
       const data = await ReportsService.getAssignedReleases();
       setItems(data.items || []);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || "Failed to load assigned releases");
+    } catch (loadError: any) {
+      setError(
+        loadError?.response?.data?.message ||
+          loadError?.message ||
+          "Failed to load assigned releases"
+      );
     } finally {
       setLoading(false);
     }
@@ -71,8 +63,12 @@ export default function AssignedReleasesPage() {
       await ReportsService.releaseAssignedReport(item._id);
       setSuccess("Report released. The creator can now download files.");
       await load();
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || "Failed to release report");
+    } catch (releaseError: any) {
+      setError(
+        releaseError?.response?.data?.message ||
+          releaseError?.message ||
+          "Failed to release report"
+      );
     } finally {
       setBusyId("");
     }
@@ -81,7 +77,11 @@ export default function AssignedReleasesPage() {
   if (authLoading || !canViewReleases) {
     return (
       <Loading
-        message={authLoading ? "Checking your account..." : "Redirecting to dashboard..."}
+        message={
+          authLoading
+            ? "Checking your account..."
+            : "Redirecting to dashboard..."
+        }
         height={120}
         width={120}
         className="min-h-[50vh]"
@@ -90,86 +90,127 @@ export default function AssignedReleasesPage() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1180, mx: "auto" }}>
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        sx={{ justifyContent: "space-between", alignItems: { sm: "center" } }}
-      >
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 900, color: "text.primary" }}>
-            Assigned Releases
-          </Typography>
-          <Typography sx={{ mt: 0.5, color: "text.secondary" }}>
-            Release approved reports once payment or internal clearance is complete.
-          </Typography>
-        </Box>
-        <Button variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => void load()} disabled={loading}>
+    <main className="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 md:px-8 md:py-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-accent)]">
+            Release queue
+          </p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+            Assigned releases
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-[var(--app-text-muted)]">
+            Release approved reports once payment or internal clearance is
+            complete.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => void load()}
+          disabled={loading}
+        >
+          <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
-        </Button>
-      </Stack>
+        </button>
+      </header>
 
-      <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: "center" }}>
-        <Chip color={pendingCount ? "warning" : "success"} label={`${pendingCount} awaiting release`} />
-      </Stack>
+      <span
+        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+          pendingCount
+            ? "bg-[var(--app-warning-soft)] text-[var(--app-warning)]"
+            : "bg-[var(--app-success-soft)] text-[var(--app-success)]"
+        }`}
+      >
+        {pendingCount} awaiting release
+      </span>
 
-      {error ? <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert> : null}
-      {success ? <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert> : null}
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-4 py-3 text-sm text-[var(--app-danger)]"
+        >
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div
+          role="status"
+          className="rounded-lg border border-[var(--app-success-border)] bg-[var(--app-success-soft)] px-4 py-3 text-sm text-[var(--app-success)]"
+        >
+          {success}
+        </div>
+      ) : null}
 
       {loading ? (
-        <Stack sx={{ py: 8, alignItems: "center" }}>
-          <CircularProgress />
-        </Stack>
+        <div
+          className="grid min-h-64 place-items-center"
+          role="status"
+          aria-label="Loading assigned releases"
+        >
+          <RefreshCw className="size-5 animate-spin text-[var(--app-accent)]" />
+        </div>
       ) : items.length === 0 ? (
-        <Card sx={{ mt: 3, borderRadius: 4 }}>
-          <CardContent sx={{ py: 5 }}>
-            <Typography variant="h6" sx={{ fontWeight: 800 }}>
-              No assigned releases
-            </Typography>
-            <Typography sx={{ mt: 1, color: "text.secondary" }}>
-              Approved reports waiting for your release will appear here.
-            </Typography>
-          </CardContent>
-        </Card>
+        <section className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-5 py-10">
+          <h2 className="font-semibold text-[var(--app-text)]">
+            No assigned releases
+          </h2>
+          <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+            Approved reports waiting for your release will appear here.
+          </p>
+        </section>
       ) : (
-        <Stack spacing={2} sx={{ mt: 3 }}>
-          {items.map((item) => (
-            <Card key={item._id} sx={{ borderRadius: 4, overflow: "hidden" }}>
-              <CardContent>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between" }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap", gap: 1 }}>
-                      <Chip size="small" color="primary" label={item.reportType} />
-                      <Chip size="small" color="warning" variant="outlined" label="Awaiting release" />
-                    </Stack>
-                    <Typography variant="h6" sx={{ mt: 1, wordBreak: "break-word", fontWeight: 900 }}>
-                      {reportTitle(item)}
-                    </Typography>
-                    <Typography sx={{ mt: 0.5, color: "text.secondary" }}>
-                      {item.contract_no ? `Contract ${item.contract_no} - ` : ""}
-                      {item.fairMarketValue || "Value not set"}
-                    </Typography>
-                    <Typography variant="body2" sx={{ mt: 0.5, color: "text.secondary" }}>
-                      Submitted by {item.user?.username || item.user?.email || "User"} - {formatDate(item.createdAt)}
-                    </Typography>
-                  </Box>
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ flexShrink: 0 }}>
-                    <Button
-                      variant="contained"
-                      color="success"
-                      startIcon={<LockOpenRoundedIcon />}
-                      disabled={busyId === item._id}
-                      onClick={() => void release(item)}
-                    >
-                      {busyId === item._id ? "Releasing..." : "Release"}
-                    </Button>
-                  </Stack>
-                </Stack>
-              </CardContent>
-            </Card>
-          ))}
-        </Stack>
+        <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+          <div className="hidden grid-cols-[minmax(260px,1fr)_180px_160px] gap-4 border-b border-[var(--app-border)] bg-[var(--app-panel-alt)] px-5 py-3 text-xs font-bold uppercase tracking-wide text-[var(--app-text-muted)] md:grid">
+            <span>Report</span>
+            <span>Submitted</span>
+            <span className="text-right">Action</span>
+          </div>
+          <ul className="divide-y divide-[var(--app-border)]">
+            {items.map((item) => (
+              <li
+                key={item._id}
+                className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(260px,1fr)_180px_160px] md:items-center md:px-5"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md bg-[var(--app-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--app-accent)]">
+                      {item.reportType}
+                    </span>
+                    <span className="rounded-md bg-[var(--app-warning-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--app-warning)]">
+                      Awaiting release
+                    </span>
+                  </div>
+                  <h2 className="mt-2 break-words font-semibold text-[var(--app-text)]">
+                    {reportTitle(item)}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+                    {item.contract_no ? `Contract ${item.contract_no} · ` : ""}
+                    {item.fairMarketValue || "Value not set"}
+                  </p>
+                </div>
+                <div className="text-sm text-[var(--app-text-muted)]">
+                  <span className="block text-[var(--app-text)]">
+                    {item.user?.username || item.user?.email || "User"}
+                  </span>
+                  <span>{formatDate(item.createdAt)}</span>
+                </div>
+                <div className="md:text-right">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={busyId === item._id}
+                    onClick={() => void release(item)}
+                  >
+                    <LockOpen className="size-4" />
+                    {busyId === item._id ? "Releasing..." : "Release"}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-    </Box>
+    </main>
   );
 }

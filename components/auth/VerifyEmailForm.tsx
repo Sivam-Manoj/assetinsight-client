@@ -1,10 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthService } from "@/services/auth";
 import { useAuthContext } from "@/context/AuthContext";
-import { Mail, Hash, Loader2 } from "lucide-react";
+import AuthLightShell, {
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_PRIMARY_BUTTON_CLASS,
+  AUTH_SECONDARY_BUTTON_CLASS,
+  AuthFormHeading,
+  AuthNotice,
+  AuthSpinner,
+} from "@/components/auth/AuthLightShell";
+
+const VERIFICATION_FEATURES = [
+  "Six-digit verification",
+  "Protected account setup",
+  "Secure device handoff",
+];
 
 export default function VerifyEmailForm() {
   const router = useRouter();
@@ -12,37 +28,32 @@ export default function VerifyEmailForm() {
   const search = useSearchParams();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-
-  // Safely read search params after mount to avoid hydration issues
-  useEffect(() => {
-    const emailParam = search.get("email");
-    if (emailParam && !email) {
-      setEmail(emailParam);
-    }
-  }, [search]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    const emailParam = search.get("email");
+    if (emailParam) setEmail((current) => current || emailParam);
+  }, [search]);
+
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError(null);
     setMessage(null);
     setLoading(true);
     try {
-      const res = await AuthService.verifyEmail({
+      const response = await AuthService.verifyEmail({
         email,
         verificationCode: code,
       });
-      acceptAuthResponse(res);
-      setMessage(res.message || "Email verified successfully.");
-      setTimeout(() => {
-        router.replace(
-          res.authState === "authenticated" ? "/dashboard" : "/device-access"
-        );
+      acceptAuthResponse(response);
+      setMessage(response.message || "Email verified successfully.");
+      window.setTimeout(() => {
+        router.replace(response.authState === "authenticated" ? "/dashboard" : "/device-access");
       }, 800);
-    } catch (err: any) {
-      setError(err?.message || "Failed to verify email");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to verify email");
     } finally {
       setLoading(false);
     }
@@ -53,96 +64,87 @@ export default function VerifyEmailForm() {
     setMessage(null);
     setLoading(true);
     try {
-      const res = await AuthService.resendVerificationCode(email);
-      setMessage(res.message || "Verification code resent.");
-    } catch (err: any) {
-      setError(err?.message || "Failed to resend code");
+      const response = await AuthService.resendVerificationCode(email);
+      setMessage(response.message || "Verification code resent.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to resend code");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="mx-auto w-full max-w-md space-y-5 rounded-xl border border-gray-200 bg-white/90 p-6 shadow-lg backdrop-blur"
+    <AuthLightShell
+      title="One quick check before your workspace opens."
+      description="Confirm your email to protect account access and keep client work connected to the right team."
+      features={VERIFICATION_FEATURES}
     >
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-semibold text-gray-900">Verify Email</h1>
-        <p className="text-sm text-gray-600">Enter the code sent to your email</p>
-      </div>
-      {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700">
-          {error}
+      <form onSubmit={onSubmit}>
+        <AuthFormHeading
+          label="Verify email"
+          title="Check your inbox"
+          description="Enter the six-digit code sent to your email address."
+        />
+
+        {error ? <div className="mt-7"><AuthNotice tone="error">{error}</AuthNotice></div> : null}
+        {message ? <div className="mt-7"><AuthNotice tone="success">{message}</AuthNotice></div> : null}
+
+        <div className="mt-8 space-y-5">
+          <label className="block">
+            <span className={AUTH_LABEL_CLASS}>Email address</span>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              className={AUTH_INPUT_CLASS}
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              disabled={loading}
+            />
+          </label>
+          <label className="block">
+            <span className={AUTH_LABEL_CLASS}>Verification code</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              className={`${AUTH_INPUT_CLASS} font-mono tracking-[0.25em]`}
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D+/g, "").slice(0, 6))}
+              required
+              disabled={loading}
+            />
+          </label>
         </div>
-      )}
-      {message && (
-        <div className="rounded-md border border-green-300 bg-green-50 p-2 text-sm text-green-700">
-          {message}
-        </div>
-      )}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">Email</label>
-        <div className="relative">
-          <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">Verification Code</label>
-        <div className="relative">
-          <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="123456"
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 pl-10 text-sm shadow-sm placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 tracking-widest"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            required
-          />
-        </div>
-      </div>
-      <button
-        type="submit"
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-red-500 disabled:opacity-50"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" /> Verifying...
-          </>
-        ) : (
-          "Verify"
-        )}
-      </button>
-      <button
-        type="button"
-        disabled={loading || !email}
-        onClick={onResend}
-        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-      >
-        Didn&apos;t get a verification code? Resend verification code
-      </button>
-      <div className="text-sm">
-        Already have an account?{" "}
+
+        <button
+          type="submit"
+          disabled={loading || code.length !== 6}
+          className={`mt-8 w-full ${AUTH_PRIMARY_BUTTON_CLASS}`}
+        >
+          {loading ? <AuthSpinner /> : null}
+          <span>{loading ? "Verifying..." : "Verify email"}</span>
+          {loading ? null : <ArrowRight className="h-4 w-4" />}
+        </button>
         <button
           type="button"
-          className="text-red-600 hover:underline"
-          onClick={() => router.push("/login")}
+          disabled={loading || !email}
+          onClick={() => void onResend()}
+          className={`mt-3 w-full ${AUTH_SECONDARY_BUTTON_CLASS}`}
         >
-          Back to sign in
+          Resend verification code
         </button>
-      </div>
-    </form>
+
+        <p className="mt-7 text-center text-sm text-[var(--app-text-muted)]">
+          Already verified?{" "}
+          <Link className="font-medium text-[var(--app-accent)] hover:underline hover:underline-offset-4" href="/login">
+            Back to sign in
+          </Link>
+        </p>
+      </form>
+    </AuthLightShell>
   );
 }

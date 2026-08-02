@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   Camera,
   Check,
@@ -357,12 +357,12 @@ export default function RealEstateCameraUI({
             }
           />
           {isSimulatingFlash && (
-            <div className="absolute inset-0 bg-white/80 animate-pulse" />
+            <div className="absolute inset-0 bg-[var(--app-panel)] animate-pulse" />
           )}
 
           {/* Top Bar */}
           <div
-            className="pointer-events-auto absolute top-0 left-0 right-0 z-30 flex flex-row items-center px-2 text-white backdrop-blur bg-black/40"
+            className="pointer-events-auto absolute top-0 left-0 right-0 z-30 flex flex-row items-center px-2 text-white  bg-black/40"
             style={{
               paddingTop: "calc(env(safe-area-inset-top) + 6px)",
               paddingBottom: "6px",
@@ -374,7 +374,7 @@ export default function RealEstateCameraUI({
                   <button
                     type="button"
                     onClick={finishAndClose}
-                    className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 shrink-0"
+                    className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] shrink-0"
                     title="Exit"
                   >
                     <X className="h-5 w-5" />
@@ -386,7 +386,7 @@ export default function RealEstateCameraUI({
                     <button
                       type="button"
                       onClick={toggleFlash}
-                      className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15"
+                      className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                       title="Flash"
                     >
                       {flashOn ? (
@@ -414,7 +414,7 @@ export default function RealEstateCameraUI({
                 <button
                   type="button"
                   onClick={finishAndClose}
-                  className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 shrink-0"
+                  className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] shrink-0"
                   title="Exit"
                 >
                   <X className="h-5 w-5" />
@@ -435,7 +435,7 @@ export default function RealEstateCameraUI({
                   <button
                     type="button"
                     onClick={toggleFlash}
-                    className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 whitespace-nowrap"
+                    className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] whitespace-nowrap"
                     title="Flash"
                   >
                     {flashOn ? (
@@ -464,7 +464,7 @@ export default function RealEstateCameraUI({
               }}
             >
               {/* Zoom */}
-              <div className="flex items-center gap-1 rounded-lg bg-black/40 px-1.5 py-0.5 ring-1 ring-white/10 backdrop-blur flex-shrink-0">
+              <div className="flex items-center gap-1 rounded-lg bg-black/40 px-1.5 py-0.5 ring-1 ring-white/10  flex-shrink-0">
                 <ZoomOut className="h-3 w-3 text-white/90" />
                 <input
                   type="range"
@@ -473,7 +473,7 @@ export default function RealEstateCameraUI({
                   step={0.1}
                   value={zoom}
                   onChange={(e) => setZoom(parseFloat(e.target.value))}
-                  className="w-[65px] accent-rose-500 cursor-pointer text-[16px]"
+                  className="w-[65px] accent-blue-500 cursor-pointer text-[16px]"
                 />
                 <ZoomIn className="h-3 w-3 text-white/90" />
                 <div className="w-6 text-right text-[9px] text-white/90">
@@ -486,7 +486,7 @@ export default function RealEstateCameraUI({
                 <button
                   type="button"
                   onClick={() => handleCapture("main")}
-                  className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(190,18,60,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(190,18,60,0.25)] hover:from-rose-400/60 hover:to-rose-600/60"
+                  className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-[var(--app-panel)] from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400/60 hover:to-blue-600/60"
                   title="Capture Main"
                 >
                   <Camera className="h-3 w-3" />
@@ -495,7 +495,7 @@ export default function RealEstateCameraUI({
                 <button
                   type="button"
                   onClick={() => handleCapture("extra")}
-                  className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-b from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-[0_2px_0_0_rgba(29,78,216,0.25)] transition active:translate-y-0.5 active:shadow-[0_1px_0_0_rgba(29,78,216,0.25)] hover:from-blue-400/60 hover:to-blue-600/60"
+                  className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center rounded-full bg-[var(--app-panel)] from-blue-500/60 to-blue-600/60 text-[9px] font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400/60 hover:to-blue-600/60"
                   title="Capture Extra"
                 >
                   <span className="whitespace-nowrap">Extra</span>
@@ -531,7 +531,7 @@ export default function RealEstateCameraUI({
               <button
                 type="button"
                 onClick={finishAndClose}
-                className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-rose-500/60 to-rose-600/60 text-white shadow-[0_4px_0_0_rgba(190,18,60,0.25)] ring-2 ring-rose-300/30 hover:from-rose-400/60 hover:to-rose-600/60 active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.25)] focus:outline-none cursor-pointer flex-shrink-0"
+                className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-[var(--app-panel)] from-blue-500/60 to-blue-600/60 text-white shadow-sm ring-2 ring-blue-300/30 hover:from-blue-400/60 hover:to-blue-600/60 active:translate-y-0.5 active:shadow-sm focus:outline-none cursor-pointer flex-shrink-0"
               >
                 <Check className="h-3.5 w-3.5" />
                 <span className="text-[10px] font-bold">Done</span>
@@ -543,7 +543,7 @@ export default function RealEstateCameraUI({
           {orientation !== "landscape" && (
             <div
               ref={bottomControlsRef}
-              className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 backdrop-blur"
+              className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 "
               style={{
                 bottom: 0,
                 paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)",
@@ -551,7 +551,7 @@ export default function RealEstateCameraUI({
             >
               <div className="mx-auto w-full max-w-[560px] sm:max-w-[780px]">
                 {/* Zoom */}
-                <div className="mb-1 flex items-center gap-2 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/15 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/15 ">
                   <ZoomOut className="h-3.5 w-3.5 text-white/90" />
                   <input
                     type="range"
@@ -560,7 +560,7 @@ export default function RealEstateCameraUI({
                     step={0.1}
                     value={zoom}
                     onChange={(e) => setZoom(parseFloat(e.target.value))}
-                    className="flex-1 min-w-[100px] accent-rose-500 cursor-pointer text-[16px]"
+                    className="flex-1 min-w-[100px] accent-blue-500 cursor-pointer text-[16px]"
                   />
                   <ZoomIn className="h-3.5 w-3.5 text-white/90" />
                   <div className="ml-2 w-8 text-right text-[10px] text-white/90">
@@ -574,7 +574,7 @@ export default function RealEstateCameraUI({
                   <button
                     type="button"
                     onClick={finishAndClose}
-                    className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_6px_0_0_rgba(190,18,60,0.45)] ring-2 ring-rose-300/60 hover:from-rose-400 hover:to-rose-600 active:translate-y-0.5 active:shadow-[0_3px_0_0_rgba(190,18,60,0.45)] focus:outline-none cursor-pointer"
+                    className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-lg bg-[var(--app-panel)] from-blue-500 to-blue-600 text-white shadow-sm ring-2 ring-blue-300/60 hover:from-blue-400 hover:to-blue-600 active:translate-y-0.5 active:shadow-sm focus:outline-none cursor-pointer"
                   >
                     <Check className="h-7 w-7" />
                   </button>
@@ -586,7 +586,7 @@ export default function RealEstateCameraUI({
                   <button
                     type="button"
                     onClick={() => handleCapture("main")}
-                    className="h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_4px_0_0_rgba(190,18,60,0.45)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.45)] hover:from-rose-400 hover:to-rose-600"
+                    className="h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
                     title="Capture Main"
                   >
                     <Camera className="h-6 w-6" />
@@ -595,7 +595,7 @@ export default function RealEstateCameraUI({
                   <button
                     type="button"
                     onClick={() => handleCapture("extra")}
-                    className="h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 text-white shadow-[0_4px_0_0_rgba(29,78,216,0.45)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(29,78,216,0.45)] hover:from-blue-400 hover:to-blue-600"
+                    className="h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
                     title="Capture Extra"
                   >
                     <Camera className="h-6 w-6" />
@@ -611,7 +611,7 @@ export default function RealEstateCameraUI({
                         startRecording();
                       }
                     }}
-                    className={`h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl px-2 text-white shadow-[0_4px_0_0_rgba(220,184,2,0.45)] ring-1 ring-white/20 ${
+                    className={`h-12 inline-flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl px-2 text-white shadow-sm ring-1 ring-white/20 ${
                       isRecording
                         ? "bg-red-700 hover:bg-red-800"
                         : "bg-yellow-600 hover:bg-yellow-500"

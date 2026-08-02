@@ -93,8 +93,14 @@ export type UpdateSavedInputPayload = {
   formData?: SavedInputFormData;
 };
 
+export type DraftFileMetadata = {
+  clientFileId: string;
+  size: number;
+  lastModified: number;
+};
+
 // Draft image data type for cross-device sync (URL-based, not base64)
-export type DraftImageData = {
+export type DraftImageData = Partial<DraftFileMetadata> & {
   lotId: string;
   type: "main" | "extra" | "video";
   name: string;
@@ -118,6 +124,89 @@ export type DraftUploadResponse = {
   message: string;
   data: DraftImageData[];
 };
+
+export type DraftUploadBatch = {
+  files: File[];
+  lotId: string;
+  type: "main" | "extra" | "video";
+};
+
+const draftFileIds = new WeakMap<File, string>();
+
+function createClientFileId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `draft-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+/**
+ * Associates a browser File with an identity that can be persisted alongside
+ * its server URL. Supplying a persisted ID rehydrates the same identity after
+ * a local or cross-device draft restore.
+ */
+export function getDraftFileMetadata(
+  file: File,
+  persisted?: Partial<DraftFileMetadata>
+): DraftFileMetadata {
+  const persistedId =
+    typeof persisted?.clientFileId === "string" && persisted.clientFileId
+      ? persisted.clientFileId
+      : null;
+  const clientFileId =
+    persistedId || draftFileIds.get(file) || createClientFileId();
+  draftFileIds.set(file, clientFileId);
+  return {
+    clientFileId,
+    size:
+      typeof persisted?.size === "number" ? persisted.size : file.size,
+    lastModified:
+      typeof persisted?.lastModified === "number"
+        ? persisted.lastModified
+        : file.lastModified || 0,
+  };
+}
+
+export function getKnownDraftFileId(file: File) {
+  return draftFileIds.get(file);
+}
+
+async function runUploadBatches(
+  batches: DraftUploadBatch[],
+  upload: (batch: DraftUploadBatch) => Promise<DraftImageData[]>,
+  concurrency: number
+) {
+  if (batches.length === 0) return [];
+  const results: DraftImageData[][] = new Array(batches.length);
+  let nextIndex = 0;
+  let hasFailure = false;
+  let failure: unknown;
+  const requestedConcurrency = Number.isFinite(concurrency)
+    ? Math.floor(concurrency)
+    : 1;
+  const workerCount = Math.min(
+    batches.length,
+    Math.max(1, requestedConcurrency)
+  );
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < batches.length && !hasFailure) {
+        const index = nextIndex;
+        nextIndex += 1;
+        try {
+          results[index] = await upload(batches[index]);
+        } catch (error) {
+          if (!hasFailure) failure = error;
+          hasFailure = true;
+        }
+      }
+    })
+  );
+
+  if (hasFailure) throw failure;
+  return results.flat();
+}
 
 export const SavedInputService = {
   async create(payload: CreateSavedInputPayload): Promise<SavedInput> {
@@ -194,6 +283,10 @@ export const SavedInputService = {
     const formData = new FormData();
     formData.append("lotId", lotId);
     formData.append("type", type);
+    formData.append(
+      "metadata",
+      JSON.stringify(files.map((file) => getDraftFileMetadata(file)))
+    );
     
     for (const file of files) {
       formData.append("images", file);
@@ -206,11 +299,48 @@ export const SavedInputService = {
         headers: { "Content-Type": "multipart/form-data" },
       }
     );
-    return data.data;
+    return data.data.map((image, index) => {
+      const file = files[index];
+      return file
+        ? { ...image, ...getDraftFileMetadata(file, image) }
+        : image;
+    });
+  },
+
+  async uploadDraftImageBatches(
+    batches: DraftUploadBatch[],
+    concurrency = 3
+  ): Promise<DraftImageData[]> {
+    const uploaded: DraftImageData[] = [];
+    try {
+      return await runUploadBatches(
+        batches,
+        async ({ files, lotId, type }) => {
+          const result = await SavedInputService.uploadDraftImages(
+            files,
+            lotId,
+            type
+          );
+          uploaded.push(...result);
+          return result;
+        },
+        concurrency
+      );
+    } catch (error) {
+      await SavedInputService.deleteDraftImagesByUrls(
+        uploaded.map((item) => item.url)
+      ).catch(() => undefined);
+      throw error;
+    }
   },
 
   // Delete all draft images for current user
   async deleteDraftImages(): Promise<void> {
     await API.delete("/saved-inputs/draft/images");
+  },
+
+  async deleteDraftImagesByUrls(urls: string[]): Promise<void> {
+    if (urls.length === 0) return;
+    await API.post("/saved-inputs/draft/delete-images", { urls });
   },
 };

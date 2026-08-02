@@ -3,10 +3,11 @@ import {
   CarFront,
   ClipboardCheck,
   FileCheck2,
-  FileSpreadsheet,
+  FileText,
   LandPlot,
-  Layers3,
+  ListChecks,
   ShieldCheck,
+  Tags,
   TimerReset,
 } from "lucide-react";
 
@@ -18,86 +19,77 @@ export const navItems = [
 
 export const heroHighlights = [
   "Asset reports",
-  "Salvage vehicle files",
-  "Real estate packages",
+  "Salvage vehicles",
+  "Real estate",
+  "Lot listings",
 ];
 
-export const featureCards = [
+export const workflows = [
   {
     title: "Asset reports",
-    description:
-      "Turn equipment photos, notes, and valuations into polished report packages your client can understand quickly.",
-    image: "/welcome/asset-reports-real.png",
-    alt: "Professional heavy equipment asset appraisal workspace",
-    icon: FileSpreadsheet,
-    accent: "#dc2626",
+    description: "Create detailed valuations for equipment, vehicles, and more.",
+    icon: FileText,
   },
   {
     title: "Salvage vehicles",
-    description:
-      "Document vehicle condition, organize photos, and prepare auction-ready salvage packages with a stronger visual record.",
-    image: "/welcome/salvage-vehicles-real.png",
-    alt: "Damaged salvage vehicles in a professional inspection bay",
+    description: "Track damage, photos, and comps to support confident valuations.",
     icon: CarFront,
-    accent: "#0f766e",
   },
   {
     title: "Real estate",
-    description:
-      "Bring property photos, site notes, maps, and supporting documents into a clean valuation experience.",
-    image: "/welcome/real-estate-real.png",
-    alt: "Rural real estate appraisal scene with property report materials",
+    description: "Organize property data, photos, and reports in one place.",
     icon: Building2,
-    accent: "#2563eb",
+  },
+  {
+    title: "Lot listings",
+    description: "List and value lots, group assets, and prepare for sale.",
+    icon: Tags,
   },
 ];
 
 export const journeySteps = [
   {
-    title: "Capture every detail",
+    title: "Capture",
     body: "Collect photos, notes, condition details, and values while the work is fresh.",
+    icon: ClipboardCheck,
   },
   {
-    title: "Shape a client-ready package",
-    body: "Keep lots, reports, images, and review steps arranged in a format that feels finished.",
+    title: "Review",
+    body: "Keep reports, images, lots, and approvals arranged for a reliable handoff.",
+    icon: ListChecks,
   },
   {
-    title: "Deliver with confidence",
-    body: "Move from field capture to reviewed files without losing momentum between teams.",
+    title: "Deliver",
+    body: "Release polished client files without losing context between teams.",
+    icon: FileCheck2,
   },
 ];
 
 export const results = [
   {
     title: "Cleaner first drafts",
-    body: "Photos, values, and notes stay connected from the start, so reviews feel easier.",
+    body: "Photos, values, and notes stay connected from the start.",
     icon: ClipboardCheck,
   },
   {
-    title: "Faster handoff",
-    body: "Appraisers, admins, and auction teams can see what is ready and what still needs attention.",
+    title: "Faster handoffs",
+    body: "Everyone can see what is ready and what still needs attention.",
     icon: TimerReset,
   },
   {
-    title: "Better final files",
-    body: "Reports, image folders, spreadsheets, and lot packages keep a consistent professional finish.",
+    title: "Consistent final files",
+    body: "Every report package keeps the same professional finish.",
     icon: FileCheck2,
   },
   {
     title: "Controlled delivery",
-    body: "Give the right people a reliable place to prepare, review, and release client work.",
+    body: "The right people prepare, review, and release client work.",
     icon: ShieldCheck,
   },
 ];
 
-export const deliveryStats = [
-  { label: "Reports", value: "PDF, DOCX, Excel" },
-  { label: "Media", value: "Images and video" },
-  { label: "Coverage", value: "Assets, vehicles, property" },
-];
-
-export const industryTiles = [
-  { label: "Equipment", icon: Layers3 },
+export const industries = [
+  { label: "Equipment", icon: ListChecks },
   { label: "Vehicles", icon: CarFront },
   { label: "Property", icon: LandPlot },
 ];

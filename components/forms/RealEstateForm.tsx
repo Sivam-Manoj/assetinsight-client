@@ -13,7 +13,7 @@ import {
   type RealEstateFormData,
 } from "@/services/savedInputs";
 import { AIService, type RealEstateDetailsPatch } from "@/services/ai";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 
 // Section Components
 import {
@@ -669,10 +669,10 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
   return (
     <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
       <div className="relative flex min-h-full flex-col gap-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="mb-2 flex items-start justify-between gap-3 rounded-2xl border border-emerald-100 bg-white/80 p-4 shadow-sm">
+        <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-100 bg-[var(--app-panel)] p-4 shadow-sm">
           <div>
             <h2 className="text-lg font-semibold text-gray-950">Real Estate Appraisal</h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-[var(--app-text-muted)]">
               Capture property details, supporting files, photos, and valuation notes.
             </p>
           </div>
@@ -686,7 +686,7 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
 
         {/* Row 1: Property Type & Images + AI Assist */}
         <div className="grid gap-2 lg:grid-cols-2">
-          <div className="rounded-lg border border-rose-100 bg-gradient-to-br from-white via-rose-50/30 to-white p-3 shadow-sm">
+          <div className="rounded-lg border border-blue-100 bg-[var(--app-panel)] from-white via-blue-50/30 to-white p-3 shadow-sm">
             <RealEstateSection
               value={property}
               onChange={setProperty}
@@ -742,19 +742,19 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
         </div>
 
         {/* Action Buttons */}
-        <div className="sticky bottom-0 z-10 mt-auto flex flex-col gap-2 border-t border-gray-200/80 bg-white/85 px-1 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur sm:flex-row sm:items-center">
-          <button type="button" className="rounded border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 hover:bg-gray-50" onClick={onCancel} disabled={submitting}>Cancel</button>
+        <div className="sticky bottom-0 z-10 mt-auto flex flex-col gap-2 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]  sm:flex-row sm:items-center">
+          <button type="button" className="rounded border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-xs text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]" onClick={onCancel} disabled={submitting}>Cancel</button>
           <button type="button" className="inline-flex items-center justify-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-100" onClick={saveInputs} disabled={submitting}>
             <Save className="h-3 w-3" />Save
           </button>
-          <button type="submit" className="inline-flex items-center justify-center gap-1 rounded bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50 sm:ml-auto" disabled={submitting}>
+          <button type="submit" className="inline-flex items-center justify-center gap-1 rounded bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 sm:ml-auto" disabled={submitting}>
             {submitting ? "..." : "Create"}{!submitting && <Check className="h-3 w-3" />}
           </button>
         </div>
 
         {/* Progress */}
         {submitting && (
-          <div className="rounded-lg border border-rose-100 bg-white p-3 shadow-sm">
+          <div className="rounded-lg border border-blue-100 bg-[var(--app-panel)] p-3 shadow-sm">
             <div className="flex items-center gap-1 mb-2">
               {STEPS.map((s, idx) => {
                 const state = stepStates[s.key];
@@ -762,18 +762,18 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
                 const isActive = state === "active";
                 return (
                   <div key={s.key} className="flex flex-1 items-center">
-                    <div className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${isDone ? "border-rose-600 bg-rose-600 text-white" : isActive ? "border-rose-600 text-rose-600 animate-pulse" : "border-gray-300 text-gray-400"}`} title={s.label}>
+                    <div className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${isDone ? "border-blue-600 bg-blue-600 text-white" : isActive ? "border-blue-600 text-blue-600 animate-pulse" : "border-[var(--app-border)] text-[var(--app-text-muted)]"}`} title={s.label}>
                       {isDone ? <Check className="h-2.5 w-2.5" /> : idx + 1}
                     </div>
-                    {idx < STEPS.length - 1 && <div className="mx-0.5 h-0.5 flex-1 rounded bg-gray-200"><div className={`h-0.5 rounded ${isDone ? "bg-rose-500" : isActive ? "bg-rose-300" : ""}`} /></div>}
+                    {idx < STEPS.length - 1 && <div className="mx-0.5 h-0.5 flex-1 rounded bg-gray-200"><div className={`h-0.5 rounded ${isDone ? "bg-blue-500" : isActive ? "bg-blue-300" : ""}`} /></div>}
                   </div>
                 );
               })}
             </div>
             <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200">
-              <div className="h-1 rounded-full bg-rose-500 transition-all" style={{ width: `${Math.min(100, Math.max(0, progressPercent)).toFixed(0)}%` }} />
+              <div className="h-1 rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, Math.max(0, progressPercent)).toFixed(0)}%` }} />
             </div>
-            <div className="mt-1 text-[10px] text-gray-500">{progressPhase === "upload" ? "Uploading..." : progressPhase === "processing" ? "Processing..." : progressPhase === "done" ? "Done!" : progressPhase === "error" ? "Error" : "Starting..."}</div>
+            <div className="mt-1 text-[10px] text-[var(--app-text-muted)]">{progressPhase === "upload" ? "Uploading..." : progressPhase === "processing" ? "Processing..." : progressPhase === "done" ? "Done!" : progressPhase === "error" ? "Error" : "Starting..."}</div>
           </div>
         )}
       </div>

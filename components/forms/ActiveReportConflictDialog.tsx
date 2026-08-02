@@ -28,7 +28,7 @@ export default function ActiveReportConflictDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4 ]"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) onCancel();
@@ -38,7 +38,7 @@ export default function ActiveReportConflictDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="active-report-title"
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-[var(--app-panel)] shadow-sm"
       >
         <header className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
           <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-amber-100 text-amber-700">
@@ -82,7 +82,7 @@ export default function ActiveReportConflictDialog({
             <button
               type="button"
               onClick={onCreateSeparate}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-[var(--app-panel)] px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
             >
               <CopyPlus className="h-4 w-4" />
               Create Separate Report

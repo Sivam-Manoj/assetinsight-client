@@ -22,13 +22,6 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-} from "@mui/material";
 
 export function formClassNames(
   ...values: Array<string | false | null | undefined>
@@ -224,7 +217,7 @@ export function FormSwitch({
         >
           <span
             className={formClassNames(
-              "h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+              "h-5 w-5 rounded-full bg-[var(--app-panel)] shadow-sm transition-transform",
               checked ? "translate-x-5" : "translate-x-0"
             )}
           />
@@ -637,48 +630,39 @@ export function ConfirmDialog({
     : undefined;
   const destructive = tone === "danger";
 
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [busy, onCancel, open]);
+
+  if (!open) return null;
+
   return (
-    <Dialog
-      open={open}
-      onClose={() => {
-        if (!busy) onCancel();
-      }}
-      aria-labelledby={titleId}
-      aria-describedby={descriptionId}
-      fullWidth
-      maxWidth="xs"
-      slotProps={{
-        paper: {
-          sx: {
-            m: { xs: 2, sm: 4 },
-            width: { xs: "calc(100% - 32px)", sm: "100%" },
-            maxHeight: "calc(100dvh - 32px)",
-            border: "1px solid var(--app-control-border)",
-            borderRadius: "14px",
-            bgcolor: "var(--app-panel)",
-            color: "var(--app-text)",
-            boxShadow: "var(--app-shadow-modal)",
-            backgroundImage: "none",
-          },
-        },
-        backdrop: {
-          sx: {
-            bgcolor: "rgba(2, 6, 23, 0.56)",
-            backdropFilter: "blur(2px)",
-          },
-        },
+    <div
+      className="app-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
       }}
     >
-      <DialogTitle
-        component="div"
-        sx={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 1.5,
-          px: { xs: 2, sm: 2.5 },
-          pt: { xs: 2, sm: 2.5 },
-          pb: 1,
-        }}
+      <div
+        className="app-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+      <div
+        className="app-dialog__header"
+        style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
       >
         {tone !== "default" ? (
           <span
@@ -698,28 +682,18 @@ export function ConfirmDialog({
         >
           {title}
         </h2>
-        <IconButton
+        <button
+          type="button"
           aria-label="Close confirmation"
           onClick={onCancel}
           disabled={busy}
-          size="small"
-          sx={{
-            mt: -0.5,
-            mr: -0.5,
-            color: "var(--app-text-muted)",
-            "&:hover": { bgcolor: "var(--app-panel-alt)" },
-          }}
+          className={iconButtonClass}
+          style={{ minWidth: 36, minHeight: 36 }}
         >
           <X className="h-5 w-5" />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent
-        sx={{
-          px: { xs: 2, sm: 2.5 },
-          pt: "4px !important",
-          pb: 2,
-        }}
-      >
+        </button>
+      </div>
+      <div className="app-dialog__body">
         {description ? (
           <p
             id={descriptionId}
@@ -731,16 +705,8 @@ export function ConfirmDialog({
         {children ? (
           <div className={description ? "mt-4" : undefined}>{children}</div>
         ) : null}
-      </DialogContent>
-      <DialogActions
-        sx={{
-          gap: 1,
-          borderTop: "1px solid var(--app-border)",
-          px: { xs: 2, sm: 2.5 },
-          py: 2,
-          "& > :not(style) ~ :not(style)": { ml: 0 },
-        }}
-      >
+      </div>
+      <div className="app-dialog__footer">
         <button
           type="button"
           onClick={onCancel}
@@ -758,7 +724,8 @@ export function ConfirmDialog({
         >
           {busy ? "Working…" : confirmLabel}
         </button>
-      </DialogActions>
-    </Dialog>
+      </div>
+      </div>
+    </div>
   );
 }

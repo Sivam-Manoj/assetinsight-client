@@ -1,36 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import {
-  DeleteOutlineRounded,
-  CalendarMonthRounded,
-  LogoutRounded,
-  PersonRounded,
-  RefreshRounded,
-  SaveRounded,
-  UploadFileRounded,
-} from "@mui/icons-material";
-import { toast } from "react-toastify";
+  CalendarDays,
+  ExternalLink,
+  LogOut,
+  RefreshCw,
+  Save,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import API from "@/lib/api";
 import { UserService } from "@/services/user";
-import OutlookConnectionDialog from "@/components/outlook/OutlookConnectionDialog";
 import { useAuthContext } from "@/context/AuthContext";
 import { useOutlookCalendar } from "@/hooks/useOutlookCalendar";
-import { PageHeader, SectionPanel, SurfaceCard } from "@/components/common/WorkspaceUI";
+
+const OutlookConnectionDialog = dynamic(
+  () => import("@/components/outlook/OutlookConnectionDialog"),
+  { ssr: false }
+);
 
 export default function SettingsPage() {
   const { user, logout, refresh } = useAuthContext();
@@ -46,6 +37,7 @@ export default function SettingsPage() {
   const [uploadingCv, setUploadingCv] = useState(false);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isOutlookDialogOpen, setIsOutlookDialogOpen] = useState(false);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const {
     status: outlookStatus,
     loading: outlookLoading,
@@ -207,249 +199,327 @@ export default function SettingsPage() {
     setForm((previous) => ({ ...previous, [name]: value }));
   };
 
-  return (
-    <Stack spacing={3}>
-      <PageHeader
-        eyebrow="Account"
-        title="Settings"
-        description="Manage profile information, company details, appraiser CV uploads, session controls, and destructive account actions."
-      />
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (!dialog) return;
+    if (isDeleteOpen && !dialog.open) dialog.showModal();
+    if (!isDeleteOpen && dialog.open) dialog.close();
+  }, [isDeleteOpen]);
 
-      <Box
-        sx={{
-          display: "grid",
-          gap: 2,
-          gridTemplateColumns: { xs: "1fr", xl: "1.15fr 0.85fr" },
-        }}
-      >
-        <SectionPanel
-          title="Profile and company details"
-          subtitle="This is the canonical profile surface for your authenticated workspace."
-          action={
-            isEditing ? (
-              <Stack direction="row" spacing={1}>
-                <Button variant="text" onClick={() => setIsEditing(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="contained"
-                  startIcon={<SaveRounded />}
-                  onClick={handleSave}
+  return (
+    <main className="w-full min-w-0 space-y-6">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-accent)]">
+          Account
+        </p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+          Settings
+        </h1>
+        <p className="mt-1 max-w-3xl text-sm text-[var(--app-text-muted)]">
+          Manage profile information, company details, appraiser CV uploads,
+          connected services, and account access.
+        </p>
+      </header>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,.85fr)]">
+        <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+          <div className="flex flex-col gap-3 border-b border-[var(--app-border)] px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+            <div>
+              <h2 className="font-semibold text-[var(--app-text)]">
+                Profile and company details
+              </h2>
+              <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+                Details used throughout your authenticated workspace.
+              </p>
+            </div>
+            {isEditing ? (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                  onClick={() => setIsEditing(false)}
                   disabled={saving}
                 >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  onClick={() => void handleSave()}
+                  disabled={saving}
+                >
+                  <Save className="size-4" />
                   {saving ? "Saving..." : "Save changes"}
-                </Button>
-              </Stack>
+                </button>
+              </div>
             ) : (
-              <Button variant="contained" onClick={() => setIsEditing(true)}>
+              <button
+                type="button"
+                className="min-h-9 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-white hover:opacity-90"
+                onClick={() => setIsEditing(true)}
+              >
                 Edit profile
-              </Button>
-            )
-          }
-        >
-          <Stack spacing={2.5}>
-            <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
-              <Avatar
-                sx={{
-                  width: 64,
-                  height: 64,
-                  bgcolor: "var(--app-accent)",
-                  fontSize: 26,
-                  fontWeight: 800,
-                }}
+              </button>
+            )}
+          </div>
+
+          <div className="p-4 sm:p-5">
+            <div className="flex items-center gap-3">
+              <div
+                className="grid size-14 shrink-0 place-items-center rounded-xl bg-[var(--app-accent)] text-xl font-bold text-white"
+                aria-hidden="true"
               >
                 {initial}
-              </Avatar>
-              <Box>
-                <Typography variant="h6" sx={{ color: "var(--app-text)" }}>
+              </div>
+              <div className="min-w-0">
+                <p className="break-words font-semibold text-[var(--app-text)]">
                   {(user as any)?.username || user?.email || "Account"}
-                </Typography>
-                <Typography sx={{ color: "var(--app-text-muted)" }}>
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--app-text-muted)] sm:text-sm">
                   Member since {memberSince} · Last updated {lastUpdated}
-                </Typography>
-              </Box>
-            </Stack>
+                </p>
+              </div>
+            </div>
 
-            <Box
-              sx={{
-                display: "grid",
-                gap: 1.5,
-                gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
-              }}
-            >
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
               {[
-                { key: "username", label: "Username", value: form.username, readOnly: !isEditing },
-                { key: "email", label: "Email", value: user?.email || "", readOnly: true },
-                { key: "companyName", label: "Company name", value: form.companyName, readOnly: !isEditing },
-                { key: "companyAddress", label: "Company address", value: form.companyAddress, readOnly: !isEditing },
-                ...(user as any)?.isCrmAgent
-                  ? [{ key: "crmAddress", label: "CRM service address", value: form.crmAddress, readOnly: !isEditing }]
-                  : [],
-                { key: "contactEmail", label: "Contact email", value: form.contactEmail, readOnly: !isEditing },
-                { key: "contactPhone", label: "Contact phone", value: form.contactPhone, readOnly: !isEditing },
+                {
+                  key: "username",
+                  label: "Username",
+                  value: form.username,
+                  readOnly: !isEditing,
+                },
+                {
+                  key: "email",
+                  label: "Email",
+                  value: user?.email || "",
+                  readOnly: true,
+                },
+                {
+                  key: "companyName",
+                  label: "Company name",
+                  value: form.companyName,
+                  readOnly: !isEditing,
+                },
+                {
+                  key: "companyAddress",
+                  label: "Company address",
+                  value: form.companyAddress,
+                  readOnly: !isEditing,
+                },
+                ...((user as any)?.isCrmAgent
+                  ? [
+                      {
+                        key: "crmAddress",
+                        label: "CRM service address",
+                        value: form.crmAddress,
+                        readOnly: !isEditing,
+                      },
+                    ]
+                  : []),
+                {
+                  key: "contactEmail",
+                  label: "Contact email",
+                  value: form.contactEmail,
+                  readOnly: !isEditing,
+                },
+                {
+                  key: "contactPhone",
+                  label: "Contact phone",
+                  value: form.contactPhone,
+                  readOnly: !isEditing,
+                },
               ].map((field) => (
-                <TextField
-                  key={field.key}
-                  name={field.key}
-                  label={field.label}
-                  value={field.value}
-                  onChange={onChange}
-                  fullWidth
-                  disabled={field.readOnly}
-                />
+                <label key={field.key} className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-[var(--app-text-muted)]">
+                    {field.label}
+                  </span>
+                  <input
+                    name={field.key}
+                    value={field.value}
+                    onChange={onChange}
+                    disabled={field.readOnly}
+                    className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)] disabled:cursor-default disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)]"
+                  />
+                </label>
               ))}
-            </Box>
-          </Stack>
-        </SectionPanel>
+            </div>
+          </div>
+        </section>
 
-        <Stack spacing={2}>
-          <SectionPanel
-            title="Appraiser CV"
-            subtitle="Upload a `.docx` CV to append it to report packages."
-          >
-            <Stack spacing={2}>
-              <SurfaceCard sx={{ p: 2 }}>
-                <Typography sx={{ color: "var(--app-text)", fontWeight: 800 }}>
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+            <div className="border-b border-[var(--app-border)] px-4 py-4 sm:px-5">
+              <h2 className="font-semibold text-[var(--app-text)]">
+                Appraiser CV
+              </h2>
+              <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+                Upload a .docx CV to append it to report packages.
+              </p>
+            </div>
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="rounded-lg bg-[var(--app-panel-alt)] p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
                   Current file
-                </Typography>
+                </p>
                 {(user as any)?.cvUrl ? (
-                  <Stack spacing={1.25} sx={{ mt: 1.2 }}>
-                    <Typography sx={{ color: "var(--app-text-muted)" }}>
+                  <>
+                    <p className="mt-2 break-words text-sm text-[var(--app-text)]">
                       {(user as any)?.cvFilename || (user as any)?.cvUrl}
-                    </Typography>
-                    <Stack direction="row" spacing={1}>
-                      <Button
-                        component="a"
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <a
                         href={(user as any)?.cvUrl}
                         target="_blank"
                         rel="noreferrer"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]"
                       >
+                        <ExternalLink className="size-3.5" />
                         View CV
-                      </Button>
-                      <Button
-                        color="error"
-                        variant="outlined"
-                        onClick={handleDeleteCv}
+                      </a>
+                      <button
+                        type="button"
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-danger-border)] px-3 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:opacity-50"
+                        onClick={() => void handleDeleteCv()}
                         disabled={uploadingCv}
                       >
+                        <Trash2 className="size-3.5" />
                         Remove
-                      </Button>
-                    </Stack>
-                  </Stack>
+                      </button>
+                    </div>
+                  </>
                 ) : (
-                  <Typography sx={{ mt: 1.2, color: "var(--app-text-muted)" }}>
+                  <p className="mt-2 text-sm text-[var(--app-text-muted)]">
                     No CV uploaded yet.
-                  </Typography>
+                  </p>
                 )}
-              </SurfaceCard>
+              </div>
 
-              <Stack spacing={1.5}>
-                <Button
-                  variant="outlined"
-                  component="label"
-                  startIcon={<UploadFileRounded />}
+              <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--app-border)] px-3 text-sm font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]">
+                <Upload className="size-4" />
+                Select .docx
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleCvChange}
+                />
+              </label>
+              {cvFile ? (
+                <p
+                  className="rounded-lg border border-[var(--app-info-border)] bg-[var(--app-accent-soft)] px-3 py-2 text-sm text-[var(--app-accent)]"
+                  role="status"
                 >
-                  Select `.docx`
-                  <input hidden type="file" accept=".docx" onChange={handleCvChange} />
-                </Button>
-                {cvFile ? (
-                  <Alert severity="info">Selected file: {cvFile.name}</Alert>
-                ) : null}
-                <Button
-                  variant="contained"
-                  onClick={handleUploadCv}
-                  disabled={!cvFile || uploadingCv}
-                >
-                  {uploadingCv ? "Uploading..." : "Upload CV"}
-                </Button>
-              </Stack>
-            </Stack>
-          </SectionPanel>
+                  Selected file: {cvFile.name}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void handleUploadCv()}
+                disabled={!cvFile || uploadingCv}
+              >
+                {uploadingCv ? "Uploading..." : "Upload CV"}
+              </button>
+            </div>
+          </section>
 
-          <SectionPanel
-            title="Session"
-            subtitle="Sign out of the current device."
-          >
-            <Stack spacing={2}>
-              <Button
-                variant="outlined"
-                color="warning"
-                startIcon={<LogoutRounded />}
-                onClick={handleLogout}
+          <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+            <div className="border-b border-[var(--app-border)] px-4 py-4 sm:px-5">
+              <h2 className="font-semibold text-[var(--app-text)]">Session</h2>
+              <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+                Sign out of the current device.
+              </p>
+            </div>
+            <div className="p-4 sm:p-5">
+              <button
+                type="button"
+                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] px-4 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-50"
+                onClick={() => void handleLogout()}
                 disabled={loggingOut}
               >
+                <LogOut className="size-4" />
                 {loggingOut ? "Logging out..." : "Log out"}
-              </Button>
-            </Stack>
-          </SectionPanel>
+              </button>
+            </div>
+          </section>
 
-          <SectionPanel
-            title="Outlook calendar"
-            subtitle="Integration settings now live here, while quick connection access stays in the navbar."
-            action={
-              <Button
-                size="small"
-                startIcon={<RefreshRounded />}
+          <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--app-border)] px-4 py-4 sm:px-5">
+              <div>
+                <h2 className="font-semibold text-[var(--app-text)]">
+                  Outlook calendar
+                </h2>
+                <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+                  Manage the calendar connection used by report workflows.
+                </p>
+              </div>
+              <button
+                type="button"
+                title="Refresh Outlook status"
+                aria-label="Refresh Outlook status"
+                className="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--app-border)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text)] disabled:opacity-40"
                 onClick={() => void refreshOutlookStatus()}
                 disabled={outlookLoading || outlookBusy}
               >
-                Refresh
-              </Button>
-            }
-          >
-            <Stack spacing={2}>
-              <SurfaceCard sx={{ p: 2 }}>
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: "center" }}>
-                  <Avatar
-                    variant="rounded"
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 3,
-                      bgcolor: outlookStatus.connected
-                        ? "rgba(5,150,105,0.12)"
-                        : "rgba(37,99,235,0.12)",
-                      color: outlookStatus.connected ? "#059669" : "#2563eb",
-                    }}
-                  >
-                    <CalendarMonthRounded />
-                  </Avatar>
-                  <Box>
-                    <Typography sx={{ color: "var(--app-text)", fontWeight: 800 }}>
-                      {outlookStatus.connected ? "Outlook connected" : "Outlook not connected"}
-                    </Typography>
-                    <Typography sx={{ color: "var(--app-text-muted)" }}>
-                      {outlookStatus.email || "Use the navbar calendar control or the button below to manage connection."}
-                    </Typography>
-                  </Box>
-                </Stack>
-              </SurfaceCard>
-
-              {outlookError ? <Alert severity="error">{outlookError}</Alert> : null}
-
-              <Button
-                variant="contained"
+                <RefreshCw
+                  className={`size-4 ${outlookLoading ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="flex items-center gap-3 rounded-lg bg-[var(--app-panel-alt)] p-3">
+                <span
+                  className={`grid size-10 shrink-0 place-items-center rounded-lg ${
+                    outlookStatus.connected
+                      ? "bg-[var(--app-success-soft)] text-[var(--app-success)]"
+                      : "bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
+                  }`}
+                >
+                  <CalendarDays className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-semibold text-[var(--app-text)]">
+                    {outlookStatus.connected
+                      ? "Outlook connected"
+                      : "Outlook not connected"}
+                  </p>
+                  <p className="mt-0.5 break-words text-sm text-[var(--app-text-muted)]">
+                    {outlookStatus.email ||
+                      "Connect an account to enable calendar-aware workflows."}
+                  </p>
+                </div>
+              </div>
+              {outlookError ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+                >
+                  {outlookError}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
                 onClick={() => setIsOutlookDialogOpen(true)}
                 disabled={outlookBusy}
               >
                 Manage Outlook connection
-              </Button>
-            </Stack>
-          </SectionPanel>
-        </Stack>
-      </Box>
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
 
-      <SectionPanel
-        title="Danger zone"
-        subtitle="This action is permanent and removes your account and related data."
-      >
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Deleting your account will permanently remove your profile, reports, and stored data.
-        </Alert>
-        <Button
-          color="error"
-          variant="contained"
-          startIcon={<DeleteOutlineRounded />}
+      <section className="rounded-xl border border-[var(--app-danger-border)] bg-[var(--app-panel)] p-4 sm:p-5">
+        <h2 className="font-semibold text-[var(--app-text)]">Danger zone</h2>
+        <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+          Deleting your account permanently removes your profile, reports, and
+          stored data.
+        </p>
+        <button
+          type="button"
+          className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[var(--app-danger)] px-4 text-sm font-semibold text-white hover:opacity-90"
           onClick={() => {
             setIsDeleteOpen(true);
             setConfirmText("");
@@ -457,65 +527,101 @@ export default function SettingsPage() {
             setError(null);
           }}
         >
+          <Trash2 className="size-4" />
           Delete account
-        </Button>
-      </SectionPanel>
+        </button>
+      </section>
 
-      <Dialog open={isDeleteOpen} onClose={() => !deleting && setIsDeleteOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Delete account</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Alert severity="error">
-              Type <strong>DELETE</strong> to confirm permanent account removal.
-            </Alert>
-            <TextField
-              label="Type DELETE to confirm"
+      <dialog
+        ref={deleteDialogRef}
+        aria-labelledby="delete-account-title"
+        className="m-auto w-[min(92vw,520px)] rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-0 text-[var(--app-text)] shadow-[var(--app-shadow-modal)] backdrop:bg-[var(--app-overlay)]"
+        onCancel={(event) => {
+          if (deleting) event.preventDefault();
+          else setIsDeleteOpen(false);
+        }}
+        onClose={() => {
+          if (isDeleteOpen && !deleting) setIsDeleteOpen(false);
+        }}
+      >
+        <div className="p-5">
+          <h2 id="delete-account-title" className="text-lg font-bold">
+            Delete account
+          </h2>
+          <div className="mt-3 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]">
+            Type <strong>DELETE</strong> to confirm permanent account removal.
+          </div>
+          <label className="mt-4 block">
+            <span className="mb-1.5 block text-sm font-semibold">
+              Type DELETE to confirm
+            </span>
+            <input
               value={confirmText}
               onChange={(event) => setConfirmText(event.target.value)}
-              fullWidth
+              autoComplete="off"
+              className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm outline-none focus:border-[var(--app-danger)] focus:ring-2 focus:ring-[var(--app-danger-ring)]"
             />
-            {needsPassword ? (
-              <TextField
-                label="Password"
+          </label>
+          {needsPassword ? (
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-sm font-semibold">
+                Password
+              </span>
+              <input
                 type="password"
                 value={deletePassword}
                 onChange={(event) => setDeletePassword(event.target.value)}
-                fullWidth
+                autoComplete="current-password"
+                className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm outline-none focus:border-[var(--app-danger)] focus:ring-2 focus:ring-[var(--app-danger-ring)]"
               />
-            ) : null}
-            {error ? <Alert severity="error">{error}</Alert> : null}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setIsDeleteOpen(false)} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button
-            color="error"
-            variant="contained"
-            onClick={confirmDelete}
-            disabled={
-              deleting ||
-              confirmText !== "DELETE" ||
-              (needsPassword && !deletePassword)
-            }
-          >
-            {deleting ? "Deleting..." : "Permanently delete"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+            </label>
+          ) : null}
+          {error ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+            >
+              {error}
+            </div>
+          ) : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              className="min-h-10 rounded-lg border border-[var(--app-border)] px-4 text-sm font-semibold hover:bg-[var(--app-panel-alt)] disabled:opacity-50"
+              onClick={() => setIsDeleteOpen(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="min-h-10 rounded-lg bg-[var(--app-danger)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => void confirmDelete()}
+              disabled={
+                deleting ||
+                confirmText !== "DELETE" ||
+                (needsPassword && !deletePassword)
+              }
+            >
+              {deleting ? "Deleting..." : "Permanently delete"}
+            </button>
+          </div>
+        </div>
+      </dialog>
 
-      <OutlookConnectionDialog
-        open={isOutlookDialogOpen}
-        onClose={() => setIsOutlookDialogOpen(false)}
-        status={outlookStatus}
-        loading={outlookLoading}
-        busy={outlookBusy}
-        error={outlookError}
-        onRefresh={() => void refreshOutlookStatus()}
-        onConnect={() => void connectOutlook()}
-        onDisconnect={() => void disconnectOutlook()}
-      />
-    </Stack>
+      {isOutlookDialogOpen ? (
+        <OutlookConnectionDialog
+          open
+          onClose={() => setIsOutlookDialogOpen(false)}
+          status={outlookStatus}
+          loading={outlookLoading}
+          busy={outlookBusy}
+          error={outlookError}
+          onRefresh={() => void refreshOutlookStatus()}
+          onConnect={() => void connectOutlook()}
+          onDisconnect={() => void disconnectOutlook()}
+        />
+      ) : null}
+    </main>
   );
 }

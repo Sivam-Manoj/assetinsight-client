@@ -1,21 +1,4 @@
-"use client";
-
-import {
-  Avatar,
-  Box,
-  Button,
-  Chip,
-  Divider,
-  Paper,
-  type PaperProps,
-  Stack,
-  Typography,
-  alpha,
-} from "@mui/material";
-import {
-  ArrowForwardRounded,
-  InsertDriveFileRounded,
-} from "@mui/icons-material";
+import { ArrowRight, FileText } from "lucide-react";
 
 export function PageHeader({
   eyebrow,
@@ -29,99 +12,44 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        borderRadius: 6,
-        border: "1px solid var(--app-border)",
-        bgcolor: "var(--app-panel-soft)",
-        backdropFilter: "blur(18px)",
-        p: { xs: 3, md: 4 },
-        boxShadow: "var(--app-shadow-card)",
-        position: "relative",
-        overflow: "hidden",
+    <header
+      className="app-surface app-section"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 20,
+        flexWrap: "wrap",
       }}
     >
-      <Box
-        aria-hidden
-        sx={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(circle at top left, rgba(225,29,72,0.14), transparent 32%), radial-gradient(circle at bottom right, rgba(37,99,235,0.12), transparent 28%)",
-          pointerEvents: "none",
-        }}
-      />
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={2}
-        sx={{
-          position: "relative",
-          alignItems: { xs: "flex-start", md: "center" },
-          justifyContent: "space-between",
-        }}
-      >
-        <Box>
-          {eyebrow ? (
-            <Chip
-              label={eyebrow}
-              size="small"
-              sx={{
-                mb: 1.5,
-                bgcolor: "var(--app-accent-soft)",
-                color: "var(--app-accent)",
-                fontWeight: 700,
-              }}
-            />
-          ) : null}
-          <Typography variant="h3" sx={{ color: "var(--app-text)" }}>
-            {title}
-          </Typography>
-          {description ? (
-            <Typography
-              sx={{
-                mt: 1,
-                maxWidth: 780,
-                color: "var(--app-text-muted)",
-              }}
-            >
-              {description}
-            </Typography>
-          ) : null}
-        </Box>
-        {action ? (
-          <Stack direction="row" spacing={1.2} sx={{ alignItems: "center" }}>
-            {action}
-          </Stack>
-        ) : null}
-      </Stack>
-    </Paper>
+      <div>
+        {eyebrow ? <span className="app-kicker">{eyebrow}</span> : null}
+        <h1 className="app-title" style={{ marginTop: eyebrow ? 4 : 0 }}>
+          {title}
+        </h1>
+        {description ? <p className="app-subtitle">{description}</p> : null}
+      </div>
+      {action ? <div style={{ display: "flex", gap: 8 }}>{action}</div> : null}
+    </header>
   );
 }
 
 export function SurfaceCard({
   children,
-  sx,
-  ...paperProps
+  className = "",
+  style,
+  onClick,
 }: {
   children: React.ReactNode;
-  sx?: PaperProps["sx"];
-} & Omit<PaperProps, "children" | "sx">) {
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
+  sx?: unknown;
+}) {
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        borderRadius: 5,
-        border: "1px solid var(--app-border)",
-        bgcolor: "var(--app-panel-soft)",
-        backdropFilter: "blur(16px)",
-        boxShadow: "var(--app-shadow-card)",
-        ...sx,
-      }}
-      {...paperProps}
-    >
+    <div className={`app-surface ${className}`} style={style} onClick={onClick}>
       {children}
-    </Paper>
+    </div>
   );
 }
 
@@ -135,26 +63,34 @@ export function SectionTitle({
   action?: React.ReactNode;
 }) {
   return (
-    <Stack
-      direction={{ xs: "column", sm: "row" }}
-      spacing={1.5}
-      sx={{
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
         justifyContent: "space-between",
-        alignItems: { xs: "flex-start", sm: "center" },
+        gap: 16,
+        flexWrap: "wrap",
       }}
     >
-      <Box>
-        <Typography variant="h6" sx={{ color: "var(--app-text)" }}>
+      <div>
+        <h2
+          style={{
+            margin: 0,
+            color: "var(--app-text-strong)",
+            fontSize: "1.05rem",
+            fontWeight: 720,
+          }}
+        >
           {title}
-        </Typography>
+        </h2>
         {subtitle ? (
-          <Typography variant="body2" sx={{ color: "var(--app-text-muted)" }}>
+          <p className="app-muted" style={{ margin: "3px 0 0", fontSize: 14 }}>
             {subtitle}
-          </Typography>
+          </p>
         ) : null}
-      </Box>
+      </div>
       {action}
-    </Stack>
+    </div>
   );
 }
 
@@ -172,66 +108,44 @@ export function MetricCard({
   icon: React.ReactNode;
 }) {
   return (
-    <SurfaceCard
-      sx={{
-        p: 3,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <Box
-        aria-hidden
-        sx={{
-          position: "absolute",
-          right: -40,
-          top: -40,
-          width: 140,
-          height: 140,
-          borderRadius: "50%",
-          background: `radial-gradient(circle, ${alpha(accent, 0.2)} 0%, transparent 68%)`,
-        }}
-      />
-      <Stack
-        direction="row"
-        spacing={2}
-        sx={{ alignItems: "flex-start", justifyContent: "space-between" }}
-      >
-        <Box sx={{ position: "relative", zIndex: 1 }}>
-          <Typography
-            variant="body2"
-            sx={{ color: "var(--app-text-muted)", fontWeight: 700 }}
-          >
+    <SurfaceCard className="app-section">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+        <div>
+          <div className="app-muted" style={{ fontSize: 13, fontWeight: 650 }}>
             {label}
-          </Typography>
-          <Typography
-            variant="h4"
-            sx={{ mt: 1, color: "var(--app-text)", fontWeight: 800 }}
+          </div>
+          <div
+            style={{
+              marginTop: 6,
+              color: "var(--app-text-strong)",
+              fontSize: "1.8rem",
+              fontWeight: 750,
+              letterSpacing: "-0.035em",
+            }}
           >
             {value}
-          </Typography>
+          </div>
           {hint ? (
-            <Typography
-              variant="body2"
-              sx={{ mt: 1.2, color: "var(--app-text-muted)" }}
-            >
+            <div className="app-muted" style={{ marginTop: 6, fontSize: 13 }}>
               {hint}
-            </Typography>
+            </div>
           ) : null}
-        </Box>
-        <Avatar
-          variant="rounded"
-          sx={{
-            bgcolor: alpha(accent, 0.14),
+        </div>
+        <span
+          style={{
+            width: 42,
+            height: 42,
+            display: "grid",
+            placeItems: "center",
+            border: "1px solid var(--app-border)",
+            borderRadius: 8,
+            background: "var(--app-panel-alt)",
             color: accent,
-            width: 52,
-            height: 52,
-            borderRadius: 4,
-            border: `1px solid ${alpha(accent, 0.16)}`,
           }}
         >
           {icon}
-        </Avatar>
-      </Stack>
+        </span>
+      </div>
     </SurfaceCard>
   );
 }
@@ -250,7 +164,19 @@ export function StatusPill({
     | "success"
     | "warning";
 }) {
-  return <Chip label={label} color={color} size="small" />;
+  const tone =
+    color === "primary"
+      ? "accent"
+      : color === "error"
+        ? "danger"
+        : color === "secondary"
+          ? "info"
+          : color;
+  return (
+    <span className={`app-chip ${tone !== "default" ? `app-chip--${tone}` : ""}`}>
+      {label}
+    </span>
+  );
 }
 
 export function EmptyState({
@@ -263,32 +189,38 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <SurfaceCard
-      sx={{
-        p: { xs: 4, md: 5 },
-        textAlign: "center",
-      }}
-    >
-      <Avatar
-        variant="rounded"
-        sx={{
-          mx: "auto",
-          width: 64,
-          height: 64,
-          borderRadius: 5,
-          bgcolor: "var(--app-accent-soft)",
-          color: "var(--app-accent)",
+    <SurfaceCard className="app-section">
+      <div
+        style={{
+          minHeight: 230,
+          display: "grid",
+          placeItems: "center",
+          textAlign: "center",
         }}
       >
-        <InsertDriveFileRounded />
-      </Avatar>
-      <Typography variant="h6" sx={{ mt: 2.5, color: "var(--app-text)" }}>
-        {title}
-      </Typography>
-      <Typography sx={{ mt: 1, color: "var(--app-text-muted)" }}>
-        {description}
-      </Typography>
-      {action ? <Box sx={{ mt: 3 }}>{action}</Box> : null}
+        <div>
+          <span
+            style={{
+              width: 48,
+              height: 48,
+              display: "grid",
+              placeItems: "center",
+              margin: "0 auto",
+              border: "1px solid var(--app-border)",
+              borderRadius: 8,
+              background: "var(--app-panel-alt)",
+              color: "var(--app-accent)",
+            }}
+          >
+            <FileText size={22} aria-hidden />
+          </span>
+          <h2 style={{ margin: "14px 0 0", fontSize: "1.05rem" }}>{title}</h2>
+          <p className="app-muted" style={{ margin: "6px auto 0", maxWidth: 520 }}>
+            {description}
+          </p>
+          {action ? <div style={{ marginTop: 18 }}>{action}</div> : null}
+        </div>
+      </div>
     </SurfaceCard>
   );
 }
@@ -305,9 +237,9 @@ export function SectionPanel({
   children: React.ReactNode;
 }) {
   return (
-    <SurfaceCard sx={{ p: { xs: 2.5, md: 3 } }}>
+    <SurfaceCard className="app-section">
       <SectionTitle title={title} subtitle={subtitle} action={action} />
-      <Divider sx={{ my: 2.5, borderColor: "var(--app-border)" }} />
+      <hr className="app-divider" style={{ margin: "18px 0" }} />
       {children}
     </SurfaceCard>
   );
@@ -321,12 +253,9 @@ export function InlineAction({
   onClick?: () => void;
 }) {
   return (
-    <Button
-      onClick={onClick}
-      endIcon={<ArrowForwardRounded />}
-      sx={{ px: 0, minWidth: 0 }}
-    >
+    <button className="app-button" onClick={onClick}>
       {label}
-    </Button>
+      <ArrowRight size={16} aria-hidden />
+    </button>
   );
 }

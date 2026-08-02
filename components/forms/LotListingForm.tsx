@@ -13,7 +13,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-} from "@mui/material";
+} from "@/components/ui/legacy";
 import {
   MoreHorizontal,
   RotateCcw,
@@ -21,7 +21,7 @@ import {
   ScanLine,
   Trash2,
 } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import API from "@/lib/api";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,

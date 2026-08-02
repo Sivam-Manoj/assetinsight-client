@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 import {
   Plus,
   Trash2,
@@ -25,15 +25,17 @@ import {
   Video,
 } from "lucide-react";
 import JSZip from "jszip";
-import Button from "@mui/material/Button";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogContentText from "@mui/material/DialogContentText";
-import DialogTitle from "@mui/material/DialogTitle";
-import ListItemIcon from "@mui/material/ListItemIcon";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  ListItemIcon,
+  Menu,
+  MenuItem,
+} from "@/components/ui/legacy";
 import type { AnnBox } from "./ImageAnnotator";
 import { ImageMediaCard, VideoMediaCard } from "./MediaCard";
 import { getMixedFileKey } from "./types";
@@ -1330,8 +1332,8 @@ export default function MixedSection({
                 2 * Math.min(s.anchorX, dispW - s.anchorX),
                 maxW
               );
-              let wFromH = Math.max(minDim, Math.min(horiz, newH * ar));
-              let hFromW = Math.max(minDim, Math.min(newH, wFromH / ar));
+              const wFromH = Math.max(minDim, Math.min(horiz, newH * ar));
+              const hFromW = Math.max(minDim, Math.min(newH, wFromH / ar));
               newW = wFromH;
               newH = hFromW;
             }
@@ -1350,8 +1352,8 @@ export default function MixedSection({
                 2 * Math.min(s.anchorX, dispW - s.anchorX),
                 maxW
               );
-              let wFromH = Math.max(minDim, Math.min(horiz, newH * ar));
-              let hFromW = Math.max(minDim, Math.min(newH, wFromH / ar));
+              const wFromH = Math.max(minDim, Math.min(horiz, newH * ar));
+              const hFromW = Math.max(minDim, Math.min(newH, wFromH / ar));
               newW = wFromH;
               newH = hFromW;
             }
@@ -1370,8 +1372,8 @@ export default function MixedSection({
                 2 * Math.min(s.anchorY, dispH - s.anchorY),
                 maxH
               );
-              let hFromW = Math.max(minDim, Math.min(vert, newW / ar));
-              let wFromH = Math.max(minDim, Math.min(newW, hFromW * ar));
+              const hFromW = Math.max(minDim, Math.min(vert, newW / ar));
+              const wFromH = Math.max(minDim, Math.min(newW, hFromW * ar));
               newW = wFromH;
               newH = hFromW;
             }
@@ -1390,8 +1392,8 @@ export default function MixedSection({
                 2 * Math.min(s.anchorY, dispH - s.anchorY),
                 maxH
               );
-              let hFromW = Math.max(minDim, Math.min(vert, newW / ar));
-              let wFromH = Math.max(minDim, Math.min(newW, hFromW * ar));
+              const hFromW = Math.max(minDim, Math.min(vert, newW / ar));
+              const wFromH = Math.max(minDim, Math.min(newW, hFromW * ar));
               newW = wFromH;
               newH = hFromW;
             }
@@ -1634,7 +1636,7 @@ export default function MixedSection({
       } catch {}
       ctx.save();
       ctx.lineWidth = Math.max(3, Math.floor(outW * 0.01));
-      ctx.strokeStyle = "#ef4444";
+      ctx.strokeStyle = "#2563eb";
       ctx.strokeRect(fx, fy, fw, fh);
       ctx.restore();
     }
@@ -1757,7 +1759,7 @@ export default function MixedSection({
       ) : null}
 
       {lots.length === 0 ? (
-        <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--app-border)] bg-[var(--app-panel-alt)] px-5 py-8 text-center">
+        <div className="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-[var(--app-border)] bg-[var(--app-panel-alt)] px-5 py-8 text-center">
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--app-accent-soft)] text-[var(--app-accent)]">
             <FileImage className="h-5 w-5" aria-hidden="true" />
           </div>
@@ -2134,7 +2136,7 @@ export default function MixedSection({
 
       {removedMedia ? (
         <div
-          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[95] mx-auto flex min-h-12 max-w-sm items-center justify-between gap-3 rounded-xl bg-[var(--app-text)] px-3 py-2 text-sm text-[var(--app-panel)] shadow-[var(--app-shadow-modal)]"
+          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[95] mx-auto flex min-h-12 max-w-sm items-center justify-between gap-3 rounded-xl bg-[var(--app-text)] px-3 py-2 text-sm text-[var(--app-panel)] shadow-sm"
           role="status"
           aria-live="polite"
         >
@@ -2205,7 +2207,7 @@ export default function MixedSection({
                   }
                 />
                 {isSimulatingFlash && (
-                  <div className="absolute inset-0 bg-white/80 animate-pulse" />
+                  <div className="absolute inset-0 bg-[var(--app-panel)] animate-pulse" />
                 )}
 
                 {focusOn && (
@@ -2303,7 +2305,7 @@ export default function MixedSection({
                   >
                     <div
                       onPointerDown={(e) => startDrag("move", e)}
-                      className="absolute border-4 border-red-500 rounded-sm"
+                      className="absolute border-4 border-blue-600 rounded-sm"
                       style={{
                         width:
                           cameraViewSize.w > 0
@@ -2403,7 +2405,7 @@ export default function MixedSection({
                           width: 16,
                           height: 16,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "nwse-resize",
                           touchAction: "none",
@@ -2422,7 +2424,7 @@ export default function MixedSection({
                           width: 16,
                           height: 16,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "nesw-resize",
                           touchAction: "none",
@@ -2441,7 +2443,7 @@ export default function MixedSection({
                           width: 16,
                           height: 16,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "nwse-resize",
                           touchAction: "none",
@@ -2460,7 +2462,7 @@ export default function MixedSection({
                           width: 16,
                           height: 16,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "nesw-resize",
                           touchAction: "none",
@@ -2480,7 +2482,7 @@ export default function MixedSection({
                           width: 24,
                           height: 12,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "ns-resize",
                           touchAction: "none",
@@ -2500,7 +2502,7 @@ export default function MixedSection({
                           width: 24,
                           height: 12,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "ns-resize",
                           touchAction: "none",
@@ -2520,7 +2522,7 @@ export default function MixedSection({
                           width: 12,
                           height: 24,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "ew-resize",
                           touchAction: "none",
@@ -2540,7 +2542,7 @@ export default function MixedSection({
                           width: 12,
                           height: 24,
                           background: "#fff",
-                          border: "2px solid #ef4444",
+                          border: "2px solid #2563eb",
                           borderRadius: 4,
                           cursor: "ew-resize",
                           touchAction: "none",
@@ -2566,7 +2568,7 @@ export default function MixedSection({
                             <button
                               type="button"
                               onClick={finishAndClose}
-                              className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15"
+                              className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                               title="Exit"
                             >
                               <X className="h-5 w-5" />
@@ -2592,7 +2594,7 @@ export default function MixedSection({
                                     }
                                   } catch {}
                                 }}
-                                className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15"
+                                className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                                 title="Flash"
                               >
                                 {flashOn ? (
@@ -2607,10 +2609,10 @@ export default function MixedSection({
                               <button
                                 type="button"
                                 onClick={() => setFocusOn((v) => !v)}
-                                className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 ${
+                                className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] ${
                                   focusOn
-                                    ? "bg-red-600/80 text-white"
-                                    : "bg-white/10 text-white"
+                                    ? "bg-blue-600/80 text-white"
+                                    : "bg-[var(--app-panel)] text-white"
                                 }`}
                                 title="Focus"
                               >
@@ -2644,10 +2646,10 @@ export default function MixedSection({
                                     return next;
                                   });
                                 }}
-                                className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 ${
+                                className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] ${
                                   focusLockAR
-                                    ? "bg-red-600/80 text-white"
-                                    : "bg-white/10 text-white"
+                                    ? "bg-blue-600/80 text-white"
+                                    : "bg-[var(--app-panel)] text-white"
                                 }`}
                                 title="Aspect Lock"
                                 aria-label="Aspect Lock"
@@ -2691,7 +2693,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={finishAndClose}
-                            className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 shrink-0"
+                            className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] shrink-0"
                             title="Exit"
                             aria-label="Exit"
                           >
@@ -2744,7 +2746,7 @@ export default function MixedSection({
                                   }
                                 } catch {}
                               }}
-                              className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/20 hover:bg-white/15 whitespace-nowrap"
+                              className="inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/20 hover:bg-[var(--app-panel)] whitespace-nowrap"
                               title="Flash"
                               aria-label="Flash"
                             >
@@ -2760,10 +2762,10 @@ export default function MixedSection({
                             <button
                               type="button"
                               onClick={() => setFocusOn((v) => !v)}
-                              className={`inline-flex h-9 cursor-pointer items-center rounded-lg px-2 ring-1 ring-white/20 hover:bg-white/15 whitespace-nowrap ${
+                              className={`inline-flex h-9 cursor-pointer items-center rounded-lg px-2 ring-1 ring-white/20 hover:bg-[var(--app-panel)] whitespace-nowrap ${
                                 focusOn
-                                  ? "bg-red-600/80 text-white"
-                                  : "bg-white/10 text-white"
+                                  ? "bg-blue-600/80 text-white"
+                                  : "bg-[var(--app-panel)] text-white"
                               }`}
                               title="Focus"
                               aria-label="Focus"
@@ -2800,10 +2802,10 @@ export default function MixedSection({
                                   return next;
                                 });
                               }}
-                              className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 ring-1 ring-white/20 hover:bg-white/15 whitespace-nowrap ${
+                              className={`inline-flex h-9 cursor-pointer items-center gap-1 rounded-lg px-2 ring-1 ring-white/20 hover:bg-[var(--app-panel)] whitespace-nowrap ${
                                 focusLockAR
-                                  ? "bg-red-600/80 text-white"
-                                  : "bg-white/10 text-white"
+                                  ? "bg-blue-600/80 text-white"
+                                  : "bg-[var(--app-panel)] text-white"
                               }`}
                               title="Aspect Lock"
                               aria-label="Aspect Lock"
@@ -2825,7 +2827,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={finishAndClose}
-                        className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-0 ring-1 ring-white/20 hover:bg-white/15 shrink-0"
+                        className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-0 ring-1 ring-white/20 hover:bg-[var(--app-panel)] shrink-0"
                         title="Exit"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -2896,7 +2898,7 @@ export default function MixedSection({
                               }
                             } catch {}
                           }}
-                          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-0 ring-1 ring-white/20 hover:bg-white/15"
+                          className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-0 ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                           title="Flash"
                         >
                           {flashOn ? (
@@ -2909,10 +2911,10 @@ export default function MixedSection({
                         <button
                           type="button"
                           onClick={() => setFocusOn((v) => !v)}
-                          className={`inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-0 ring-1 ring-white/20 hover:bg-white/15 ${
+                          className={`inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-0 ring-1 ring-white/20 hover:bg-[var(--app-panel)] ${
                             focusOn
-                              ? "bg-red-600/80 text-white"
-                              : "bg-white/10 text-white"
+                              ? "bg-blue-600/80 text-white"
+                              : "bg-[var(--app-panel)] text-white"
                           }`}
                           title="Focus"
                         >
@@ -2946,10 +2948,10 @@ export default function MixedSection({
                               return next;
                             });
                           }}
-                          className={`inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-0 ring-1 ring-white/20 hover:bg-white/15 ${
+                          className={`inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-0 ring-1 ring-white/20 hover:bg-[var(--app-panel)] ${
                             focusLockAR
-                              ? "bg-red-600/80 text-white"
-                              : "bg-white/10 text-white"
+                              ? "bg-blue-600/80 text-white"
+                              : "bg-[var(--app-panel)] text-white"
                           }`}
                           title="Aspect Lock"
                         >
@@ -2980,7 +2982,7 @@ export default function MixedSection({
                   >
                     {/* Lens switcher (0.5x, 1x, 2x, etc.) */}
                     {availableLenses.length > 1 && (
-                      <div className="flex items-center gap-0.5 rounded-lg bg-black/50 p-0.5 ring-1 ring-white/20 backdrop-blur flex-shrink-0">
+                      <div className="flex items-center gap-0.5 rounded-lg bg-black/50 p-0.5 ring-1 ring-white/20  flex-shrink-0">
                         {availableLenses.map((lens) => (
                           <button
                             key={lens.id}
@@ -2988,8 +2990,8 @@ export default function MixedSection({
                             onClick={() => switchLens(lens)}
                             className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
                               selectedLens === lens.id
-                                ? "bg-yellow-500 text-black shadow-lg"
-                                : "bg-white/10 text-white hover:bg-white/20"
+                                ? "bg-yellow-500 text-black shadow-sm"
+                                : "bg-[var(--app-panel)] text-white hover:bg-[var(--app-panel)]"
                             }`}
                           >
                             {lens.label}
@@ -2999,7 +3001,7 @@ export default function MixedSection({
                     )}
 
                     {/* Digital zoom slider */}
-                    <div className="flex items-center gap-1 rounded-lg bg-black/40 px-1.5 py-0.5 ring-1 ring-white/10 backdrop-blur flex-shrink-0">
+                    <div className="flex items-center gap-1 rounded-lg bg-black/40 px-1.5 py-0.5 ring-1 ring-white/10  flex-shrink-0">
                       <ZoomOut className="h-3 w-3 text-white/90" />
                       <input
                         type="range"
@@ -3008,7 +3010,7 @@ export default function MixedSection({
                         step={0.1}
                         value={zoom}
                         onChange={(e) => setZoom(parseFloat(e.target.value))}
-                        className="w-[65px] accent-rose-500 cursor-pointer text-[16px]"
+                        className="w-[65px] accent-blue-500 cursor-pointer text-[16px]"
                       />
                       <ZoomIn className="h-3 w-3 text-white/90" />
                       <div className="w-6 text-right text-[9px] text-white/90">
@@ -3021,7 +3023,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("single_lot")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Bundle"
                       >
                         <Camera className="h-3 w-3" />
@@ -3040,7 +3042,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_item")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Item"
                       >
                         <Camera className="h-3 w-3" />
@@ -3059,7 +3061,7 @@ export default function MixedSection({
                       <button
                         type="button"
                         onClick={() => handleCapture("per_photo")}
-                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-rose-600/80 text-[9px] font-semibold text-white transition hover:bg-rose-500/80"
+                        className="h-11 flex-1 inline-flex cursor-pointer items-center justify-center gap-0.5 rounded-full bg-blue-600/80 text-[9px] font-semibold text-white transition hover:bg-blue-500/80"
                         title="Capture - Photo"
                       >
                         <Camera className="h-3 w-3" />
@@ -3137,7 +3139,7 @@ export default function MixedSection({
                     <button
                       type="button"
                       onClick={finishAndClose}
-                      className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-rose-600/80 text-white ring-2 ring-rose-300/30 focus:outline-none cursor-pointer flex-shrink-0"
+                      className="h-9 w-full inline-flex items-center justify-center gap-1 rounded-xl bg-blue-600/80 text-white ring-2 ring-blue-300/30 focus:outline-none cursor-pointer flex-shrink-0"
                       aria-label="Done"
                       title="Done"
                     >
@@ -3151,7 +3153,7 @@ export default function MixedSection({
                 {orientation !== "landscape" && (
                   <div
                     ref={bottomControlsRef}
-                    className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 backdrop-blur"
+                    className="pointer-events-auto absolute inset-x-0 z-20 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 "
                     style={{
                       bottom: 0,
                       paddingBottom: "calc(env(safe-area-inset-bottom) + 6px)",
@@ -3160,7 +3162,7 @@ export default function MixedSection({
                     <div className="mx-auto w-full max-w-[560px] sm:max-w-[780px]">
                       {/* Lens switcher (0.5x, 1x, 2x, etc.) */}
                       {availableLenses.length > 1 && (
-                        <div className="mb-1 flex items-center justify-center gap-1 rounded-lg bg-black/50 px-2 py-1.5 ring-1 ring-white/20 backdrop-blur">
+                        <div className="mb-1 flex items-center justify-center gap-1 rounded-lg bg-black/50 px-2 py-1.5 ring-1 ring-white/20 ">
                           {availableLenses.map((lens) => (
                             <button
                               key={lens.id}
@@ -3168,8 +3170,8 @@ export default function MixedSection({
                               onClick={() => switchLens(lens)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                                 selectedLens === lens.id
-                                  ? "bg-yellow-500 text-black shadow-lg scale-110"
-                                  : "bg-white/15 text-white hover:bg-white/25"
+                                  ? "bg-yellow-500 text-black shadow-sm scale-110"
+                                  : "bg-[var(--app-panel)] text-white hover:bg-[var(--app-panel)]"
                               }`}
                             >
                               {lens.label}
@@ -3179,7 +3181,7 @@ export default function MixedSection({
                       )}
 
                       {/* Portrait: digital zoom slider */}
-                      <div className="mb-1 flex items-center gap-2 rounded-lg bg-white/10 px-2 py-1 ring-1 ring-white/15 backdrop-blur">
+                      <div className="mb-1 flex items-center gap-2 rounded-lg bg-[var(--app-panel)] px-2 py-1 ring-1 ring-white/15 ">
                         <ZoomOut className="h-3.5 w-3.5 text-white/90" />
                         <input
                           type="range"
@@ -3188,7 +3190,7 @@ export default function MixedSection({
                           step={0.1}
                           value={zoom}
                           onChange={(e) => setZoom(parseFloat(e.target.value))}
-                          className="flex-1 min-w-[100px] accent-rose-500 cursor-pointer text-[16px]"
+                          className="flex-1 min-w-[100px] accent-blue-500 cursor-pointer text-[16px]"
                         />
                         <ZoomIn className="h-3.5 w-3.5 text-white/90" />
                         <div className="ml-2 w-8 text-right text-[10px] text-white/90">
@@ -3210,7 +3212,7 @@ export default function MixedSection({
                         <button
                           type="button"
                           onClick={finishAndClose}
-                          className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-2xl bg-rose-600 text-white ring-2 ring-rose-300/60 focus:outline-none cursor-pointer"
+                          className="h-12 sm:h-14 w-full inline-flex items-center justify-center rounded-lg bg-blue-600 text-white ring-2 ring-blue-300/60 focus:outline-none cursor-pointer"
                           aria-label="Done"
                           title="Done"
                         >
@@ -3233,7 +3235,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("single_lot")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Bundle"
                           >
                             <Camera className="h-4 w-4" /> Bundle
@@ -3251,7 +3253,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_item")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Item"
                           >
                             <Camera className="h-4 w-4" /> Item
@@ -3269,7 +3271,7 @@ export default function MixedSection({
                           <button
                             type="button"
                             onClick={() => handleCapture("per_photo")}
-                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-rose-600 px-2 text-[11px] font-bold text-white transition hover:bg-rose-500"
+                            className="h-7 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-blue-600 px-2 text-[11px] font-bold text-white transition hover:bg-blue-500"
                             title="Capture - Photo"
                           >
                             <Camera className="h-4 w-4" /> Photo

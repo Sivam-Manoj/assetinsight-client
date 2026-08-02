@@ -15,7 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { toast } from "react-toastify";
+import { toast } from "@/components/ui/toast";
 
 export type CatalogueLot = {
   id: string;
@@ -380,10 +380,10 @@ export default function CatalogueSection({
   return (
     <div className="space-y-4">
       {/* Summary/header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-rose-200/80 bg-gradient-to-br from-white to-rose-50/60 p-3 shadow-lg ring-1 ring-black/5">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200/80 bg-[var(--app-panel)] from-white to-blue-50/60 p-3 shadow-sm ring-1 ">
         <div>
-          <div className="text-sm font-medium text-gray-900">Lots</div>
-          <div className="text-xs text-gray-600">
+          <div className="text-sm font-medium text-[var(--app-text)]">Lots</div>
+          <div className="text-xs text-[var(--app-text-muted)]">
             {lots.length} lot(s), {totalImages}/{maxTotalImages} image(s) total
           </div>
         </div>
@@ -391,14 +391,14 @@ export default function CatalogueSection({
           <button
             type="button"
             onClick={startInAppCamera}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
           >
             <Camera className="h-4 w-4" /> Open Camera
           </button>
           <button
             type="button"
             onClick={() => startManualUpload(true)}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
           >
             <ImageIcon className="h-4 w-4" /> Upload from device
           </button>
@@ -421,12 +421,12 @@ export default function CatalogueSection({
 
       {/* Active capture panel */}
       {activeIdx >= 0 && (
-        <div className="rounded-2xl border border-rose-200/80 bg-white/80 p-3 shadow-xl ring-1 ring-black/5 backdrop-blur">
+        <div className="rounded-lg border border-blue-200/80 bg-[var(--app-panel)] p-3 shadow-sm ring-1  ">
           <div className="mb-2 flex items-center justify-between">
-            <div className="text-sm font-semibold text-gray-900">
+            <div className="text-sm font-semibold text-[var(--app-text)]">
               Lot #{activeIdx + 1}
             </div>
-            <div className="text-xs text-gray-600">
+            <div className="text-xs text-[var(--app-text-muted)]">
               {activeLot?.files.length}/{maxImagesPerLot} images
             </div>
           </div>
@@ -435,21 +435,21 @@ export default function CatalogueSection({
             <button
               type="button"
               onClick={() => startManualUpload(false)}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
             >
               <ImageIcon className="h-4 w-4" /> Upload images
             </button>
             <button
               type="button"
               onClick={() => setActiveIdx(-1)}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
             >
               Done
             </button>
           </div>
 
           {activeLot?.files.length ? (
-            <div className="mt-3 rounded-2xl border border-gray-300/70 bg-white/70 p-2 shadow ring-1 ring-black/5 backdrop-blur">
+            <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2 shadow ring-1  ">
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {activeLot.files.map((file, i) => {
                   const url = URL.createObjectURL(file);
@@ -457,9 +457,9 @@ export default function CatalogueSection({
                   return (
                     <div
                       key={i}
-                      className="relative group overflow-hidden rounded-xl shadow-md transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-xl"
+                      className="relative group overflow-hidden rounded-xl shadow-md transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-sm"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      { }
                       <img
                         src={url}
                         alt={file.name}
@@ -470,9 +470,9 @@ export default function CatalogueSection({
                         <button
                           type="button"
                           onClick={() => setCover(activeIdx, i)}
-                          className={`rounded-md cursor-pointer px-2 py-1 text-[10px] font-semibold shadow-lg backdrop-blur-sm ${
+                          className={`rounded-md cursor-pointer px-2 py-1 text-[10px] font-semibold shadow-sm  ${
                             isCover
-                              ? "bg-rose-600/90 text-white"
+                              ? "bg-blue-600/90 text-white"
                               : "bg-black/50 text-white"
                           }`}
                         >
@@ -481,7 +481,7 @@ export default function CatalogueSection({
                         <button
                           type="button"
                           onClick={() => removeImage(activeIdx, i)}
-                          className="rounded-full cursor-pointer bg-black/60 p-1.5 text-white shadow-lg hover:bg-black/70 transition"
+                          className="rounded-full cursor-pointer bg-black/60 p-1.5 text-white shadow-sm hover:bg-black/70 transition"
                           aria-label="Remove image"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -493,25 +493,25 @@ export default function CatalogueSection({
               </div>
             </div>
           ) : (
-            <div className="mt-3 rounded-2xl border-2 border-dashed border-gray-300/70 bg-gradient-to-br from-white/70 to-gray-50/50 p-5 text-center backdrop-blur shadow-inner">
-              <ImageIcon className="mx-auto h-8 w-8 text-gray-400" />
-              <p className="mt-2 text-sm text-gray-700">No images yet</p>
+            <div className="mt-3 rounded-lg border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] from-white/70 to-gray-50/50 p-5 text-center  shadow-inner">
+              <ImageIcon className="mx-auto h-8 w-8 text-[var(--app-text-muted)]" />
+              <p className="mt-2 text-sm text-[var(--app-text-muted)]">No images yet</p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => startManualUpload(false)}
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_6px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_2px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
                 >
                   <ImageIcon className="h-4 w-4" /> Upload images
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="mt-1 text-xs text-[var(--app-text-muted)]">
                 PNG, JPG. Up to {maxImagesPerLot} images in this lot.
               </p>
             </div>
           )}
 
-          <div className="mt-2 text-[11px] text-gray-500">
+          <div className="mt-2 text-[11px] text-[var(--app-text-muted)]">
             Tip: Use "Open Camera" above to create a new lot if needed and
             capture, or "Upload images" to add photos to this lot. Use "Done"
             to finish catalogue capture.
@@ -521,7 +521,7 @@ export default function CatalogueSection({
 
       {/* Lots summary */}
       {lots.length > 0 && (
-        <div className="rounded-2xl border border-gray-300/70 bg-white/70 p-3 shadow ring-1 ring-black/5 backdrop-blur">
+        <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3 shadow ring-1  ">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {lots.map((lot, idx) => {
               const cover = lot.files[lot.coverIndex];
@@ -529,12 +529,12 @@ export default function CatalogueSection({
               return (
                 <div
                   key={lot.id}
-                  className={`flex items-center gap-3 rounded-xl border p-2 bg-white/80 shadow-sm transition active:translate-y-0.5 ${
-                    idx === activeIdx ? "border-rose-300" : "border-gray-300"
+                  className={`flex items-center gap-3 rounded-xl border p-2 bg-[var(--app-panel)] shadow-sm transition active:translate-y-0.5 ${
+                    idx === activeIdx ? "border-blue-300" : "border-[var(--app-border)]"
                   } hover:shadow-md`}
                 >
                   {cover ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+
                     <img
                       src={coverUrl}
                       alt={`Lot ${idx + 1}`}
@@ -542,15 +542,15 @@ export default function CatalogueSection({
                       onLoad={() => coverUrl && URL.revokeObjectURL(coverUrl)}
                     />
                   ) : (
-                    <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-gray-100 text-gray-400 shadow-inner">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-[var(--app-panel-alt)] text-[var(--app-text-muted)] shadow-inner">
                       #{idx + 1}
                     </div>
                   )}
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="text-sm font-medium text-[var(--app-text)]">
                       Lot #{idx + 1}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-[var(--app-text-muted)]">
                       {lot.files.length} image(s)
                     </div>
                   </div>
@@ -558,14 +558,14 @@ export default function CatalogueSection({
                     <button
                       type="button"
                       onClick={() => setActiveIdx(idx)}
-                      className="rounded-lg cursor-pointer border border-gray-300 bg-white/80 px-2.5 py-1.5 text-xs text-gray-700 shadow hover:bg-white transition"
+                      className="rounded-lg cursor-pointer border border-[var(--app-border)] bg-[var(--app-panel)] px-2.5 py-1.5 text-xs text-[var(--app-text-muted)] shadow hover:bg-[var(--app-panel)] transition"
                     >
                       Edit
                     </button>
                     <button
                       type="button"
                       onClick={() => removeLot(idx)}
-                      className="rounded-lg cursor-pointer border border-red-300 bg-white/80 px-2.5 py-1.5 text-xs text-red-600 shadow hover:bg-red-50 transition"
+                      className="rounded-lg cursor-pointer border border-red-300 bg-[var(--app-panel)] px-2.5 py-1.5 text-xs text-red-600 shadow hover:bg-red-50 transition"
                     >
                       Remove
                     </button>
@@ -576,7 +576,7 @@ export default function CatalogueSection({
           </div>
         </div>
       )}
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-[var(--app-text-muted)]">
         Limits: up to {maxImagesPerLot} images per lot; {maxTotalImages} images
         total per report.
       </div>
@@ -585,7 +585,7 @@ export default function CatalogueSection({
       {cameraOpen &&
         createPortal(
           <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 backdrop-blur-sm overflow-hidden"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90  overflow-hidden"
             style={{
               paddingTop: "max(env(safe-area-inset-top), 8px)",
               paddingBottom: "max(env(safe-area-inset-bottom), 8px)",
@@ -593,7 +593,7 @@ export default function CatalogueSection({
               paddingRight: "max(env(safe-area-inset-right), 8px)",
             }}
           >
-            <div className="relative w-full sm:w-[98%] max-w-none sm:max-w-2xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl h-[100dvh] sm:h-[96dvh] max-h-[100dvh] sm:max-h-[96dvh] overflow-hidden flex flex-col rounded-none sm:rounded-2xl border-0 sm:border border-rose-200/30 bg-black/30 ring-0 sm:ring-1 ring-black/50 shadow-2xl">
+            <div className="relative w-full sm:w-[98%] max-w-none sm:max-w-2xl md:max-w-3xl lg:max-w-5xl xl:max-w-6xl h-[100dvh] sm:h-[96dvh] max-h-[100dvh] sm:max-h-[96dvh] overflow-hidden flex flex-col rounded-none sm:rounded-lg border-0 sm:border border-blue-200/30 bg-black/30 ring-0 sm:ring-1  shadow-sm">
               <div className="relative flex-1 min-h-0 bg-black">
                 <video
                   ref={videoRef}
@@ -619,7 +619,7 @@ export default function CatalogueSection({
                 />
                 {/* Simulated flash overlay */}
                 {isSimulatingFlash && (
-                  <div className="absolute inset-0 bg-white/80 animate-pulse" />
+                  <div className="absolute inset-0 bg-[var(--app-panel)] animate-pulse" />
                 )}
 
                 {/* Top overlay: orientation, counters, flash */}
@@ -631,7 +631,7 @@ export default function CatalogueSection({
                         o === "portrait" ? "landscape" : "portrait"
                       )
                     }
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 backdrop-blur ring-1 ring-white/20 hover:bg-white/15"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1  ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                     title="Toggle orientation"
                   >
                     <RotateCw className="h-3.5 w-3.5" />
@@ -669,7 +669,7 @@ export default function CatalogueSection({
                         }
                       } catch {}
                     }}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-white/10 px-2 py-1 backdrop-blur ring-1 ring-white/20 hover:bg-white/15"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[var(--app-panel)] px-2 py-1  ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                     title="Flash"
                   >
                     {flashOn ? (
@@ -683,7 +683,7 @@ export default function CatalogueSection({
 
                 {/* Zoom overlay */}
                 <div
-                  className="pointer-events-auto absolute left-2 right-2 z-20 rounded-xl bg-white/10 p-2 ring-1 ring-white/20 backdrop-blur flex flex-wrap items-center gap-2"
+                  className="pointer-events-auto absolute left-2 right-2 z-20 rounded-xl bg-[var(--app-panel)] p-2 ring-1 ring-white/20  flex flex-wrap items-center gap-2"
                   style={{ bottom: `calc(96px + env(safe-area-inset-bottom))` }}
                 >
                   <ZoomOut className="h-4 w-4 text-white/90" />
@@ -694,7 +694,7 @@ export default function CatalogueSection({
                     step={0.1}
                     value={zoom}
                     onChange={(e) => setZoom(parseFloat(e.target.value))}
-                    className="flex-1 min-w-[140px] accent-rose-500 cursor-pointer"
+                    className="flex-1 min-w-[140px] accent-blue-500 cursor-pointer"
                   />
                   <ZoomIn className="h-4 w-4 text-white/90" />
                   <div className="ml-2 w-10 text-right text-[11px] text-white/90">
@@ -704,7 +704,7 @@ export default function CatalogueSection({
 
                 {/* Bottom controls overlay */}
                 <div
-                  className="pointer-events-auto absolute inset-x-0 z-20 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 backdrop-blur"
+                  className="pointer-events-auto absolute inset-x-0 z-20 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-black/40 px-2 sm:px-3 py-2 "
                   style={{
                     bottom: "env(safe-area-inset-bottom)",
                     paddingBottom: "max(env(safe-area-inset-bottom), 12px)",
@@ -714,7 +714,7 @@ export default function CatalogueSection({
                     type="button"
                     onClick={goPrevLot}
                     disabled={activeIdx <= 0}
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 hover:bg-white/20 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 hover:bg-[var(--app-panel)] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                     aria-label="Previous lot"
                   >
                     <ChevronLeft className="h-4 w-4 text-white" />{" "}
@@ -723,14 +723,14 @@ export default function CatalogueSection({
                   <button
                     type="button"
                     onClick={captureFromStream}
-                    className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-gradient-to-b from-rose-500 to-rose-600 px-6 py-3 text-base font-semibold text-white shadow-[0_8px_0_0_rgba(190,18,60,0.5)] transition active:translate-y-0.5 active:shadow-[0_4px_0_0_rgba(190,18,60,0.5)] hover:from-rose-400 hover:to-rose-600"
+                    className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-[var(--app-panel)] from-blue-500 to-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm hover:from-blue-400 hover:to-blue-600"
                   >
                     <Camera className="h-5 w-5 text-white" /> Capture
                   </button>
                   <button
                     type="button"
                     onClick={goNextLot}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 hover:bg-white/20"
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-green-500 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/20 hover:bg-[var(--app-panel)]"
                     aria-label="Next lot"
                   >
                     <span className="hidden sm:inline">Next</span>{" "}
@@ -739,7 +739,7 @@ export default function CatalogueSection({
                   <button
                     type="button"
                     onClick={stopInAppCamera}
-                    className="group relative flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-gradient-to-b from-rose-500 to-rose-600 text-white shadow-[0_8px_0_0_rgba(190,18,60,0.5)] ring-2 ring-rose-300/60 hover:from-rose-400 hover:to-rose-600 active:translate-y-0.5 active:shadow-[0_4px_0_0_rgba(190,18,60,0.5)] focus:outline-none cursor-pointer"
+                    className="group relative flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-[var(--app-panel)] from-blue-500 to-blue-600 text-white shadow-sm ring-2 ring-blue-300/60 hover:from-blue-400 hover:to-blue-600 active:translate-y-0.5 active:shadow-sm focus:outline-none cursor-pointer"
                     aria-label="Done"
                     title="Done"
                   >

@@ -1,13 +1,12 @@
-import React from "react";
-import { Chip } from "@mui/material";
 import {
-  AccessTimeRounded,
-  CheckCircleRounded,
-  EditNoteRounded,
-  ErrorOutlineRounded,
-  HourglassTopRounded,
-  VisibilityRounded,
-} from "@mui/icons-material";
+  CircleAlert,
+  CircleCheck,
+  Clock3,
+  Eye,
+  FilePenLine,
+  LoaderCircle,
+  type LucideIcon,
+} from "lucide-react";
 
 export type ReportStatus =
   | "draft"
@@ -24,41 +23,44 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-const statusConfig = {
+const statusConfig: Record<
+  ReportStatus,
+  { label: string; tone: string; icon: LucideIcon }
+> = {
   draft: {
     label: "Draft",
-    color: "default" as const,
-    icon: <EditNoteRounded fontSize="small" />,
+    tone: "",
+    icon: FilePenLine,
   },
   processing: {
     label: "Processing",
-    color: "info" as const,
-    icon: <HourglassTopRounded fontSize="small" />,
+    tone: "app-chip--info",
+    icon: LoaderCircle,
   },
   preview: {
     label: "Ready for Review",
-    color: "info" as const,
-    icon: <VisibilityRounded fontSize="small" />,
+    tone: "app-chip--info",
+    icon: Eye,
   },
   pending_approval: {
     label: "Awaiting Approval",
-    color: "warning" as const,
-    icon: <AccessTimeRounded fontSize="small" />,
+    tone: "app-chip--warning",
+    icon: Clock3,
   },
   approved: {
     label: "Approved",
-    color: "success" as const,
-    icon: <CheckCircleRounded fontSize="small" />,
+    tone: "app-chip--success",
+    icon: CircleCheck,
   },
   declined: {
     label: "Declined",
-    color: "error" as const,
-    icon: <ErrorOutlineRounded fontSize="small" />,
+    tone: "app-chip--danger",
+    icon: CircleAlert,
   },
   error: {
     label: "Error",
-    color: "error" as const,
-    icon: <ErrorOutlineRounded fontSize="small" />,
+    tone: "app-chip--danger",
+    icon: CircleAlert,
   },
 };
 
@@ -68,15 +70,15 @@ export default function StatusBadge({
   className = "",
 }: StatusBadgeProps) {
   const config = statusConfig[status] || statusConfig.draft;
+  const Icon = config.icon;
 
   return (
-    <Chip
-      icon={config.icon}
-      label={label || config.label}
-      color={config.color}
-      className={className}
-      size="small"
-      sx={{ fontWeight: 700 }}
-    />
+    <span
+      className={`app-chip ${config.tone} ${className}`.trim()}
+      data-status={status}
+    >
+      <Icon size={14} strokeWidth={2} aria-hidden />
+      {label || config.label}
+    </span>
   );
 }
