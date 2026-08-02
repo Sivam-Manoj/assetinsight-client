@@ -162,11 +162,15 @@ export default function IncomingPage() {
         ]);
         if (statusResult.status === "fulfilled") {
           const status = statusResult.value;
+          // A successful incoming read proves the API and key are usable. The
+          // separate health probe is advisory and must not display a
+          // contradictory error over valid contract data.
+          const incomingReachable = incomingResult.status === "fulfilled";
           const warning = !status.enabled
             ? "The Auctioneer integration is disabled on the server."
             : !status.configured
               ? "Auctioneer is not configured on the server."
-              : status.reachable === false
+              : status.reachable === false && !incomingReachable
                 ? status.message || "Auctioneer is temporarily unreachable."
                 : null;
           setConnectionWarning(warning);
