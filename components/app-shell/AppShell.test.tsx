@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthContextType } from "@/context/AuthContext";
 import { useAuthContext } from "@/context/AuthContext";
@@ -89,8 +95,11 @@ function authValue(
 
 describe("AppShell", () => {
   const toggleMode = vi.fn();
+  const setMode = vi.fn();
 
   beforeEach(() => {
+    toggleMode.mockReset();
+    setMode.mockReset();
     window.localStorage.clear();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -109,7 +118,7 @@ describe("AppShell", () => {
     vi.mocked(useColorMode).mockReturnValue({
       mode: "light",
       resolvedTheme: "light",
-      setMode: vi.fn(),
+      setMode,
       toggleMode,
     });
   });
@@ -141,6 +150,68 @@ describe("AppShell", () => {
       "/releases"
     );
     expect(screen.getByRole("link", { name: /Incoming/ })).toBeInTheDocument();
+  });
+
+  it("preserves the enterprise desktop shell information hierarchy", () => {
+    vi.mocked(useAuthContext).mockReturnValue(
+      authValue({ isReportApprover: true, isReleaseManager: true })
+    );
+
+    render(<AppShell>Reference dashboard content</AppShell>);
+
+    const sidebar = screen.getByRole("complementary", {
+      name: "Primary navigation",
+    });
+    const navigation = within(sidebar);
+
+    expect(navigation.getAllByAltText("Asset Insight")).toHaveLength(2);
+    expect(navigation.getByText("Workspace")).toBeInTheDocument();
+    expect(navigation.getByText("Review")).toBeInTheDocument();
+    expect(navigation.getByText("Account")).toBeInTheDocument();
+
+    for (const destination of [
+      ["Dashboard", "/dashboard"],
+      ["Incoming", "/incoming"],
+      ["My Reports", "/reports"],
+      ["Previews", "/previews"],
+      ["Approvals", "/approvals"],
+      ["Releases", "/releases"],
+      ["Settings", "/settings"],
+    ] as const) {
+      expect(
+        navigation.getByRole("link", { name: new RegExp(destination[0]) })
+      ).toHaveAttribute("href", destination[1]);
+    }
+
+    expect(
+      navigation.getByRole("button", { name: "Drafts" })
+    ).toBeInTheDocument();
+    expect(
+      navigation.getByRole("button", { name: "Light theme" })
+    ).toBeInTheDocument();
+    expect(
+      navigation.getByRole("button", { name: "Dark theme" })
+    ).toBeInTheDocument();
+    expect(navigation.getByText("Alex Morgan")).toBeInTheDocument();
+    expect(navigation.getByText("appraiser@example.com")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Toggle navigation width" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("search")).toContainElement(
+      screen.getByRole("searchbox", {
+        name: "Search reports, lots, and clients",
+      })
+    );
+    expect(
+      screen.getByRole("link", { name: "Open notifications" })
+    ).toHaveAttribute("href", "/approvals");
+    expect(
+      screen.getByRole("link", { name: "Contact support" })
+    ).toHaveAttribute("href", "mailto:support@assetinsight.com");
+    expect(
+      screen.getByRole("button", { name: "Sign out" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Reference dashboard content")).toBeInTheDocument();
   });
 
   it("keeps the Incoming destination but hides only its unavailable badge", () => {
@@ -188,7 +259,7 @@ describe("AppShell", () => {
     const shell = container.firstElementChild;
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Collapse navigation" })
+      screen.getByRole("button", { name: "Toggle navigation width" })
     );
 
     expect(shell).toHaveAttribute("data-collapsed", "true");
@@ -201,7 +272,7 @@ describe("AppShell", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Expand navigation" })
+      screen.getByRole("button", { name: "Toggle navigation width" })
     );
     expect(shell).toHaveAttribute("data-collapsed", "false");
     expect(window.localStorage.getItem("cv-sidebar-collapsed")).toBe("false");
@@ -218,8 +289,8 @@ describe("AppShell", () => {
       )
     );
     expect(
-      screen.getByRole("button", { name: "Expand navigation" })
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Toggle navigation width" })
+    ).toHaveAttribute("title", "Expand navigation");
   });
 
   it("opens and closes the mobile drawer with accessible controls", () => {
@@ -236,9 +307,18 @@ describe("AppShell", () => {
   it("exposes theme controls in desktop and mobile shell chrome", () => {
     render(<AppShell>Workspace</AppShell>);
 
-    const controls = screen.getAllByRole("button", { name: /dark theme/i });
-    expect(controls.length).toBeGreaterThanOrEqual(2);
-    fireEvent.click(controls[0]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Light theme$/ })
+    );
+    expect(setMode).toHaveBeenCalledWith("light");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Dark theme$/ })
+    );
     expect(toggleMode).toHaveBeenCalledTimes(1);
+
+    expect(
+      screen.getByRole("button", { name: /^Use dark theme$/ })
+    ).toBeInTheDocument();
   });
 });

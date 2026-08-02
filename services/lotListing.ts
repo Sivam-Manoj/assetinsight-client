@@ -29,6 +29,7 @@ export interface LotListingLot {
   longitude?: number;
   item_condition?: string;
   image_indexes: number[];
+  image_url?: string;
   image_urls?: string[];
   extra_image_indexes?: number[];
   extra_image_urls?: string[];

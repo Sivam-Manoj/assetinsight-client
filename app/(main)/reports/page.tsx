@@ -26,6 +26,7 @@ import {
 import AuctioneerService, {
   type AuctioneerDeliverySummary,
 } from "@/services/auctioneer";
+import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -269,19 +270,53 @@ function fileActionIcon(
   return <FileText className="size-4" />;
 }
 
+function imageUrlsFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function getFirstReportImage(lots: any[], report: any): string | undefined {
+  const explicitThumbnail = [
+    report?.thumbnail_url,
+    report?.thumbnailUrl,
+    report?.preview_data?.thumbnail_url,
+    report?.preview_data?.thumbnailUrl,
+  ].find((value) => typeof value === "string" && value.trim());
+  if (explicitThumbnail) return explicitThumbnail.trim();
+
   const globalImages = [
-    ...(Array.isArray(report?.preview_data?.image_urls) ? report.preview_data.image_urls : []),
-    ...(Array.isArray(report?.image_urls) ? report.image_urls : []),
-  ].filter((value) => typeof value === "string" && value.trim());
+    ...imageUrlsFrom(report?.preview_data?.image_urls),
+    ...imageUrlsFrom(report?.preview_data?.imageUrls),
+    ...imageUrlsFrom(report?.preview_data?.extra_image_urls),
+    ...imageUrlsFrom(report?.preview_data?.extraImageUrls),
+    ...imageUrlsFrom(report?.image_urls),
+    ...imageUrlsFrom(report?.imageUrls),
+    ...imageUrlsFrom(report?.extra_image_urls),
+    ...imageUrlsFrom(report?.extraImageUrls),
+  ];
 
   for (const lot of Array.isArray(lots) ? lots : []) {
+    const lotImages = [
+      ...imageUrlsFrom(lot?.image_urls),
+      ...imageUrlsFrom(lot?.extra_image_urls),
+    ];
+    const coverIndex = Number(lot?.cover_index ?? lot?.coverIndex);
+    if (
+      Number.isInteger(coverIndex) &&
+      coverIndex >= 0 &&
+      lotImages[coverIndex]
+    ) {
+      return lotImages[coverIndex];
+    }
+
     const direct = [
       lot?.image_url,
-      ...(Array.isArray(lot?.image_urls) ? lot.image_urls : []),
-      ...(Array.isArray(lot?.extra_image_urls) ? lot.extra_image_urls : []),
+      ...lotImages,
     ].find((value) => typeof value === "string" && value.trim());
-    if (direct) return direct;
+    if (direct) return direct.trim();
 
     const firstIndex = [
       ...(Array.isArray(lot?.image_indexes) ? lot.image_indexes : []),
@@ -355,6 +390,13 @@ export default function ReportsPage() {
   const [deliveryDialogItem, setDeliveryDialogItem] =
     useState<AuctioneerDeliverySummary | null>(null);
   const loadingReportsRef = useRef(false);
+
+  useEffect(() => {
+    const globalSearchQuery =
+      new URLSearchParams(window.location.search).get("search")?.trim() || "";
+    setQuery(globalSearchQuery);
+  }, []);
+
   const hasActiveJobs = useMemo(
     () =>
       [...assetReports, ...realEstateReports, ...lotListingReports].some(
@@ -570,6 +612,7 @@ export default function ReportsPage() {
           generationState: "ready",
           reportStatus: String((report as any).status || "approved"),
           lotCount: Number((report as any).lot_count || 0),
+          thumbnail: getFirstReportImage([], report),
           type: (report as any).type,
           variants: {},
         };
@@ -1270,7 +1313,7 @@ export default function ReportsPage() {
   };
 
   return (
-    <main className="w-full min-w-0 space-y-5 overflow-x-hidden">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-[42px] lg:py-[34px]">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -1403,9 +1446,19 @@ export default function ReportsPage() {
                 <li
                   key={group.key}
                   className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+                  style={{
+                    contentVisibility: "auto",
+                    containIntrinsicSize: "280px",
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <ReportThumbnail
+                        src={group.thumbnail}
+                        title={title}
+                        size="card"
+                      />
+                      <div className="min-w-0">
                       <h2 className="break-words font-semibold text-[var(--app-text)]">
                         {title}
                       </h2>
@@ -1418,6 +1471,7 @@ export default function ReportsPage() {
                           {group.lotSummary}
                         </p>
                       ) : null}
+                      </div>
                     </div>
                     <span
                       className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold"
@@ -1465,8 +1519,8 @@ export default function ReportsPage() {
             })}
           </ul>
 
-          <section className="hidden overflow-x-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] xl:block">
-            <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
+          <section className="hidden overflow-x-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] xl:block">
+            <table className="w-full min-w-[1040px] table-fixed border-collapse text-left">
               <caption className="sr-only">Generated reports</caption>
               <colgroup>
                 <col className="w-[20%]" />
@@ -1508,6 +1562,12 @@ export default function ReportsPage() {
                       className="align-top hover:bg-[var(--app-panel-alt)]"
                     >
                       <td className="px-3 py-4">
+                        <div className="flex items-start gap-3">
+                          <ReportThumbnail
+                            src={group.thumbnail}
+                            title={title}
+                          />
+                          <div className="min-w-0 pt-0.5">
                         <p className="break-words text-sm font-semibold text-[var(--app-text)]">
                           {title}
                         </p>
@@ -1521,6 +1581,8 @@ export default function ReportsPage() {
                             Merged · {group.mergedSourceCount || 2} sources
                           </p>
                         ) : null}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-4">
                         <p className="text-sm font-semibold text-[var(--app-text)]">

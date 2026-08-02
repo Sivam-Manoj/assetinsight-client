@@ -2,19 +2,19 @@
 
 :root {
   color-scheme: light;
-  --app-bg: #f5f7fb;
+  --app-bg: #ffffff;
   --app-panel: #ffffff;
-  --app-panel-alt: #f8fafc;
+  --app-panel-alt: #f8f9fb;
   --app-panel-soft: #ffffff;
-  --app-sidebar: #f8fafc;
+  --app-sidebar: #f8f9fb;
   --app-text: #0f172a;
   --app-text-strong: #020617;
   --app-text-muted: #64748b;
   --app-text-subtle: #94a3b8;
-  --app-border: #dce3ed;
+  --app-border: #d7dee8;
   --app-border-strong: #cbd5e1;
-  --app-accent: #2563eb;
-  --app-accent-hover: #1d4ed8;
+  --app-accent: #1c5be8;
+  --app-accent-hover: #164dd0;
   --app-accent-soft: #eff6ff;
   --app-accent-ring: rgba(37, 99, 235, 0.2);
   --app-control-border: #cbd5e1;
@@ -36,7 +36,7 @@
   --app-shadow-shell: 0 8px 24px rgba(15, 23, 42, 0.07);
   --app-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
   --app-shadow-modal: 0 20px 45px rgba(15, 23, 42, 0.16);
-  --sidebar-width: 248px;
+  --sidebar-width: 284px;
   --sidebar-collapsed-width: 76px;
 }
 

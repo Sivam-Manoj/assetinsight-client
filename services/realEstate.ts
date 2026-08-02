@@ -104,6 +104,7 @@ export interface RealEstateReport {
   property_type: string;
   language: string;
   imageUrls: string[];
+  extraImageUrls?: string[];
   status: ReportStatus;
   preview_data?: any;
   preview_files?: {

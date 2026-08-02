@@ -1,55 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
+const DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
   day: "numeric",
   month: "long",
-  year: "numeric",
 });
 
-const TIME_FORMAT = new Intl.DateTimeFormat("en-GB", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function nextMinuteDelay() {
-  return 60_000 - (Date.now() % 60_000) + 20;
+function nextDayDelay(now: Date) {
+  const nextDay = new Date(now);
+  nextDay.setHours(24, 0, 0, 30);
+  return Math.max(1_000, nextDay.getTime() - now.getTime());
 }
 
+/**
+ * Keeps date rendering isolated from the dashboard so the main screen does not
+ * rerender on a timer. The value updates only when the local calendar day rolls
+ * over.
+ */
 export function WorkspaceClock() {
-  const [now, setNow] = useState<Date | null>(null);
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    setNow(new Date());
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      setNow(new Date());
-      interval = window.setInterval(() => setNow(new Date()), 60_000);
-    }, nextMinuteDelay());
-    return () => {
-      window.clearTimeout(timeout);
-      if (interval) window.clearInterval(interval);
+    let timeout: number;
+
+    const scheduleNextDay = () => {
+      const current = new Date();
+      timeout = window.setTimeout(() => {
+        setNow(new Date());
+        scheduleNextDay();
+      }, nextDayDelay(current));
     };
+
+    scheduleNextDay();
+    return () => window.clearTimeout(timeout);
   }, []);
 
-  const values = useMemo(
-    () =>
-      now
-        ? { date: DATE_FORMAT.format(now), time: TIME_FORMAT.format(now) }
-        : { date: "Current date", time: "--:--" },
-    [now]
-  );
-
-  return (
-    <div>
-      <div style={{ color: "var(--app-text-strong)", fontWeight: 680 }}>
-        {values.date}
-      </div>
-      <div className="app-muted" style={{ marginTop: 2, fontSize: 13 }}>
-        {values.time}
-      </div>
-    </div>
-  );
+  return <time suppressHydrationWarning>{DATE_FORMAT.format(now)}</time>;
 }

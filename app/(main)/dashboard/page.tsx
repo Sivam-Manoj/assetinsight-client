@@ -3,15 +3,18 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
-  ArrowRight,
+  ArrowUpDown,
   BarChart3,
   Building2,
   CarFront,
-  CircleDollarSign,
-  Clock3,
+  ChevronRight,
+  FilePlus2,
   FileText,
-  PackageSearch,
-  Rows3,
+  Inbox,
+  Info,
+  MoreHorizontal,
+  Tag,
+  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
@@ -20,6 +23,7 @@ import Loading from "@/components/common/Loading";
 import { WorkspaceClock } from "@/components/dashboard/WorkspaceClock";
 import type { DraftStatus } from "@/components/forms/ui/FormUI";
 import { useAuthContext } from "@/context/AuthContext";
+import { AuctioneerService } from "@/services/auctioneer";
 import {
   ReportsService,
   type PdfReport,
@@ -49,6 +53,11 @@ const LotListingForm = dynamic(
 
 type DrawerType = "real-estate" | "salvage" | "asset" | "lot-listing" | null;
 
+type IncomingSummary = {
+  availableCount: number;
+  showBadge: boolean;
+};
+
 const DRAWER_TITLES: Record<Exclude<DrawerType, null>, string> = {
   "real-estate": "Create real estate report",
   salvage: "Create salvage report",
@@ -58,44 +67,65 @@ const DRAWER_TITLES: Record<Exclude<DrawerType, null>, string> = {
 
 const REPORT_ACTIONS = [
   {
-    key: "real-estate" as const,
-    title: "Real estate",
-    description: "Property valuation and market evidence.",
-    icon: Building2,
-  },
-  {
     key: "asset" as const,
-    title: "Asset report",
-    description: "Structured plant, equipment, and asset appraisal.",
-    icon: PackageSearch,
+    title: "Asset Report",
+    icon: FileText,
   },
   {
     key: "lot-listing" as const,
-    title: "Lot listing",
-    description: "Auction-ready grouped lots and descriptions.",
-    icon: Rows3,
+    title: "Lot Listing",
+    icon: Tag,
+  },
+  {
+    key: "real-estate" as const,
+    title: "Real Estate",
+    icon: Building2,
   },
   {
     key: "salvage" as const,
     title: "Salvage",
-    description: "Vehicle and equipment damage inspection.",
     icon: CarFront,
   },
 ] as const;
 
-const CURRENCY = new Intl.NumberFormat("en-US", {
+const COMPACT_CURRENCY = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+const REPORT_CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   maximumFractionDigits: 0,
 });
-const DATE = new Intl.DateTimeFormat("en-GB", {
+
+const UPDATED_DATE = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
   month: "short",
   year: "numeric",
 });
 
+const METHOD_LABELS: Record<string, string> = {
+  fairmarketvalue: "FMV",
+  fairmarket: "FMV",
+  fmv: "FMV",
+  orderlyliquidationvalue: "OLV",
+  orderlyliquidation: "OLV",
+  olv: "OLV",
+  forcedliquidationvalue: "FLV",
+  forcedliquidation: "FLV",
+  flv: "FLV",
+  totalkeptvalue: "TKV",
+  tkv: "TKV",
+};
+
 function latestReports(values: PdfReport[] = []) {
   const grouped = new Map<string, PdfReport>();
+
   values.forEach((report) => {
     const key = String(report.report || report._id);
     const existing = grouped.get(key);
@@ -107,12 +137,13 @@ function latestReports(values: PdfReport[] = []) {
       grouped.set(key, report);
     }
   });
+
   return Array.from(grouped.values())
     .sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )
-    .slice(0, 6);
+    .slice(0, 5);
 }
 
 function greeting() {
@@ -122,25 +153,87 @@ function greeting() {
   return "Good evening";
 }
 
+function navSummaryFetcher(): Promise<IncomingSummary> {
+  return Promise.all([
+    AuctioneerService.getStatus(),
+    AuctioneerService.getIncomingSummary(),
+  ]).then(([status, summary]) => ({
+    availableCount: summary.availableCount,
+    showBadge: status.enabled && status.configured,
+  }));
+}
+
+function visibleRefreshInterval() {
+  if (
+    typeof document === "undefined" ||
+    typeof navigator === "undefined"
+  ) {
+    return 60_000;
+  }
+  return document.visibilityState === "visible" && navigator.onLine
+    ? 60_000
+    : 0;
+}
+
+function formatReportValue(value?: string) {
+  if (!value) return "—";
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? REPORT_CURRENCY.format(parsed) : value;
+}
+
+function reportTitle(report: PdfReport) {
+  return (
+    report.filename?.replace(/\.(pdf|docx?|xlsx)$/i, "") ||
+    report.address ||
+    report.contract_no ||
+    "Untitled report"
+  );
+}
+
+function reportStatus(report: PdfReport) {
+  if (report.downloadable === false) {
+    return { label: "Generating", tone: "info" };
+  }
+  if (report.approvalStatus === "pending") {
+    return { label: "In review", tone: "warning" };
+  }
+  if (report.approvalStatus === "rejected") {
+    return { label: "Needs changes", tone: "danger" };
+  }
+  return { label: "Ready", tone: "success" };
+}
+
+function typeLabel(report: PdfReport) {
+  const value = String(report.type || report.fileType || "").toLowerCase();
+  if (value.includes("real")) return "Real Estate";
+  if (value.includes("lot")) return "Lot Listing";
+  if (value.includes("salvage")) return "Salvage";
+  return "Asset Report";
+}
+
+function methodLabel(value: string) {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return METHOD_LABELS[normalized] || value;
+}
+
 function Metric({
   label,
   value,
-  hint,
   icon: Icon,
 }: {
   label: string;
   value: React.ReactNode;
-  hint: string;
-  icon: typeof FileText;
+  icon: LucideIcon;
 }) {
   return (
-    <div className={`app-surface ${styles.metric}`}>
-      <div className={styles.metricHeader}>
-        <span className={styles.metricLabel}>{label}</span>
-        <Icon className={styles.metricIcon} size={17} strokeWidth={1.8} aria-hidden />
+    <div className={styles.metric}>
+      <div>
+        <div className={styles.metricLabel}>{label}</div>
+        <div className={styles.metricValue}>{value}</div>
       </div>
-      <div className={styles.metricValue}>{value}</div>
-      <div className={styles.metricHint}>{hint}</div>
+      <span className={styles.metricIcon}>
+        <Icon size={25} strokeWidth={1.75} aria-hidden />
+      </span>
     </div>
   );
 }
@@ -149,7 +242,7 @@ export default function DashboardPage() {
   const { user } = useAuthContext();
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
-  const [greetingLabel, setGreetingLabel] = useState("Welcome");
+  const [greetingLabel] = useState(greeting);
   const [draftStatus, setDraftStatus] = useState<{
     status: DraftStatus;
     label?: string;
@@ -160,25 +253,53 @@ export default function DashboardPage() {
     error: statsError,
     isLoading: statsLoading,
     mutate: mutateStats,
-  } = useSWR<ReportStats>("dashboard/report-stats", ReportsService.getReportStats);
+  } = useSWR<ReportStats>(
+    "dashboard/report-stats",
+    ReportsService.getReportStats
+  );
   const {
     data: allReports,
     error: reportsError,
     isLoading: reportsLoading,
     mutate: mutateReports,
-  } = useSWR<PdfReport[]>("dashboard/recent-reports", ReportsService.getMyReports);
+  } = useSWR<PdfReport[]>(
+    "dashboard/recent-reports",
+    ReportsService.getMyReports
+  );
+  const {
+    data: incomingSummary,
+    error: incomingError,
+    isLoading: incomingLoading,
+  } = useSWR<IncomingSummary>(
+    "auctioneer/navigation-summary",
+    navSummaryFetcher,
+    {
+      refreshInterval: visibleRefreshInterval,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      revalidateOnFocus: true,
+    }
+  );
 
   const recent = useMemo(() => latestReports(allReports), [allReports]);
-  const breakdown = Object.entries(stats?.breakdown?.counts ?? {});
-  const maxBreakdown = Math.max(1, ...breakdown.map(([, count]) => count));
+  const breakdown = useMemo(() => {
+    const entries = Object.entries(stats?.breakdown?.counts ?? {})
+      .filter(([, count]) => Number.isFinite(count) && count > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4);
+    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+    const maximum = Math.max(1, ...entries.map(([, count]) => count));
+
+    return entries.map(([method, count]) => ({
+      method: methodLabel(method),
+      percentage: total ? Math.round((count / total) * 100) : 0,
+      relativeWidth: Math.round((count / maximum) * 90),
+    }));
+  }, [stats?.breakdown?.counts]);
 
   const refreshDashboard = useCallback(() => {
     void Promise.all([mutateStats(), mutateReports()]);
   }, [mutateReports, mutateStats]);
-
-  useEffect(() => {
-    setGreetingLabel(greeting());
-  }, []);
 
   useEffect(() => {
     window.addEventListener("cv:report-created", refreshDashboard);
@@ -211,200 +332,234 @@ export default function DashboardPage() {
 
   const error = statsError || reportsError;
   const displayName = user?.username || user?.email?.split("@")[0] || "there";
-  const totalPending =
-    allReports?.filter((report) => report.approvalStatus === "pending").length ??
-    0;
+  const incomingCount = incomingSummary?.availableCount ?? 0;
 
   return (
-    <div className="app-page app-page-stack">
-      <section className={`app-surface ${styles.hero}`}>
-        <div className={styles.heroCopy}>
-          <span className="app-kicker">Workspace overview</span>
-          <h1 className="app-title" style={{ marginTop: 5 }}>
+    <div className={styles.page}>
+      <header className={styles.pageHeader}>
+        <div>
+          <h1 className={styles.title} suppressHydrationWarning>
             {greetingLabel}, {displayName}
           </h1>
-          <p className="app-subtitle">
-            Your valuation activity, recent output, and report workflows in one
-            clear view.
+          <p className={styles.subtitle}>
+            <WorkspaceClock />
+            <span aria-hidden>•</span>
+            <span>Keep reporting work moving from one place.</span>
           </p>
         </div>
-        <div className={styles.heroMeta} aria-label="Current date and time">
-          <span className={styles.clockIcon}>
-            <Clock3 size={19} strokeWidth={1.8} aria-hidden />
-          </span>
-          <WorkspaceClock />
-        </div>
-      </section>
+        <button
+          className={styles.createButton}
+          onClick={() => setDrawerType("asset")}
+        >
+          <FilePlus2 size={21} strokeWidth={1.8} aria-hidden />
+          Create report
+        </button>
+      </header>
 
       {error ? (
         <div className="app-alert app-alert--error" role="alert">
-          We couldn’t load all dashboard data. Your report workflows are still
-          available.
+          <span>
+            We couldn’t load all dashboard data. Your report workflows are
+            still available.
+          </span>
           <button className="app-button" onClick={refreshDashboard}>
             Retry
           </button>
         </div>
       ) : null}
 
-      <section className={styles.metrics} aria-label="Reporting summary">
-        <Metric
-          label="Total reports"
-          value={statsLoading ? "—" : stats?.totalReports ?? 0}
-          hint="Across all report types"
-          icon={FileText}
-        />
-        <Metric
-          label="Portfolio value"
-          value={
-            statsLoading
-              ? "—"
-              : CURRENCY.format(stats?.totalFairMarketValue ?? 0)
-          }
-          hint="Aggregated fair market value"
-          icon={CircleDollarSign}
-        />
-        <Metric
-          label="Awaiting approval"
-          value={reportsLoading ? "—" : totalPending}
-          hint="Reports currently in review"
-          icon={Clock3}
-        />
-        <Metric
-          label="Valuation methods"
-          value={statsLoading ? "—" : breakdown.length}
-          hint="Methods in the current portfolio"
-          icon={BarChart3}
-        />
+      <section className={styles.workflowStrip} aria-label="Create a report">
+        {REPORT_ACTIONS.map((action) => {
+          const Icon = action.icon;
+          return (
+            <button
+              key={action.key}
+              className={styles.workflowButton}
+              onClick={() => setDrawerType(action.key)}
+            >
+              <Icon size={25} strokeWidth={1.7} aria-hidden />
+              <span>{action.title}</span>
+            </button>
+          );
+        })}
       </section>
 
-      <section className="app-surface app-section">
-        <div className={styles.sectionHeader}>
-          <div>
-            <h2 className={styles.sectionTitle}>Start a new report</h2>
-            <p className={styles.sectionSubtitle}>
-              Choose a workflow. The form loads only when you open it.
-            </p>
+      <section className={styles.summaryGrid} aria-label="Reporting summary">
+        <div className={styles.summaryLeft}>
+          <div className={styles.metricGrid}>
+            <Metric
+              label="Total reports"
+              value={statsLoading ? "—" : stats?.totalReports ?? 0}
+              icon={FileText}
+            />
+            <Metric
+              label="Portfolio value"
+              value={
+                statsLoading
+                  ? "—"
+                  : COMPACT_CURRENCY.format(stats?.totalFairMarketValue ?? 0)
+              }
+              icon={BarChart3}
+            />
           </div>
-        </div>
-        <div className={styles.quickGrid}>
-          {REPORT_ACTIONS.map((action) => {
-            const Icon = action.icon;
-            return (
-              <button
-                key={action.key}
-                className={styles.quickAction}
-                onClick={() => setDrawerType(action.key)}
-              >
-                <div className={styles.quickTop}>
-                  <Icon size={22} strokeWidth={1.7} color="var(--app-accent)" aria-hidden />
-                  <ArrowRight size={17} strokeWidth={1.8} aria-hidden />
-                </div>
-                <div>
-                  <div className={styles.quickTitle}>{action.title}</div>
-                  <p className={styles.quickDescription}>{action.description}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
 
-      <section className={styles.operations}>
-        <div className={`app-surface app-section ${styles.recent}`}>
-          <div className={styles.sectionHeader}>
-            <div>
-              <h2 className={styles.sectionTitle}>Recent reports</h2>
-              <p className={styles.sectionSubtitle}>
-                Latest generated output across your workspace.
-              </p>
+          <div className={styles.incomingCard}>
+            <span className={styles.incomingIcon}>
+              <Inbox size={24} strokeWidth={1.75} aria-hidden />
+            </span>
+            <div className={styles.incomingCopy}>
+              <span>Incoming work</span>
+              <strong>
+                {incomingLoading
+                  ? "Loading…"
+                  : incomingError
+                    ? "Queue unavailable"
+                    : incomingSummary?.showBadge
+                      ? `${incomingCount} available`
+                      : "Integration unavailable"}
+              </strong>
             </div>
             <button
-              className="app-button app-button--secondary"
-              onClick={() => router.push("/reports")}
+              className={styles.textAction}
+              onClick={() => router.push("/incoming")}
             >
-              View all
-              <ArrowRight size={15} aria-hidden />
+              Open queue
+              <ChevronRight size={17} strokeWidth={1.8} aria-hidden />
             </button>
           </div>
-          {reportsLoading ? (
-            <div className={styles.empty}>
-              <span className="app-spinner" aria-hidden />
-              <span className="sr-only">Loading recent reports</span>
-            </div>
-          ) : recent.length ? (
-            <div className="app-table-wrap">
-              <table className="app-table app-table--responsive">
-                <thead>
-                  <tr>
-                    <th>Report</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((report) => (
-                    <tr key={report._id}>
-                      <td data-label="Report">
-                        <div className={styles.reportName}>
-                          {report.filename || report.address || "Untitled report"}
-                        </div>
-                        <div className={styles.reportMeta}>
-                          {report.contract_no || report.address || "Asset Insight"}
-                        </div>
-                      </td>
-                      <td data-label="Type">{report.type || report.fileType || "Report"}</td>
-                      <td data-label="Status">
-                        <span className={styles.status}>
-                          {report.approvalStatus || "generated"}
-                        </span>
-                      </td>
-                      <td data-label="Created">
-                        {DATE.format(new Date(report.createdAt))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className={styles.empty}>
-              Your generated reports will appear here.
-            </div>
-          )}
         </div>
 
-        <div className="app-surface app-section">
-          <div className={styles.sectionHeader}>
-            <div>
-              <h2 className={styles.sectionTitle}>Method distribution</h2>
-              <p className={styles.sectionSubtitle}>Reports by valuation method.</p>
-            </div>
+        <div className={styles.distributionCard}>
+          <div className={styles.distributionHeader}>
+            <h2>Valuation method distribution</h2>
+            <span
+              className={styles.infoIcon}
+              title="Share of reports by valuation method"
+            >
+              <Info size={18} strokeWidth={1.8} aria-hidden />
+              <span className="sr-only">
+                Share of reports by valuation method
+              </span>
+            </span>
           </div>
+
           {statsLoading ? (
-            <div className={styles.empty}>
-              <span className="app-spinner" aria-hidden />
+            <div className={styles.distributionEmpty}>
+              <span className="app-spinner" aria-label="Loading distribution" />
             </div>
           ) : breakdown.length ? (
             <div className={styles.distribution}>
-              {breakdown.map(([method, count]) => (
+              {breakdown.map(({ method, percentage, relativeWidth }) => (
                 <div className={styles.distributionRow} key={method}>
-                  <div className={styles.distributionLabel}>
-                    <span>{method}</span>
-                    <strong>{count}</strong>
-                  </div>
-                  <div className={styles.track}>
-                    <div
+                  <span className={styles.distributionLabel}>{method}</span>
+                  <span className={styles.track} aria-hidden>
+                    <span
                       className={styles.bar}
-                      style={{ width: `${Math.max(4, (count / maxBreakdown) * 100)}%` }}
+                      style={{ width: `${Math.max(3, relativeWidth)}%` }}
                     />
-                  </div>
+                  </span>
+                  <span className={styles.percentage}>{percentage}%</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className={styles.empty}>No valuation mix available yet.</div>
+            <div className={styles.distributionEmpty}>
+              No valuation mix available yet.
+            </div>
           )}
+        </div>
+      </section>
+
+      <section className={styles.recentCard} aria-labelledby="recent-reports">
+        <div className={styles.recentHeading}>
+          <h2 id="recent-reports">Recent reports</h2>
+        </div>
+
+        {reportsLoading ? (
+          <div className={styles.recentEmpty}>
+            <span className="app-spinner" aria-label="Loading recent reports" />
+          </div>
+        ) : recent.length ? (
+          <div className={styles.tableWrap}>
+            <table className={`${styles.table} app-table--responsive`}>
+              <thead>
+                <tr>
+                  <th>
+                    <span className={styles.sortHeading}>
+                      Report
+                      <ArrowUpDown size={14} aria-hidden />
+                    </span>
+                  </th>
+                  <th>Type</th>
+                  <th>Value</th>
+                  <th>Status</th>
+                  <th>
+                    <span className={styles.sortHeading}>
+                      Updated
+                      <ArrowUpDown size={14} aria-hidden />
+                    </span>
+                  </th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((report) => {
+                  const status = reportStatus(report);
+                  const title = reportTitle(report);
+                  return (
+                    <tr key={report._id}>
+                      <td data-label="Report">
+                        <button
+                          className={styles.reportLink}
+                          onClick={() => router.push("/reports")}
+                        >
+                          {title}
+                        </button>
+                      </td>
+                      <td data-label="Type">{typeLabel(report)}</td>
+                      <td data-label="Value">
+                        {formatReportValue(report.fairMarketValue)}
+                      </td>
+                      <td data-label="Status">
+                        <span
+                          className={styles.status}
+                          data-tone={status.tone}
+                        >
+                          {status.label}
+                        </span>
+                      </td>
+                      <td data-label="Updated">
+                        {UPDATED_DATE.format(new Date(report.createdAt))}
+                      </td>
+                      <td data-label="Action">
+                        <button
+                          className={styles.rowAction}
+                          aria-label={`Open actions for ${title}`}
+                          onClick={() => router.push("/reports")}
+                        >
+                          <MoreHorizontal size={20} aria-hidden />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={styles.recentEmpty}>
+            Your generated reports will appear here.
+          </div>
+        )}
+
+        <div className={styles.recentFooter}>
+          <button
+            className={styles.viewAllButton}
+            onClick={() => router.push("/reports")}
+          >
+            View all reports
+            <ChevronRight size={17} strokeWidth={1.8} aria-hidden />
+          </button>
         </div>
       </section>
 

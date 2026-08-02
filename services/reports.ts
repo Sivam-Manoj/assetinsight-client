@@ -24,6 +24,8 @@ export type PdfReport = {
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   contract_no?: string;
+  thumbnail_url?: string | null;
+  thumbnailUrl?: string | null;
   url?: string;
   crReportId?: string;
   valuationMethods?: Array<{ method: string; value: number }>;

@@ -21,6 +21,9 @@ const incomingItem = {
   status: "available",
 };
 
+const reportThumbnailUrl =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='112' viewBox='0 0 160 112'%3E%3Crect width='160' height='112' fill='%23dbeafe'/%3E%3Cpath d='M20 82l32-31 21 18 23-29 44 42z' fill='%232563eb'/%3E%3C/svg%3E";
+
 async function initializeTheme(page: Page, theme: ThemeMode) {
   await page.addInitScript((initialTheme: ThemeMode) => {
     if (!window.localStorage.getItem("cv-theme")) {
@@ -86,6 +89,38 @@ async function mockAuthenticatedApi(
       };
     } else if (path.endsWith("/api/reports/myreports")) {
       body = [];
+    } else if (path.endsWith("/api/asset")) {
+      body = {
+        message: "ok",
+        data: [
+          {
+            _id: "e2e-asset-report",
+            user: "e2e-user",
+            grouping_mode: "lot",
+            imageUrls: [],
+            status: "approved",
+            lots: [
+              {
+                lot_number: "12",
+                estimated_value: "48000",
+                image_urls: [reportThumbnailUrl],
+              },
+            ],
+            client_name: "Northfield Plant Ltd",
+            contract_no: "CV-E2E-REPORT",
+            preview_files: {
+              pdf: "/files/cv-e2e-report.pdf",
+            },
+            createdAt: "2026-08-02T09:00:00.000Z",
+            updatedAt: "2026-08-02T09:30:00.000Z",
+          },
+        ],
+      };
+    } else if (
+      path.endsWith("/api/real-estate") ||
+      path.endsWith("/api/lot-listing")
+    ) {
+      body = { data: [] };
     } else if (path.endsWith("/api/auctioneer/status")) {
       body = {
         enabled: true,
@@ -144,6 +179,23 @@ async function expectTheme(page: Page, theme: ThemeMode) {
       page.locator("html").evaluate((element) => element.style.colorScheme)
     )
     .toBe(theme);
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const metrics = await page.evaluate(() => ({
+    viewportWidth: document.documentElement.clientWidth,
+    rootScrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+  }));
+  const widestDocumentWidth = Math.max(
+    metrics.rootScrollWidth,
+    metrics.bodyScrollWidth
+  );
+
+  expect(
+    widestDocumentWidth,
+    `Document width ${widestDocumentWidth}px exceeded the ${metrics.viewportWidth}px viewport`
+  ).toBeLessThanOrEqual(metrics.viewportWidth + 1);
 }
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
@@ -277,6 +329,65 @@ test("Incoming remains visible for a standard authenticated user", async ({
   await expect(page.getByRole("link", { name: /Incoming/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Approvals" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Releases" })).toHaveCount(0);
+});
+
+test("enterprise shell landmarks and My Reports stay responsive", async ({
+  page,
+}, testInfo) => {
+  const isMobile = Boolean(testInfo.project.use.isMobile);
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+  await page.goto("/dashboard");
+
+  if (isMobile) {
+    await expectNoHorizontalOverflow(page);
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  } else {
+    const sidebar = page.getByRole("complementary", {
+      name: "Primary navigation",
+    });
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar.getByText("Workspace", { exact: true })).toBeVisible();
+    await expect(sidebar.getByText("Review", { exact: true })).toBeVisible();
+    await expect(sidebar.getByText("Account", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Toggle navigation width" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("searchbox", {
+        name: "Search reports, lots, and clients",
+      })
+    ).toBeVisible();
+    await expect(
+      sidebar.getByRole("button", { name: "Light theme" })
+    ).toBeVisible();
+    await expect(
+      sidebar.getByRole("button", { name: "Dark theme" })
+    ).toBeVisible();
+  }
+
+  const expectedDestinations = ["Dashboard", "Incoming", "My Reports", "Previews"];
+  for (const label of expectedDestinations) {
+    await expect(
+      page.getByRole("link", { name: new RegExp(label) })
+    ).toBeVisible();
+  }
+
+  await page.getByRole("link", { name: "My Reports" }).press("Enter");
+  await expect(page).toHaveURL(/\/reports$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "My reports" })
+  ).toBeVisible();
+
+  const thumbnail = page.getByRole("img", {
+    name: /Preview image for Asset.*CV-E2E-REPORT/i,
+  });
+  await thumbnail.scrollIntoViewIfNeeded();
+  await expect(thumbnail).toBeVisible();
+  await expect(thumbnail).toHaveAttribute("loading", "lazy");
+  await expect(thumbnail).toHaveAttribute("decoding", "async");
+  await expect(thumbnail).toHaveAttribute("fetchpriority", "low");
+  await expectNoHorizontalOverflow(page);
 });
 
 test("public and authentication route matrix renders cleanly", async ({

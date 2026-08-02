@@ -5,12 +5,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  CalendarDays,
+  Bell,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleHelp,
   Clock3,
+  LogOut,
   Menu,
   Moon,
+  Search,
   Sun,
   X,
 } from "lucide-react";
@@ -30,10 +34,6 @@ import styles from "./AppShell.module.css";
 
 const InputsHistoryModal = dynamic(
   () => import("@/components/modals/InputsHistoryModal"),
-  { ssr: false }
-);
-const OutlookDialog = dynamic(
-  () => import("@/components/outlook/LazyOutlookDialog"),
   { ssr: false }
 );
 
@@ -94,12 +94,11 @@ function NavLink({
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user } = useAuthContext();
-  const { resolvedTheme, toggleMode } = useColorMode();
+  const { user, logout, loggingOut } = useAuthContext();
+  const { resolvedTheme, setMode, toggleMode } = useColorMode();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
-  const [showOutlook, setShowOutlook] = useState(false);
 
   const { data: summary } = useSWR(
     "auctioneer/navigation-summary",
@@ -145,13 +144,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ),
     [user]
   );
+  const workspaceNavigation = useMemo(
+    () =>
+      visiblePrimary.filter(
+        (item) => item.href !== "/approvals" && item.href !== "/releases"
+      ),
+    [visiblePrimary]
+  );
+  const reviewNavigation = useMemo(
+    () =>
+      visiblePrimary.filter(
+        (item) => item.href === "/approvals" || item.href === "/releases"
+      ),
+    [visiblePrimary]
+  );
   const title =
     Object.entries(PAGE_TITLES).find(([prefix]) =>
       pathname.startsWith(prefix)
     )?.[1] ?? "Workspace";
   const userLabel = user?.username || user?.email || "Loading account";
-  const initial = userLabel.charAt(0).toUpperCase();
+  const initials = userLabel
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
   const closeMobile = () => setMobileOpen(false);
+  const toggleDesktopNavigation = () => setCollapsed((value) => !value);
 
   return (
     <div
@@ -172,22 +191,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className={styles.brandRow}>
           <Link className={styles.brand} href="/dashboard" onClick={closeMobile}>
-            <Image
-              className={`${styles.brandImage} ${styles.brandLight}`}
-              src="/brand/asset-insight-light-compact.png"
-              width={298}
-              height={96}
-              priority
-              alt="Asset Insight"
-            />
-            <Image
-              className={`${styles.brandImage} ${styles.brandDark}`}
-              src="/brand/asset-insight-dark-compact.png"
-              width={298}
-              height={96}
-              priority
-              alt="Asset Insight"
-            />
+            <span className={styles.brandLockup}>
+              <Image
+                className={`${styles.brandImage} ${styles.brandLight}`}
+                src="/brand/asset-insight-light-compact.png"
+                width={298}
+                height={96}
+                priority
+                alt="Asset Insight"
+              />
+              <Image
+                className={`${styles.brandImage} ${styles.brandDark}`}
+                src="/brand/asset-insight-dark-compact.png"
+                width={298}
+                height={96}
+                priority
+                alt="Asset Insight"
+              />
+              <span className={styles.brandSubtitle}>Enterprise workspace</span>
+            </span>
             <span className={styles.mark} aria-hidden>
               AI
             </span>
@@ -196,7 +218,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             className={`app-button app-button--secondary app-button--icon ${styles.collapseButton}`}
             onClick={() => {
               if (window.innerWidth < 1024) closeMobile();
-              else setCollapsed((value) => !value);
+              else toggleDesktopNavigation();
             }}
             aria-label={
               mobileOpen
@@ -221,7 +243,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <nav className={styles.navGroup}>
             <p className={styles.navLabel}>Workspace</p>
             <ul className={styles.navList}>
-              {visiblePrimary.map((item) => (
+              {workspaceNavigation.map((item) => (
                 <NavLink
                   key={item.href}
                   item={item}
@@ -252,47 +274,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <nav className={styles.navGroup}>
-            <p className={styles.navLabel}>Tools</p>
+            <p className={styles.navLabel}>Review</p>
             <ul className={styles.navList}>
-              <li>
-                <button
-                  className={`${styles.navLink} ${styles.actionButton}`}
-                  title={collapsed ? "Outlook calendar" : undefined}
-                  onClick={() => {
-                    closeMobile();
-                    setShowOutlook(true);
-                  }}
-                >
-                  <CalendarDays
-                    className={styles.navIcon}
-                    strokeWidth={1.8}
-                    aria-hidden
-                  />
-                  <span className={styles.navText}>Outlook calendar</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  className={`${styles.navLink} ${styles.actionButton}`}
-                  title={
-                    collapsed
-                      ? resolvedTheme === "dark"
-                        ? "Use light theme"
-                        : "Use dark theme"
-                      : undefined
-                  }
-                  onClick={toggleMode}
-                >
-                  {resolvedTheme === "dark" ? (
-                    <Sun className={styles.navIcon} strokeWidth={1.8} aria-hidden />
-                  ) : (
-                    <Moon className={styles.navIcon} strokeWidth={1.8} aria-hidden />
-                  )}
-                  <span className={styles.navText}>
-                    {resolvedTheme === "dark" ? "Light theme" : "Dark theme"}
-                  </span>
-                </button>
-              </li>
+              {reviewNavigation.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  active={isNavItemActive(item, pathname)}
+                  collapsed={collapsed}
+                  closeMobile={closeMobile}
+                />
+              ))}
             </ul>
           </nav>
 
@@ -320,17 +312,112 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             onClick={closeMobile}
           >
             <span className={styles.avatar} aria-hidden>
-              {initial}
+              {initials}
             </span>
             <span className={styles.profileCopy}>
               <span className={styles.profileName}>{userLabel}</span>
               <span className={styles.profileEmail}>{user?.email ?? "Secure workspace"}</span>
             </span>
+            <ChevronDown
+              className={styles.profileChevron}
+              size={17}
+              strokeWidth={1.8}
+              aria-hidden
+            />
           </Link>
+          <div className={styles.themeSwitch} aria-label="Color theme">
+            <button
+              className={styles.themeOption}
+              data-active={resolvedTheme === "light"}
+              onClick={() => setMode("light")}
+              aria-label="Light theme"
+              aria-pressed={resolvedTheme === "light"}
+            >
+              <Sun size={18} strokeWidth={1.8} aria-hidden />
+              <span>Light</span>
+            </button>
+            <button
+              className={styles.themeOption}
+              data-active={resolvedTheme === "dark"}
+              onClick={() => {
+                if (resolvedTheme !== "dark") toggleMode();
+              }}
+              aria-label="Dark theme"
+              aria-pressed={resolvedTheme === "dark"}
+            >
+              <Moon size={18} strokeWidth={1.8} aria-hidden />
+              <span>Dark</span>
+            </button>
+          </div>
         </div>
       </aside>
 
       <main className={styles.main}>
+        <header className={styles.desktopTopbar}>
+          <button
+            className={styles.topbarMenu}
+            onClick={toggleDesktopNavigation}
+            aria-label="Toggle navigation width"
+            title={collapsed ? "Expand navigation" : "Collapse navigation"}
+          >
+            <Menu size={22} strokeWidth={1.8} aria-hidden />
+          </button>
+
+          <div className={styles.topbarActions}>
+            <form
+              className={styles.searchForm}
+              action="/reports"
+              method="get"
+              role="search"
+            >
+              <label className="sr-only" htmlFor="workspace-search">
+                Search reports, lots, and clients
+              </label>
+              <input
+                id="workspace-search"
+                className={styles.searchInput}
+                type="search"
+                name="search"
+                placeholder="Search reports, lots, clients..."
+                autoComplete="off"
+              />
+              <button
+                className={styles.searchButton}
+                type="submit"
+                aria-label="Submit workspace search"
+              >
+                <Search size={19} strokeWidth={1.8} aria-hidden />
+              </button>
+            </form>
+
+            <Link
+              className={styles.topbarIcon}
+              href={user?.isReportApprover ? "/approvals" : "/incoming"}
+              aria-label="Open notifications"
+              title="Notifications"
+            >
+              <Bell size={21} strokeWidth={1.8} aria-hidden />
+            </Link>
+            <a
+              className={styles.topbarIcon}
+              href="mailto:support@assetinsight.com"
+              aria-label="Contact support"
+              title="Help and support"
+            >
+              <CircleHelp size={21} strokeWidth={1.8} aria-hidden />
+            </a>
+            <button
+              className={styles.topbarIcon}
+              onClick={() => void logout()}
+              aria-label="Sign out"
+              title="Sign out"
+              disabled={loggingOut}
+            >
+              <LogOut size={21} strokeWidth={1.8} aria-hidden />
+            </button>
+          </div>
+        </header>
+
         <header className={styles.mobileHeader}>
           <button
             className="app-button app-button--secondary app-button--icon"
@@ -344,6 +431,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className={styles.mobileTitle}>{title}</span>
           </div>
           <div className={styles.mobileActions}>
+            <Link
+              className="app-button app-button--secondary app-button--icon"
+              href="/reports"
+              aria-label="Search reports"
+            >
+              <Search size={18} aria-hidden />
+            </Link>
             <button
               className="app-button app-button--secondary app-button--icon"
               onClick={toggleMode}
@@ -368,9 +462,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onClose={() => setShowDrafts(false)}
           onLoadInput={() => undefined}
         />
-      ) : null}
-      {showOutlook ? (
-        <OutlookDialog onClose={() => setShowOutlook(false)} />
       ) : null}
     </div>
   );
