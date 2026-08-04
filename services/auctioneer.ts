@@ -89,6 +89,7 @@ export type AuctioneerDeliverySummary = {
   contractNo?: string;
   state: AuctioneerDeliveryState;
   canSend?: boolean;
+  canCompleteContract?: boolean;
   destination?: "LottingBoard" | "OpToDoBoard";
   opTaskDescription?: string;
   completeContract?: boolean;
@@ -418,6 +419,12 @@ function normalizeDelivery(value: unknown): AuctioneerDeliverySummary {
         ? raw.canSend
         : typeof delivery.canSend === "boolean"
           ? delivery.canSend
+          : undefined,
+    canCompleteContract:
+      typeof raw.canCompleteContract === "boolean"
+        ? raw.canCompleteContract
+        : typeof delivery.canCompleteContract === "boolean"
+          ? delivery.canCompleteContract
           : undefined,
     destination: delivery.destination ?? raw.destination,
     opTaskDescription:

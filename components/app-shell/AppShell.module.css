@@ -116,7 +116,13 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 59px 20px 20px;
+  scrollbar-width: none;
+}
+
+.navScroll::-webkit-scrollbar {
+  display: none;
 }
 
 .navGroup + .navGroup {
@@ -213,26 +219,31 @@
 }
 
 .footer {
-  min-height: 212px;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 20px;
+  padding: 16px 20px 18px;
   border-top: 1px solid var(--app-border);
 }
 
 .profile {
   min-width: 0;
-  min-height: 56px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 7px 0;
+  padding: 6px 8px;
   border-radius: 8px;
+  transition: background-color 130ms ease;
+}
+
+.profile:hover {
+  background: var(--app-panel);
 }
 
 .profile:hover .profileName {
-  color: var(--app-accent);
+  color: var(--app-text-strong);
 }
 
 .avatar {
@@ -283,25 +294,15 @@
 }
 
 .themeSwitch {
-  position: relative;
   height: 44px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 18px;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 4px;
   border: 1px solid var(--app-border-strong);
-  border-radius: 7px;
-  overflow: hidden;
-  background: var(--app-panel);
-}
-
-.themeSwitch::before {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 18px);
-  left: 0;
-  height: 1px;
-  background: var(--app-border);
-  content: "";
+  border-radius: 8px;
+  background: var(--app-panel-alt);
 }
 
 .themeOption {
@@ -310,27 +311,30 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 10px;
-  border: 0;
-  border-right: 1px solid var(--app-border);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   background: transparent;
   color: var(--app-text-muted);
   font-size: 0.84rem;
   font-weight: 560;
-}
-
-.themeOption:last-child {
-  border-right: 0;
+  line-height: 1;
+  transition:
+    border-color 130ms ease,
+    background-color 130ms ease,
+    color 130ms ease;
 }
 
 .themeOption:hover {
-  background: var(--app-panel-alt);
+  background: color-mix(in srgb, var(--app-panel) 72%, transparent);
   color: var(--app-text);
 }
 
 .themeOption[data-active="true"] {
-  background: var(--app-accent-soft);
+  border-color: var(--app-info-border);
+  background: var(--app-panel);
   color: var(--app-accent);
+  box-shadow: var(--app-shadow-card);
 }
 
 .main {
@@ -498,8 +502,11 @@ button.topbarIcon:disabled {
   padding: 10px;
 }
 
+.shell[data-collapsed="true"] .navGroup + .navGroup {
+  border-top-color: transparent;
+}
+
 .shell[data-collapsed="true"] .footer {
-  min-height: 190px;
   padding: 12px 8px;
 }
 
@@ -509,18 +516,122 @@ button.topbarIcon:disabled {
 }
 
 .shell[data-collapsed="true"] .themeSwitch {
-  height: auto;
+  height: 84px;
   grid-template-columns: 1fr;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .shell[data-collapsed="true"] .themeOption {
-  min-height: 40px;
-  border-right: 0;
-  border-bottom: 1px solid var(--app-border);
+  min-height: 0;
 }
 
-.shell[data-collapsed="true"] .themeOption:last-child {
-  border-bottom: 0;
+@media (min-width: 1024px) and (max-height: 900px) {
+  .brandRow,
+  .shell[data-collapsed="true"] .brandRow {
+    min-height: 72px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .brandImage {
+    width: 148px;
+  }
+
+  .brandSubtitle {
+    display: none;
+  }
+
+  .collapseButton,
+  .shell[data-collapsed="true"] .collapseButton {
+    top: 76px;
+  }
+
+  .navScroll {
+    padding: 45px 16px 8px;
+  }
+
+  .navGroup + .navGroup {
+    margin-top: 8px;
+    padding-top: 10px;
+  }
+
+  .navLabel {
+    margin-bottom: 5px;
+    font-size: 0.68rem;
+  }
+
+  .navList {
+    margin-right: -16px;
+    margin-left: -16px;
+  }
+
+  .navLink {
+    min-height: 40px;
+    gap: 14px;
+    padding: 6px 24px;
+    font-size: 0.88rem;
+  }
+
+  .navIcon {
+    width: 21px;
+    height: 21px;
+  }
+
+  .badge {
+    min-width: 24px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 0.7rem;
+  }
+
+  .footer {
+    padding: 10px 12px;
+  }
+
+  .profile {
+    min-height: 44px;
+    padding: 3px 5px;
+  }
+
+  .avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 0.78rem;
+  }
+
+  .profileName {
+    font-size: 0.8rem;
+  }
+
+  .profileEmail {
+    font-size: 0.66rem;
+  }
+
+  .themeSwitch {
+    height: 40px;
+    margin-top: 8px;
+  }
+
+  .themeOption {
+    gap: 5px;
+    padding: 0 5px;
+    font-size: 0.76rem;
+  }
+
+  .shell[data-collapsed="true"] .navScroll {
+    padding-top: 45px;
+    padding-bottom: 8px;
+  }
+
+  .shell[data-collapsed="true"] .footer {
+    padding: 8px;
+  }
+
+  .shell[data-collapsed="true"] .themeSwitch {
+    height: 76px;
+    margin-top: 8px;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -607,6 +718,10 @@ button.topbarIcon:disabled {
     padding: 10px 26px;
   }
 
+  .shell[data-collapsed="true"] .navGroup + .navGroup {
+    border-top-color: var(--app-border);
+  }
+
   .footer,
   .shell[data-collapsed="true"] .footer {
     min-height: 186px;
@@ -628,13 +743,12 @@ button.topbarIcon:disabled {
   .themeOption,
   .shell[data-collapsed="true"] .themeOption {
     min-height: 0;
-    border-right: 1px solid var(--app-border);
-    border-bottom: 0;
+    border: 1px solid transparent;
   }
 
-  .themeOption:last-child,
-  .shell[data-collapsed="true"] .themeOption:last-child {
-    border-right: 0;
+  .themeOption[data-active="true"],
+  .shell[data-collapsed="true"] .themeOption[data-active="true"] {
+    border-color: var(--app-info-border);
   }
 
   .desktopTopbar {

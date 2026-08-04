@@ -138,6 +138,7 @@ function visibleRefreshInterval() {
 
 export default function IncomingPage() {
   const { user } = useAuthContext();
+  const userId = user?._id || user?.id;
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -158,23 +159,27 @@ export default function IncomingPage() {
     isLoading,
     isValidating,
     mutate,
-  } = useSWR<IncomingData>("auctioneer/incoming", incomingFetcher, {
-    refreshInterval: visibleRefreshInterval,
-    refreshWhenHidden: false,
-    refreshWhenOffline: false,
-    revalidateOnFocus: true,
-  });
+  } = useSWR<IncomingData>(
+    userId ? ["auctioneer/incoming", userId] : null,
+    incomingFetcher,
+    {
+      keepPreviousData: false,
+      refreshInterval: visibleRefreshInterval,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      revalidateOnFocus: true,
+    }
+  );
   const items = data?.items ?? [];
 
   const isMine = useCallback(
     (item: AuctioneerIncomingItem) => {
       if (item.claimedByMe) return true;
-      const userId = user?._id || user?.id;
       if (!userId || !item.claimedBy) return false;
       if (typeof item.claimedBy === "string") return item.claimedBy === userId;
       return (item.claimedBy._id || item.claimedBy.id) === userId;
     },
-    [user?._id, user?.id]
+    [userId]
   );
 
   const selected = useMemo(
@@ -222,9 +227,11 @@ export default function IncomingPage() {
       } else {
         await mutate();
       }
-      void mutateGlobal("auctioneer/navigation-summary");
+      if (userId) {
+        void mutateGlobal(["auctioneer/navigation-summary", userId]);
+      }
     },
-    [mutate, mutateGlobal]
+    [mutate, mutateGlobal, userId]
   );
 
   const openSetup = useCallback(
@@ -346,8 +353,8 @@ export default function IncomingPage() {
             Incoming
           </h1>
           <p className="app-subtitle">
-            Review inbound contracts, claim a workflow, and continue existing
-            work without losing queue context.
+            Review the Auctioneer lots assigned to you, claim a workflow, and
+            continue existing work without losing queue context.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -384,13 +391,15 @@ export default function IncomingPage() {
 
       <section className={`app-surface ${styles.summary}`} aria-label="Queue summary">
         <div className={styles.summaryItem}>
-          Available <span className={styles.summaryValue}>{availableCount}</span>
+          Available batches{" "}
+          <span className={styles.summaryValue}>{availableCount}</span>
         </div>
         <div className={styles.summaryItem}>
           Claimed by you <span className={styles.summaryValue}>{mineCount}</span>
         </div>
         <div className={styles.summaryItem}>
-          Total <span className={styles.summaryValue}>{items.length}</span>
+          Assigned batches{" "}
+          <span className={styles.summaryValue}>{items.length}</span>
         </div>
         <div className={styles.live}>
           <span className={styles.liveDot} aria-hidden />
@@ -402,9 +411,9 @@ export default function IncomingPage() {
         <div className={`app-surface ${styles.tableSurface}`}>
           <div className={styles.tableHeader}>
             <div>
-              <h2 className={styles.tableTitle}>Contract queue</h2>
+              <h2 className={styles.tableTitle}>Assigned contract queue</h2>
               <p className={styles.tableSubtitle}>
-                Select a row to review its claim and report options.
+                Each row contains only the lots assigned to your account.
               </p>
             </div>
           </div>
@@ -418,12 +427,12 @@ export default function IncomingPage() {
                 <h2 className={styles.emptyTitle}>
                   {data?.integrationAvailable === false
                     ? "Incoming is not configured"
-                    : "No incoming contracts"}
+                    : "No assigned lots"}
                 </h2>
                 <p className={styles.emptyCopy}>
                   {data?.integrationAvailable === false
                     ? "Connect or enable Auctioneer in the server configuration to load this queue."
-                    : "There are no pending Auctioneer contract batches right now."}
+                    : "No Auctioneer lots are currently assigned to your account."}
                 </p>
                 <button
                   className="app-button app-button--secondary"
@@ -442,7 +451,7 @@ export default function IncomingPage() {
                     <th>Contract</th>
                     <th>Customer</th>
                     <th>Event</th>
-                    <th>Lots</th>
+                    <th>Assigned lots</th>
                     <th>Status</th>
                     <th aria-label="Actions" />
                   </tr>
@@ -476,7 +485,7 @@ export default function IncomingPage() {
                             {displayDate(item.eventDate)}
                           </div>
                         </td>
-                        <td data-label="Lots">
+                        <td data-label="Assigned lots">
                           {item.lotCount}{" "}
                           <span className={styles.contractMeta}>
                             {item.kind === "scheduleA" ? "Schedule A" : "Unknown"}
@@ -576,9 +585,9 @@ export default function IncomingPage() {
                   <div className={styles.detailItem}>
                     <ListTree className={styles.detailIcon} size={17} aria-hidden />
                     <div>
-                      <dt className={styles.detailLabel}>Incoming scope</dt>
+                      <dt className={styles.detailLabel}>Assigned scope</dt>
                       <dd className={styles.detailValue}>
-                        {selected.lotCount} lots ·{" "}
+                        {selected.lotCount} assigned lots ·{" "}
                         {selected.kind === "scheduleA"
                           ? "Schedule A"
                           : "Unknown lots"}

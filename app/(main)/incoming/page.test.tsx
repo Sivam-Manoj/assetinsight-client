@@ -26,7 +26,11 @@ const mocks = vi.hoisted(() => ({
     _id: "user-1",
     email: "appraiser@example.com",
     username: "Alex Morgan",
-  },
+  } as {
+    _id: string;
+    email: string;
+    username: string;
+  } | null,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -135,20 +139,26 @@ function setupFor(
   };
 }
 
-function renderIncoming() {
-  return render(
+const swrTestConfig = {
+  provider: () => new Map(),
+  dedupingInterval: 0,
+  revalidateOnFocus: false,
+  revalidateOnReconnect: false,
+  shouldRetryOnError: false,
+};
+
+function IncomingHarness() {
+  return (
     <SWRConfig
-      value={{
-        provider: () => new Map(),
-        dedupingInterval: 0,
-        revalidateOnFocus: false,
-        revalidateOnReconnect: false,
-        shouldRetryOnError: false,
-      }}
+      value={swrTestConfig}
     >
       <IncomingPage />
     </SWRConfig>
   );
+}
+
+function renderIncoming() {
+  return render(<IncomingHarness />);
 }
 
 async function selectContract(contractNo: string) {
@@ -172,6 +182,11 @@ describe("Incoming", () => {
     mocks.getSetup.mockReset();
     mocks.releaseClaim.mockReset();
     mocks.routerPush.mockReset();
+    mocks.authUser = {
+      _id: "user-1",
+      email: "appraiser@example.com",
+      username: "Alex Morgan",
+    };
 
     mocks.getIncoming.mockResolvedValue([availableItem]);
     mocks.getStatus.mockResolvedValue({
@@ -210,7 +225,8 @@ describe("Incoming", () => {
       resolveIncoming([]);
       resolveStatus({ enabled: true, configured: true });
     });
-    expect(await screen.findByText("No incoming contracts")).toBeInTheDocument();
+    expect(await screen.findByText("No assigned lots")).toBeInTheDocument();
+    expect(mocks.getIncoming).toHaveBeenCalledWith();
   });
 
   it("renders an empty queue without hiding the workspace", async () => {
@@ -218,8 +234,62 @@ describe("Incoming", () => {
     renderIncoming();
 
     expect(await screen.findByRole("heading", { name: "Incoming" })).toBeInTheDocument();
-    expect(screen.getByText("No incoming contracts")).toBeInTheDocument();
+    expect(screen.getByText("No assigned lots")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No Auctioneer lots are currently assigned to your account."
+      )
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check again" })).toBeEnabled();
+  });
+
+  it("does not load assigned work until an authenticated user ID exists", async () => {
+    mocks.authUser = null;
+
+    renderIncoming();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.getIncoming).not.toHaveBeenCalled();
+    expect(mocks.getStatus).not.toHaveBeenCalled();
+  });
+
+  it("drops the previous user's rows while the next user's queue loads", async () => {
+    let resolveSecondUser!: (items: AuctioneerIncomingItem[]) => void;
+    mocks.getIncoming
+      .mockResolvedValueOnce([availableItem])
+      .mockReturnValueOnce(
+        new Promise<AuctioneerIncomingItem[]>((resolve) => {
+          resolveSecondUser = resolve;
+        })
+      );
+
+    const rendered = renderIncoming();
+    expect(
+      await screen.findByRole("button", { name: "Review CV-100" })
+    ).toBeVisible();
+
+    mocks.authUser = {
+      _id: "user-2",
+      email: "second@example.com",
+      username: "Second User",
+    };
+    rendered.rerender(<IncomingHarness />);
+
+    await waitFor(() => expect(mocks.getIncoming).toHaveBeenCalledTimes(2));
+    expect(
+      screen.queryByRole("button", { name: "Review CV-100" })
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Loading incoming contracts/)).toBeInTheDocument();
+    expect(
+      mocks.getIncoming.mock.calls.every((args) => args.length === 0)
+    ).toBe(true);
+
+    await act(async () => {
+      resolveSecondUser([]);
+    });
+    expect(await screen.findByText("No assigned lots")).toBeInTheDocument();
   });
 
   it.each([

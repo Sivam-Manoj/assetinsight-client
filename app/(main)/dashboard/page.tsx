@@ -240,6 +240,7 @@ function Metric({
 
 export default function DashboardPage() {
   const { user } = useAuthContext();
+  const userId = user?._id || user?.id;
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
   const [greetingLabel] = useState(greeting);
@@ -254,8 +255,9 @@ export default function DashboardPage() {
     isLoading: statsLoading,
     mutate: mutateStats,
   } = useSWR<ReportStats>(
-    "dashboard/report-stats",
-    ReportsService.getReportStats
+    userId ? ["dashboard/report-stats", userId] : null,
+    ReportsService.getReportStats,
+    { keepPreviousData: false }
   );
   const {
     data: allReports,
@@ -263,17 +265,19 @@ export default function DashboardPage() {
     isLoading: reportsLoading,
     mutate: mutateReports,
   } = useSWR<PdfReport[]>(
-    "dashboard/recent-reports",
-    ReportsService.getMyReports
+    userId ? ["dashboard/recent-reports", userId] : null,
+    ReportsService.getMyReports,
+    { keepPreviousData: false }
   );
   const {
     data: incomingSummary,
     error: incomingError,
     isLoading: incomingLoading,
   } = useSWR<IncomingSummary>(
-    "auctioneer/navigation-summary",
+    userId ? ["auctioneer/navigation-summary", userId] : null,
     navSummaryFetcher,
     {
+      keepPreviousData: false,
       refreshInterval: visibleRefreshInterval,
       refreshWhenHidden: false,
       refreshWhenOffline: false,
@@ -415,7 +419,7 @@ export default function DashboardPage() {
                   : incomingError
                     ? "Queue unavailable"
                     : incomingSummary?.showBadge
-                      ? `${incomingCount} available`
+                      ? `${incomingCount} assigned`
                       : "Integration unavailable"}
               </strong>
             </div>

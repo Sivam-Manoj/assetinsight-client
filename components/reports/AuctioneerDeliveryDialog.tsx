@@ -102,7 +102,10 @@ export default function AuctioneerDeliveryDialog({
     if (!open || !delivery) return;
     setDestination(delivery.destination || "LottingBoard");
     setOpTaskDescription(delivery.opTaskDescription || "");
-    setCompleteContract(Boolean(delivery.completeContract));
+    setCompleteContract(
+      delivery.canCompleteContract !== false &&
+        Boolean(delivery.completeContract)
+    );
     setExternalLotId("");
     setConfirmNotCreated(false);
     setError(null);
@@ -126,7 +129,8 @@ export default function AuctioneerDeliveryDialog({
         ...(destination === "OpToDoBoard"
           ? { opTaskDescription: opTaskDescription.trim() }
           : {}),
-        completeContract,
+        completeContract:
+          delivery.canCompleteContract !== false && completeContract,
       });
       onUpdated(updated);
       toast.success(
@@ -354,31 +358,41 @@ export default function AuctioneerDeliveryDialog({
                   </span>
                 </label>
               ) : null}
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  color: "var(--app-text)",
-                  fontSize: 14,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={completeContract}
-                  onChange={(event) => setCompleteContract(event.target.checked)}
-                  disabled={busy || terminal || retrying}
+              {delivery?.canCompleteContract === false ? (
+                <Notice>
+                  This delivery covers only your assigned lots. The overall
+                  contract may remain open for other assigned users.
+                </Notice>
+              ) : (
+                <label
                   style={{
-                    width: 18,
-                    height: 18,
-                    marginTop: 1,
-                    accentColor: "var(--app-accent)",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    color: "var(--app-text)",
+                    fontSize: 14,
                   }}
-                />
-                <span>
-                  Mark the contract task complete after every linked lot succeeds
-                </span>
-              </label>
+                >
+                  <input
+                    type="checkbox"
+                    checked={completeContract}
+                    onChange={(event) =>
+                      setCompleteContract(event.target.checked)
+                    }
+                    disabled={busy || terminal || retrying}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      marginTop: 1,
+                      accentColor: "var(--app-accent)",
+                    }}
+                  />
+                  <span>
+                    Mark the contract task complete after every linked lot
+                    succeeds
+                  </span>
+                </label>
+              )}
             </>
           )}
         </div>

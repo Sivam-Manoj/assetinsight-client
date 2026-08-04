@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   FileArchive,
   FileImage,
+  FileSearch,
   FileSpreadsheet,
   FileText,
   Merge,
@@ -441,6 +442,9 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
+            report.status === "preview" ||
+            report.status === "declined" ||
+            (report as any).workflow_stage === "preview_ready" ||
             (report as any).status === "error" ||
             (report as any).generation_state === "error" ||
             isFileGenerationActive(report)
@@ -461,6 +465,9 @@ export default function ReportsPage() {
           (report) =>
             report.status === "approved" ||
             report.status === "pending_approval" ||
+            report.status === "preview" ||
+            report.status === "declined" ||
+            (report as any).workflow_stage === "preview_ready" ||
             report.status === "error" ||
             (report as any).generation_state === "error" ||
             isFileGenerationActive(report)
@@ -1130,18 +1137,9 @@ export default function ReportsPage() {
     }
     if (isPreviewReady && !hasDownloads) {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--app-accent)]">
-            Preview ready for review
-          </span>
-          <button
-            type="button"
-            className="rounded-md border border-[var(--app-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
-            onClick={() => router.push("/previews")}
-          >
-            Open preview
-          </button>
-        </div>
+        <span className="text-xs font-semibold text-[var(--app-accent)]">
+          Preview ready for review
+        </span>
       );
     }
     if (showGeneratingOnly) {
@@ -1221,6 +1219,21 @@ export default function ReportsPage() {
   };
 
   const renderReportActions = (group: ReportGroup) => {
+    const normalizedType = String(group.type || "")
+      .toLowerCase()
+      .replace(/[\s_-]/g, "");
+    const previewReportType =
+      normalizedType === "asset"
+        ? "asset"
+        : normalizedType.includes("lot")
+          ? "lotListing"
+          : null;
+    const previewTitle = group.contract_no
+      ? `${typeLabel(group.type)} · ${group.contract_no}`
+      : group.address || group.filename || group.key;
+    const previewPreparing =
+      group.workflowStage === "preparing_preview" ||
+      (!group.workflowStage && group.reportStatus === "processing");
     const delivery = group.auctioneerDelivery;
     const deliveryDisabled = Boolean(
       delivery &&
@@ -1252,6 +1265,27 @@ export default function ReportsPage() {
 
     return (
       <div className="flex flex-wrap items-center gap-1.5">
+        {previewReportType ? (
+          <button
+            type="button"
+            aria-label={`Preview ${typeLabel(group.type)} report: ${previewTitle}`}
+            title={
+              previewPreparing
+                ? "Preview is still being prepared"
+                : `Preview ${typeLabel(group.type)} report`
+            }
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-wait disabled:opacity-50"
+            onClick={() =>
+              router.push(
+                `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
+              )
+            }
+            disabled={previewPreparing}
+          >
+            <FileSearch className="size-3.5" />
+            Preview
+          </button>
+        ) : null}
         {delivery ? (
           <button
             type="button"

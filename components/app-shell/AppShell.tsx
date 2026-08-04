@@ -95,15 +95,17 @@ function NavLink({
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout, loggingOut } = useAuthContext();
+  const userId = user?._id || user?.id;
   const { resolvedTheme, setMode, toggleMode } = useColorMode();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
 
   const { data: summary } = useSWR(
-    "auctioneer/navigation-summary",
+    userId ? ["auctioneer/navigation-summary", userId] : null,
     navSummaryFetcher,
     {
+      keepPreviousData: false,
       refreshInterval: visibleRefreshInterval,
       refreshWhenHidden: false,
       refreshWhenOffline: false,
@@ -325,8 +327,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               aria-hidden
             />
           </Link>
-          <div className={styles.themeSwitch} aria-label="Color theme">
+          <div
+            className={styles.themeSwitch}
+            role="group"
+            aria-label="Color theme"
+          >
             <button
+              type="button"
               className={styles.themeOption}
               data-active={resolvedTheme === "light"}
               onClick={() => setMode("light")}
@@ -337,11 +344,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span>Light</span>
             </button>
             <button
+              type="button"
               className={styles.themeOption}
               data-active={resolvedTheme === "dark"}
-              onClick={() => {
-                if (resolvedTheme !== "dark") toggleMode();
-              }}
+              onClick={() => setMode("dark")}
               aria-label="Dark theme"
               aria-pressed={resolvedTheme === "dark"}
             >

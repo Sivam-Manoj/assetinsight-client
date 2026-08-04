@@ -126,12 +126,46 @@ describe("AppShell", () => {
   it("renders Incoming for a standard user and marks it active", () => {
     render(<AppShell>Queue content</AppShell>);
 
+    expect(mocks.swr).toHaveBeenCalledWith(
+      ["auctioneer/navigation-summary", "user-1"],
+      expect.any(Function),
+      expect.objectContaining({ keepPreviousData: false })
+    );
     const incoming = screen.getByRole("link", { name: /Incoming/ });
     expect(incoming).toHaveAttribute("href", "/incoming");
     expect(incoming).toHaveAttribute("aria-current", "page");
     expect(incoming).toHaveTextContent("4");
     expect(screen.queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Releases" })).not.toBeInTheDocument();
+  });
+
+  it("pauses the user-scoped summary request until identity is available", () => {
+    const signedOut = authValue();
+    signedOut.user = null;
+    vi.mocked(useAuthContext).mockReturnValue(signedOut);
+
+    render(<AppShell>Queue content</AppShell>);
+
+    expect(mocks.swr).toHaveBeenCalledWith(
+      null,
+      expect.any(Function),
+      expect.objectContaining({ keepPreviousData: false })
+    );
+  });
+
+  it("switches the navigation summary cache key with the authenticated user", () => {
+    const rendered = render(<AppShell>First user queue</AppShell>);
+
+    const secondUser = authValue();
+    if (secondUser.user) secondUser.user._id = "user-2";
+    vi.mocked(useAuthContext).mockReturnValue(secondUser);
+    rendered.rerender(<AppShell>Second user queue</AppShell>);
+
+    expect(mocks.swr).toHaveBeenLastCalledWith(
+      ["auctioneer/navigation-summary", "user-2"],
+      expect.any(Function),
+      expect.objectContaining({ keepPreviousData: false })
+    );
   });
 
   it("renders each role-gated destination only for the matching role", () => {
@@ -304,7 +338,40 @@ describe("AppShell", () => {
     expect(shell).toHaveAttribute("data-mobile-open", "false");
   });
 
-  it("exposes theme controls in desktop and mobile shell chrome", () => {
+  it.each([
+    ["light", "true", "false", "Use dark theme"],
+    ["dark", "false", "true", "Use light theme"],
+  ] as const)(
+    "exposes a polished pressed-state theme group in %s mode",
+    (resolvedTheme, lightPressed, darkPressed, mobileLabel) => {
+      vi.mocked(useColorMode).mockReturnValue({
+        mode: resolvedTheme,
+        resolvedTheme,
+        setMode,
+        toggleMode,
+      });
+
+      render(<AppShell>Workspace</AppShell>);
+
+      const themeGroup = screen.getByRole("group", { name: "Color theme" });
+      const light = within(themeGroup).getByRole("button", {
+        name: /^Light theme$/,
+      });
+      const dark = within(themeGroup).getByRole("button", {
+        name: /^Dark theme$/,
+      });
+
+      expect(light).toHaveAttribute("aria-pressed", lightPressed);
+      expect(light).toHaveAttribute("data-active", lightPressed);
+      expect(dark).toHaveAttribute("aria-pressed", darkPressed);
+      expect(dark).toHaveAttribute("data-active", darkPressed);
+      expect(
+        screen.getByRole("button", { name: mobileLabel })
+      ).toBeInTheDocument();
+    }
+  );
+
+  it("switches desktop and mobile themes through their intended controls", () => {
     render(<AppShell>Workspace</AppShell>);
 
     fireEvent.click(
@@ -315,10 +382,11 @@ describe("AppShell", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /^Dark theme$/ })
     );
-    expect(toggleMode).toHaveBeenCalledTimes(1);
+    expect(setMode).toHaveBeenCalledWith("dark");
 
-    expect(
+    fireEvent.click(
       screen.getByRole("button", { name: /^Use dark theme$/ })
-    ).toBeInTheDocument();
+    );
+    expect(toggleMode).toHaveBeenCalledTimes(1);
   });
 });

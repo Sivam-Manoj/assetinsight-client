@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 type ThemeMode = "light" | "dark";
 
@@ -38,10 +38,12 @@ async function mockAuthenticatedApi(
     approver = true,
     releaseManager = true,
     incomingItems = [incomingItem],
+    onIncomingRequest,
   }: {
     approver?: boolean;
     releaseManager?: boolean;
     incomingItems?: Array<Record<string, unknown>>;
+    onIncomingRequest?: (url: URL) => void;
   } = {}
 ) {
   await page.context().addCookies([
@@ -114,13 +116,54 @@ async function mockAuthenticatedApi(
             createdAt: "2026-08-02T09:00:00.000Z",
             updatedAt: "2026-08-02T09:30:00.000Z",
           },
+          {
+            _id: "e2e-asset-preview",
+            user: "e2e-user",
+            grouping_mode: "lot",
+            imageUrls: [],
+            status: "processing",
+            workflow_stage: "preview_ready",
+            generation_state: "queued",
+            job_status: "processing",
+            files_generating: false,
+            lots: [{ lot_number: "21" }],
+            client_name: "E2E Asset Preview",
+            contract_no: "CV-E2E-ASSET-PREVIEW",
+            createdAt: "2026-08-03T08:00:00.000Z",
+            updatedAt: "2026-08-03T08:30:00.000Z",
+          },
         ],
       };
-    } else if (
-      path.endsWith("/api/real-estate") ||
-      path.endsWith("/api/lot-listing")
-    ) {
+    } else if (path.endsWith("/api/real-estate")) {
       body = { data: [] };
+    } else if (path.endsWith("/api/lot-listing")) {
+      body = {
+        data: [
+          {
+            _id: "e2e-lot-preview",
+            user: "e2e-user",
+            status: "processing",
+            workflow_stage: "preview_ready",
+            generation_state: "processing",
+            job_status: "queued",
+            files_generating: false,
+            details: {
+              contract_no: "CV-E2E-LOT-PREVIEW",
+              currency: "GBP",
+            },
+            lots: [
+              {
+                lot_id: "e2e-lot-1",
+                lot_number: "1",
+                image_indexes: [],
+              },
+            ],
+            imageUrls: [],
+            createdAt: "2026-08-03T09:00:00.000Z",
+            updatedAt: "2026-08-03T09:30:00.000Z",
+          },
+        ],
+      };
     } else if (path.endsWith("/api/auctioneer/status")) {
       body = {
         enabled: true,
@@ -134,6 +177,7 @@ async function mockAuthenticatedApi(
         ).length,
       };
     } else if (path.endsWith("/api/auctioneer/incoming")) {
+      onIncomingRequest?.(url);
       body = { data: { items: incomingItems } };
     } else if (
       path.includes("/api/auctioneer/incoming/") &&
@@ -198,6 +242,49 @@ async function expectNoHorizontalOverflow(page: Page) {
   ).toBeLessThanOrEqual(metrics.viewportWidth + 1);
 }
 
+async function expectElementContained(
+  element: Locator,
+  {
+    label,
+    requireVerticalFit,
+  }: {
+    label: string;
+    requireVerticalFit: boolean;
+  }
+) {
+  const metrics = await element.evaluate((node) => {
+    const target = node as HTMLElement;
+    const style = window.getComputedStyle(target);
+    return {
+      clientHeight: target.clientHeight,
+      clientWidth: target.clientWidth,
+      offsetWidth: target.offsetWidth,
+      scrollHeight: target.scrollHeight,
+      scrollWidth: target.scrollWidth,
+      overflowX: style.overflowX,
+      overflowY: style.overflowY,
+      scrollbarWidth: Math.max(0, target.offsetWidth - target.clientWidth),
+    };
+  });
+
+  expect(
+    metrics.scrollWidth,
+    `${label} overflowed horizontally: ${JSON.stringify(metrics)}`
+  ).toBeLessThanOrEqual(metrics.clientWidth + 1);
+  expect(
+    metrics.scrollbarWidth,
+    `${label} exposed a visible scrollbar gutter: ${JSON.stringify(metrics)}`
+  ).toBeLessThanOrEqual(2);
+  if (requireVerticalFit) {
+    expect(
+      metrics.scrollHeight,
+      `${label} required vertical scrolling at a supported desktop height: ${JSON.stringify(metrics)}`
+    ).toBeLessThanOrEqual(metrics.clientHeight + 1);
+  } else {
+    expect(["auto", "scroll"]).toContain(metrics.overflowY);
+  }
+}
+
 async function expectNoSeriousAccessibilityViolations(page: Page) {
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -239,7 +326,10 @@ for (const theme of ["light", "dark"] as const) {
     const signIn = page.getByRole("link", { name: "Sign in" }).first();
     await signIn.focus();
     await expect(signIn).toBeFocused();
-    await signIn.press("Enter");
+    await Promise.all([
+      page.waitForURL(/\/login$/, { waitUntil: "domcontentloaded" }),
+      signIn.press("Enter"),
+    ]);
 
     await expect(page).toHaveURL(/\/login$/);
     await expect(
@@ -331,6 +421,34 @@ test("Incoming remains visible for a standard authenticated user", async ({
   await expect(page.getByRole("link", { name: "Releases" })).toHaveCount(0);
 });
 
+test("Incoming keeps user assignment server-side and explains an empty queue", async ({
+  page,
+}) => {
+  const incomingRequestUrls: URL[] = [];
+
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page, {
+    incomingItems: [],
+    onIncomingRequest: (url) => incomingRequestUrls.push(url),
+  });
+  await page.goto("/incoming");
+
+  await expect(
+    page.getByRole("heading", { name: "No assigned lots" })
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "No Auctioneer lots are currently assigned to your account."
+    )
+  ).toBeVisible();
+  await expect
+    .poll(() => incomingRequestUrls.length)
+    .toBeGreaterThan(0);
+  expect(
+    incomingRequestUrls.every((url) => !url.searchParams.has("userId"))
+  ).toBe(true);
+});
+
 test("enterprise shell landmarks and My Reports stay responsive", async ({
   page,
 }, testInfo) => {
@@ -342,6 +460,18 @@ test("enterprise shell landmarks and My Reports stay responsive", async ({
   if (isMobile) {
     await expectNoHorizontalOverflow(page);
     await page.getByRole("button", { name: "Open navigation" }).click();
+    const drawer = page.getByRole("complementary", {
+      name: "Primary navigation",
+    });
+    await expect(drawer).toBeVisible();
+    const drawerNavigation = drawer
+      .getByText("Workspace", { exact: true })
+      .locator("xpath=../..");
+    await expectElementContained(drawerNavigation, {
+      label: "Mobile navigation drawer",
+      requireVerticalFit: false,
+    });
+    await expectNoHorizontalOverflow(page);
   } else {
     const sidebar = page.getByRole("complementary", {
       name: "Primary navigation",
@@ -382,11 +512,71 @@ test("enterprise shell landmarks and My Reports stay responsive", async ({
   const thumbnail = page.getByRole("img", {
     name: /Preview image for Asset.*CV-E2E-REPORT/i,
   });
+  if ((await thumbnail.count()) === 0) {
+    const deferredMobileCard = page
+      .locator("main li")
+      .filter({ hasText: "Asset · CV-E2E-REPORT" });
+    await expect(deferredMobileCard).toHaveCount(1);
+    await deferredMobileCard.scrollIntoViewIfNeeded();
+  }
   await thumbnail.scrollIntoViewIfNeeded();
   await expect(thumbnail).toBeVisible();
   await expect(thumbnail).toHaveAttribute("loading", "lazy");
   await expect(thumbnail).toHaveAttribute("decoding", "async");
   await expect(thumbnail).toHaveAttribute("fetchpriority", "low");
+  await expectNoHorizontalOverflow(page);
+});
+
+test("desktop sidebar fits without a visible scrollbar at 1024x768", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+  await page.goto("/dashboard");
+
+  const sidebar = page.getByRole("complementary", {
+    name: "Primary navigation",
+  });
+  await expect(sidebar).toBeVisible();
+  const navigation = sidebar
+    .getByText("Workspace", { exact: true })
+    .locator("xpath=../..");
+  await expectElementContained(navigation, {
+    label: "Desktop sidebar navigation",
+    requireVerticalFit: true,
+  });
+
+  const themeGroup = sidebar.getByRole("group", { name: "Color theme" });
+  await expect(themeGroup).toBeVisible();
+  await expect(
+    themeGroup.getByRole("button", { name: "Light theme" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    themeGroup.getByRole("button", { name: "Dark theme" })
+  ).toHaveAttribute("aria-pressed", "false");
+  await expectNoHorizontalOverflow(page);
+});
+
+test("mobile preview actions remain visible without page overflow", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+  await page.goto("/previews");
+
+  await expect(
+    page.getByRole("button", {
+      name: "Preview Asset report: E2E Asset Preview",
+    })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Preview Lot Listing report: CV-E2E-LOT-PREVIEW",
+    })
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

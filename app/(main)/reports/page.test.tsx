@@ -1,4 +1,5 @@
 import {
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -6,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetReport } from "@/services/assets";
+import type { LotListing } from "@/services/lotListing";
 import ReportsPage from "./page";
 
 const mocks = vi.hoisted(() => ({
@@ -120,6 +122,42 @@ const reportWithoutThumbnail: AssetReport = {
   },
 };
 
+const previewReadyAsset: AssetReport = {
+  ...reportWithThumbnail,
+  _id: "asset-preview-ready",
+  status: "processing",
+  workflow_stage: "preview_ready",
+  generation_state: "queued",
+  files_generating: false,
+  client_name: "Preview Asset Client",
+  contract_no: "CV-ASSET-PREVIEW",
+  preview_files: undefined,
+};
+
+const previewReadyLotListing: LotListing = {
+  _id: "lot-preview-ready",
+  user: "user-1",
+  status: "processing",
+  workflow_stage: "preview_ready",
+  generation_state: "processing",
+  files_generating: false,
+  details: {
+    contract_no: "CV-LOT-PREVIEW",
+    currency: "GBP",
+  },
+  lots: [
+    {
+      lot_id: "lot-1",
+      lot_number: "1",
+      image_indexes: [],
+      estimated_value: "18000",
+    },
+  ],
+  imageUrls: [],
+  createdAt: "2026-08-02T10:00:00.000Z",
+  updatedAt: "2026-08-02T10:30:00.000Z",
+};
+
 class ImmediatelyIntersectingObserver {
   readonly root = null;
   readonly rootMargin = "320px 0px";
@@ -219,5 +257,35 @@ describe("My Reports thumbnails", () => {
         name: /Preview image for Asset.*CV-NO-IMAGE/i,
       })
     ).not.toBeInTheDocument();
+  });
+
+  it("offers direct, report-specific preview actions for Asset and Lot Listing", async () => {
+    mocks.getAssetReports.mockResolvedValue({
+      message: "ok",
+      data: [previewReadyAsset],
+    });
+    mocks.getLotListings.mockResolvedValue({
+      data: [previewReadyLotListing],
+    });
+    render(<ReportsPage />);
+
+    const assetActions = await screen.findAllByRole("button", {
+      name: "Preview Asset report: Asset · CV-ASSET-PREVIEW",
+    });
+    const lotActions = await screen.findAllByRole("button", {
+      name: "Preview Lot Listing report: Lot Listing · CV-LOT-PREVIEW",
+    });
+    expect(assetActions.length).toBeGreaterThan(0);
+    expect(lotActions.length).toBeGreaterThan(0);
+
+    fireEvent.click(assetActions[0]);
+    expect(mocks.routerPush).toHaveBeenLastCalledWith(
+      "/previews?reportId=asset-preview-ready&reportType=asset"
+    );
+
+    fireEvent.click(lotActions[0]);
+    expect(mocks.routerPush).toHaveBeenLastCalledWith(
+      "/previews?reportId=lot-preview-ready&reportType=lotListing"
+    );
   });
 });

@@ -8,7 +8,6 @@ import {
   Merge,
   Pencil,
   RefreshCw,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -66,12 +65,50 @@ const WORKFLOW_LABELS: Record<string, string> = {
 
 function isWorkflowActive(report: any): boolean {
   if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
+  if (
+    ["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error"].includes(
+      report?.workflow_stage
+    )
+  ) {
+    return false;
+  }
   return (
     report?.generation_state === "queued" ||
     report?.generation_state === "processing" ||
     report?.job_status === "queued" ||
     report?.job_status === "processing"
   );
+}
+
+function isSubmittedPreview(report: CombinedReport): boolean {
+  return Boolean(
+    (report as any).preview_submitted_at ||
+      (report as any).approval_requested_at ||
+      ["pending_approval", "approved"].includes(String(report.status)) ||
+      ["pending_approval", "approved"].includes(
+        String((report as any).generation_target_status || "")
+      )
+  );
+}
+
+function hasOpenablePreview(report: CombinedReport): boolean {
+  const status = String(report.status || "");
+  const stage = String((report as any).workflow_stage || "");
+
+  if (stage === "preparing_preview") return false;
+  if (["preview", "declined", "pending_approval", "approved"].includes(status)) {
+    return true;
+  }
+  if (stage === "preview_ready") return true;
+  if (
+    ["generating_files", "awaiting_approval", "awaiting_release", "ready"].includes(
+      stage
+    )
+  ) {
+    return isSubmittedPreview(report);
+  }
+  if (stage === "error") return isSubmittedPreview(report);
+  return false;
 }
 
 function workflowBadgeStatus(report: any) {
@@ -162,6 +199,7 @@ export default function PreviewsPage() {
   const [deleteTarget, setDeleteTarget] = useState<CombinedReport | null>(null);
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
   const loadingReportsRef = useRef(false);
+  const deepLinkHandledRef = useRef(false);
 
   const loadReports = useCallback(async (
     options: { showLoading?: boolean; silent?: boolean; successToast?: boolean } = {}
@@ -329,6 +367,36 @@ export default function PreviewsPage() {
     }
   };
 
+  useEffect(() => {
+    if (loading || deepLinkHandledRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const reportId = params.get("reportId")?.trim();
+    const requestedType = params.get("reportType")?.trim();
+    if (!reportId) {
+      deepLinkHandledRef.current = true;
+      return;
+    }
+
+    const matchesTarget = (report: CombinedReport) =>
+      String(report._id) === reportId &&
+      (!requestedType || report.reportType === requestedType);
+    const submittedReport = submittedReports.find(matchesTarget);
+    const report = submittedReport || newReports.find(matchesTarget);
+    if (!report) {
+      deepLinkHandledRef.current = true;
+      return;
+    }
+    if (!hasOpenablePreview(report)) return;
+
+    deepLinkHandledRef.current = true;
+    setActiveTab(submittedReport ? "submitted" : "new");
+    handleOpenPreview(
+      report,
+      Boolean(submittedReport) || isSubmittedPreview(report)
+    );
+  }, [loading, newReports, submittedReports]);
+
   const handleModalClose = () => {
     setPreviewModalOpen(false);
     setRealEstateModalOpen(false);
@@ -446,13 +514,10 @@ export default function PreviewsPage() {
   }
 
   return (
-    <main className="w-full min-w-0 space-y-6">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-[42px] lg:py-[34px]">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-accent)]">
-            Review workspace
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
             Report previews
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-[var(--app-text-muted)]">
@@ -473,53 +538,32 @@ export default function PreviewsPage() {
 
       <section
         aria-label="Preview summary"
-        className="grid grid-cols-2 gap-3 xl:grid-cols-4"
+        className="grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] xl:grid-cols-4"
       >
         {[
-          {
-            label: "New",
-            value: summary.newCount,
-            tone: "text-[var(--app-accent)] bg-[var(--app-accent-soft)]",
-          },
+          { label: "New", value: summary.newCount },
           {
             label: "Pending approval",
             value: summary.pendingCount,
-            tone: "text-[var(--app-warning)] bg-[var(--app-warning-soft)]",
           },
-          {
-            label: "Approved",
-            value: summary.approvedCount,
-            tone: "text-[var(--app-success)] bg-[var(--app-success-soft)]",
-          },
-          {
-            label: "Declined",
-            value: summary.declinedCount,
-            tone: "text-[var(--app-danger)] bg-[var(--app-danger-soft)]",
-          },
+          { label: "Approved", value: summary.approvedCount },
+          { label: "Declined", value: summary.declinedCount },
         ].map((item) => (
-          <article
+          <div
             key={item.label}
-            className="flex items-center justify-between rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+            className="min-w-0 border-b border-[var(--app-border)] px-4 py-4 last:border-b-0 [&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
           >
-            <div>
-              <p className="text-xs font-semibold text-[var(--app-text-muted)] sm:text-sm">
-                {item.label}
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--app-text)]">
-                {item.value}
-              </p>
-            </div>
-            <span
-              className={`grid size-9 place-items-center rounded-lg sm:size-10 ${item.tone}`}
-              aria-hidden="true"
-            >
-              <Sparkles className="size-4" />
-            </span>
-          </article>
+            <p className="text-xs font-semibold text-[var(--app-text-muted)] sm:text-sm">
+              {item.label}
+            </p>
+            <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-[var(--app-text)]">
+              {item.value}
+            </p>
+          </div>
         ))}
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]">
+      <section className="overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)]">
         <div className="border-b border-[var(--app-border)] px-4 pt-4 sm:px-5">
           <h2 className="font-semibold text-[var(--app-text)]">Preview queue</h2>
           <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
@@ -624,9 +668,19 @@ export default function PreviewsPage() {
                       0
                   )
                 );
+                const hasPersistentPreviewAction =
+                  (report.reportType === "asset" ||
+                    report.reportType === "lotListing") &&
+                  hasOpenablePreview(report);
+                const previewIsSubmitted =
+                  activeTab === "submitted" || isSubmittedPreview(report);
+                const previewAccessibleName = `Preview ${info.typeLabel} report: ${info.title}`;
 
                 return (
-                  <li key={report._id} className="px-4 py-5 sm:px-5">
+                  <li
+                    key={report._id}
+                    className="px-4 py-5 [content-visibility:auto] [contain-intrinsic-size:auto_228px] sm:px-5"
+                  >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
@@ -666,7 +720,23 @@ export default function PreviewsPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-2 lg:max-w-[520px] lg:justify-end">
-                        {report.status === "preview" && !jobActive ? (
+                        {hasPersistentPreviewAction ? (
+                          <button
+                            type="button"
+                            aria-label={previewAccessibleName}
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-[var(--app-accent)] px-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--app-accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
+                            onClick={() =>
+                              handleOpenPreview(report, previewIsSubmitted)
+                            }
+                          >
+                            <FileSearch className="size-3.5" />
+                            Preview
+                          </button>
+                        ) : null}
+
+                        {report.reportType === "realEstate" &&
+                        report.status === "preview" &&
+                        !jobActive ? (
                           <button
                             type="button"
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
@@ -677,7 +747,8 @@ export default function PreviewsPage() {
                           </button>
                         ) : null}
 
-                        {report.status === "declined" ? (
+                        {report.reportType === "realEstate" &&
+                        report.status === "declined" ? (
                           <button
                             type="button"
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
@@ -693,14 +764,16 @@ export default function PreviewsPage() {
                           jobActive) &&
                         !jobActive ? (
                           <>
-                            <button
-                              type="button"
-                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
-                              onClick={() => handleOpenPreview(report, true)}
-                            >
-                              <Pencil className="size-3.5" />
-                              Edit
-                            </button>
+                            {report.reportType === "realEstate" ? (
+                              <button
+                                type="button"
+                                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                                onClick={() => handleOpenPreview(report, true)}
+                              >
+                                <Pencil className="size-3.5" />
+                                Edit
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
@@ -760,7 +833,7 @@ export default function PreviewsPage() {
 
                         <button
                           type="button"
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-danger-border)] px-3 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)]"
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-3.5 text-sm font-semibold text-[var(--app-text-muted)] transition-colors hover:border-[var(--app-danger-border)] hover:bg-[var(--app-danger-soft)] hover:text-[var(--app-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-danger)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
                           onClick={() => setDeleteTarget(report)}
                         >
                           <Trash2 className="size-3.5" />
