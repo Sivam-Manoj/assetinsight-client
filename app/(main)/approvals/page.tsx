@@ -265,7 +265,7 @@ export default function AssignedApprovalsPage() {
                   ) : null}
                   <button
                     type="button"
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90 disabled:opacity-50"
                     disabled={busyId === item._id}
                     onClick={() => void approve(item)}
                   >

@@ -210,7 +210,8 @@ describe("My Reports thumbnails", () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(mocks.getAssetReports).toHaveBeenCalledTimes(1));
 
-    const accessibleName = /Preview image for Asset.*CV-THUMB-100/i;
+    const accessibleName =
+      /Preview image for Asset Report CV-THUMB-100 — Northfield Plant Ltd/i;
     const mobileList = screen.getByRole("list");
     const desktopTable = screen.getByRole("table", {
       name: "Generated reports",
@@ -230,7 +231,7 @@ describe("My Reports thumbnails", () => {
     render(<ReportsPage />);
 
     const thumbnails = await screen.findAllByRole("img", {
-      name: /Preview image for Asset.*CV-THUMB-100/i,
+      name: /Preview image for Asset Report CV-THUMB-100 — Northfield Plant Ltd/i,
     });
 
     expect(thumbnails.length).toBeGreaterThan(0);
@@ -248,15 +249,27 @@ describe("My Reports thumbnails", () => {
     expect(
       (
         await screen.findAllByLabelText(
-          /No preview image available for Asset.*CV-NO-IMAGE/i
+          /No preview image available for Asset Report CV-NO-IMAGE — No Image Client/i
         )
       ).length
     ).toBeGreaterThan(0);
     expect(
       screen.queryByRole("img", {
-        name: /Preview image for Asset.*CV-NO-IMAGE/i,
+        name: /Preview image for Asset Report CV-NO-IMAGE — No Image Client/i,
       })
     ).not.toBeInTheDocument();
+  });
+
+  it("exposes the responsive filter disclosure without hiding the desktop controls", async () => {
+    render(<ReportsPage />);
+
+    await screen.findByRole("heading", { name: "My reports" });
+    const filterToggle = screen.getByRole("button", { name: /filters/i });
+    expect(filterToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("searchbox", { name: "Search reports" })).toBeInTheDocument();
+
+    fireEvent.click(filterToggle);
+    expect(filterToggle).toHaveAttribute("aria-expanded", "true");
   });
 
   it("offers direct, report-specific preview actions for Asset and Lot Listing", async () => {

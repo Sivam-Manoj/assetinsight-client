@@ -34,17 +34,6 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("next/image", () => ({
-  default: ({
-    priority: _priority,
-    fill: _fill,
-    ...props
-  }: React.ImgHTMLAttributes<HTMLImageElement> & {
-    priority?: boolean;
-    fill?: boolean;
-  }) => <img {...props} />,
-}));
-
 vi.mock("next/dynamic", () => ({
   default: () => {
     function DeferredComponent() {
@@ -198,7 +187,10 @@ describe("AppShell", () => {
     });
     const navigation = within(sidebar);
 
-    expect(navigation.getAllByAltText("Asset Insight")).toHaveLength(2);
+    expect(
+      navigation.getByRole("link", { name: /Asset Insight/i })
+    ).toHaveAttribute("href", "/dashboard");
+    expect(navigation.getByText("Enterprise workspace")).toBeInTheDocument();
     expect(navigation.getByText("Workspace")).toBeInTheDocument();
     expect(navigation.getByText("Review")).toBeInTheDocument();
     expect(navigation.getByText("Account")).toBeInTheDocument();

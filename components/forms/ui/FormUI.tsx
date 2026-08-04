@@ -54,7 +54,7 @@ export const formButtonBaseClass =
 
 export const primaryButtonClass = formClassNames(
   formButtonBaseClass,
-  "border border-transparent bg-[var(--app-accent)] text-white shadow-sm hover:brightness-95 active:brightness-90 focus-visible:ring-[var(--app-accent-ring)]"
+  "border border-transparent bg-[var(--app-accent)] text-[var(--app-on-accent)] shadow-sm hover:brightness-95 active:brightness-90 focus-visible:ring-[var(--app-accent-ring)]"
 );
 
 export const secondaryButtonClass = formClassNames(

@@ -8,7 +8,7 @@ export default function ThemeToggle() {
 
   return (
     <div
-      className="inline-flex h-[52px] items-center rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel)] p-1"
+      className="inline-flex h-11 items-center gap-1 rounded-[10px] border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] p-1 shadow-[var(--app-shadow-control)]"
       role="group"
       aria-label="Color theme"
     >
@@ -17,27 +17,26 @@ export default function ThemeToggle() {
         aria-label="Use light theme"
         aria-pressed={resolvedTheme === "light"}
         onClick={() => setMode("light")}
-        className={`grid h-11 w-14 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
+        className={`grid h-9 w-11 place-items-center rounded-md border transition-[border-color,background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
           resolvedTheme === "light"
-            ? "bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
-            : "text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+            ? "border-[var(--app-info-border)] bg-[var(--app-panel)] text-[var(--app-accent)] shadow-[var(--app-shadow-control)]"
+            : "border-transparent text-[var(--app-text-muted)] hover:bg-[var(--app-panel)] hover:text-[var(--app-text)]"
         }`}
       >
-        <Sun className="h-5 w-5" strokeWidth={1.8} />
+        <Sun className="h-[18px] w-[18px]" strokeWidth={1.8} />
       </button>
-      <span aria-hidden="true" className="h-6 w-px bg-[var(--app-border)]" />
       <button
         type="button"
         aria-label="Use dark theme"
         aria-pressed={resolvedTheme === "dark"}
         onClick={() => setMode("dark")}
-        className={`grid h-11 w-14 place-items-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
+        className={`grid h-9 w-11 place-items-center rounded-md border transition-[border-color,background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
           resolvedTheme === "dark"
-            ? "bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
-            : "text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+            ? "border-[var(--app-info-border)] bg-[var(--app-panel)] text-[var(--app-accent)] shadow-[var(--app-shadow-control)]"
+            : "border-transparent text-[var(--app-text-muted)] hover:bg-[var(--app-panel)] hover:text-[var(--app-text)]"
         }`}
       >
-        <Moon className="h-5 w-5" strokeWidth={1.8} />
+        <Moon className="h-[18px] w-[18px]" strokeWidth={1.8} />
       </button>
     </div>
   );

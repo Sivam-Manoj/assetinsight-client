@@ -1,28 +1,49 @@
-import Image from "next/image";
+import { Box } from "lucide-react";
 
 export default function BrandLockup({
+  inverse = false,
   compact = false,
 }: {
   inverse?: boolean;
   compact?: boolean;
 }) {
   return (
-    <span className="inline-flex">
-      <Image
-        src="/brand/asset-insight-light-compact.png"
-        alt="Asset Insight"
-        width={298}
-        height={96}
-        priority
-        className={`asset-insight-brand-image ${
-          compact ? "w-[120px] sm:w-[140px]" : "w-[150px] sm:w-[184px]"
-        } h-auto`}
-      />
-      <style>{`
-        [data-theme="dark"] .asset-insight-brand-image {
-          content: url("/brand/asset-insight-dark-compact.png");
-        }
-      `}</style>
+    <span
+      className={`inline-flex items-center ${
+        compact ? "gap-2.5" : "gap-3"
+      }`}
+      aria-label="Asset Insight"
+      role="img"
+    >
+      <span
+        className={`grid shrink-0 place-items-center ${
+          compact ? "size-9" : "size-10"
+        } ${inverse ? "text-white" : "text-[var(--app-accent)]"}`}
+        aria-hidden="true"
+      >
+        <Box
+          className="size-full"
+          strokeWidth={1.7}
+        />
+      </span>
+      <span className="grid min-w-0 gap-0.5">
+        <span
+          className={`whitespace-nowrap font-bold leading-none tracking-[-0.035em] ${
+            compact ? "text-[1rem]" : "text-[1.15rem]"
+          } ${inverse ? "text-white" : "text-[var(--app-text-strong)]"}`}
+        >
+          Asset Insight
+        </span>
+        {!compact ? (
+          <span
+            className={`whitespace-nowrap text-[0.7rem] font-medium leading-none ${
+              inverse ? "text-white/70" : "text-[var(--app-text-muted)]"
+            }`}
+          >
+            Enterprise workspace
+          </span>
+        ) : null}
+      </span>
     </span>
   );
 }

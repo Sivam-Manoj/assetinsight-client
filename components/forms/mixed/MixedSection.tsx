@@ -1867,7 +1867,7 @@ export default function MixedSection({
                       type="button"
                       disabled={!activeLotHasMode}
                       onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--app-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 @min-[560px]:flex-none"
+                      className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--app-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--app-on-accent)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45 @min-[560px]:flex-none"
                     >
                       <Upload className="h-4 w-4" aria-hidden="true" /> Add photos
                     </button>

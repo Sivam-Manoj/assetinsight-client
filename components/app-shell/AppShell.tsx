@@ -1,11 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -80,7 +80,9 @@ function NavLink({
         aria-current={active ? "page" : undefined}
         onClick={closeMobile}
       >
-        <Icon className={styles.navIcon} strokeWidth={1.8} aria-hidden />
+        <span className={styles.navIconFrame} aria-hidden>
+          <Icon className={styles.navIcon} strokeWidth={1.8} />
+        </span>
         <span className={styles.navText}>{item.label}</span>
         {typeof badge === "number" && badge > 0 ? (
           <span className={styles.badge} aria-label={`${badge} available`}>
@@ -189,35 +191,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside
         className={styles.sidebar}
         aria-label="Primary navigation"
-        aria-hidden={mobileOpen ? undefined : undefined}
       >
         <div className={styles.brandRow}>
           <Link className={styles.brand} href="/dashboard" onClick={closeMobile}>
-            <span className={styles.brandLockup}>
-              <Image
-                className={`${styles.brandImage} ${styles.brandLight}`}
-                src="/brand/asset-insight-light-compact.png"
-                width={298}
-                height={96}
-                priority
-                alt="Asset Insight"
-              />
-              <Image
-                className={`${styles.brandImage} ${styles.brandDark}`}
-                src="/brand/asset-insight-dark-compact.png"
-                width={298}
-                height={96}
-                priority
-                alt="Asset Insight"
-              />
-              <span className={styles.brandSubtitle}>Enterprise workspace</span>
+            <span className={styles.brandMark} aria-hidden>
+              <Box size={42} strokeWidth={1.65} />
             </span>
-            <span className={styles.mark} aria-hidden>
-              AI
+            <span className={styles.brandLockup}>
+              <span className={styles.brandName}>Asset Insight</span>
+              <span className={styles.brandSubtitle}>Enterprise workspace</span>
             </span>
           </Link>
           <button
-            className={`app-button app-button--secondary app-button--icon ${styles.collapseButton}`}
+            className={styles.collapseButton}
             onClick={() => {
               if (window.innerWidth < 1024) closeMobile();
               else toggleDesktopNavigation();
@@ -230,6 +216,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   : "Collapse navigation"
             }
             title={collapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={mobileOpen || !collapsed}
           >
             {mobileOpen ? (
               <X size={18} aria-hidden />
@@ -268,7 +255,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     setShowDrafts(true);
                   }}
                 >
-                  <Clock3 className={styles.navIcon} strokeWidth={1.8} aria-hidden />
+                  <span className={styles.navIconFrame} aria-hidden>
+                    <Clock3 className={styles.navIcon} strokeWidth={1.8} />
+                  </span>
                   <span className={styles.navText}>Drafts</span>
                 </button>
               </li>
@@ -365,6 +354,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             onClick={toggleDesktopNavigation}
             aria-label="Toggle navigation width"
             title={collapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!collapsed}
           >
             <Menu size={22} strokeWidth={1.8} aria-hidden />
           </button>
@@ -426,9 +416,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <header className={styles.mobileHeader}>
           <button
-            className="app-button app-button--secondary app-button--icon"
+            className={styles.mobileMenuButton}
             onClick={() => setMobileOpen(true)}
             aria-label="Open navigation"
+            aria-expanded={mobileOpen}
           >
             <Menu size={19} aria-hidden />
           </button>
@@ -438,14 +429,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className={styles.mobileActions}>
             <Link
-              className="app-button app-button--secondary app-button--icon"
+              className={styles.mobileIconButton}
               href="/reports"
               aria-label="Search reports"
             >
               <Search size={18} aria-hidden />
             </Link>
             <button
-              className="app-button app-button--secondary app-button--icon"
+              className={styles.mobileIconButton}
               onClick={toggleMode}
               aria-label={
                 resolvedTheme === "dark" ? "Use light theme" : "Use dark theme"

@@ -22,6 +22,7 @@ import BottomDrawer from "@/components/BottomDrawer";
 import Loading from "@/components/common/Loading";
 import { WorkspaceClock } from "@/components/dashboard/WorkspaceClock";
 import type { DraftStatus } from "@/components/forms/ui/FormUI";
+import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
 import {
@@ -220,13 +221,15 @@ function Metric({
   label,
   value,
   icon: Icon,
+  emphasized = false,
 }: {
   label: string;
   value: React.ReactNode;
   icon: LucideIcon;
+  emphasized?: boolean;
 }) {
   return (
-    <div className={styles.metric}>
+    <div className={styles.metric} data-emphasized={emphasized}>
       <div>
         <div className={styles.metricLabel}>{label}</div>
         <div className={styles.metricValue}>{value}</div>
@@ -347,7 +350,9 @@ export default function DashboardPage() {
           </h1>
           <p className={styles.subtitle}>
             <WorkspaceClock />
-            <span aria-hidden>•</span>
+            <span className={styles.subtitleDivider} aria-hidden>
+              •
+            </span>
             <span>Keep reporting work moving from one place.</span>
           </p>
         </div>
@@ -404,6 +409,7 @@ export default function DashboardPage() {
                   : COMPACT_CURRENCY.format(stats?.totalFairMarketValue ?? 0)
               }
               icon={BarChart3}
+              emphasized
             />
           </div>
 
@@ -419,7 +425,7 @@ export default function DashboardPage() {
                   : incomingError
                     ? "Queue unavailable"
                     : incomingSummary?.showBadge
-                      ? `${incomingCount} assigned`
+                      ? `${incomingCount} available`
                       : "Integration unavailable"}
               </strong>
             </div>
@@ -477,6 +483,13 @@ export default function DashboardPage() {
       <section className={styles.recentCard} aria-labelledby="recent-reports">
         <div className={styles.recentHeading}>
           <h2 id="recent-reports">Recent reports</h2>
+          <button
+            className={styles.viewAllButton}
+            onClick={() => router.push("/reports")}
+          >
+            View all reports
+            <ChevronRight size={17} strokeWidth={1.8} aria-hidden />
+          </button>
         </div>
 
         {reportsLoading ? (
@@ -513,12 +526,18 @@ export default function DashboardPage() {
                   return (
                     <tr key={report._id}>
                       <td data-label="Report">
-                        <button
-                          className={styles.reportLink}
-                          onClick={() => router.push("/reports")}
-                        >
-                          {title}
-                        </button>
+                        <div className={styles.reportIdentity}>
+                          <ReportThumbnail
+                            src={report.thumbnail_url || report.thumbnailUrl}
+                            title={title}
+                          />
+                          <button
+                            className={styles.reportLink}
+                            onClick={() => router.push("/reports")}
+                          >
+                            {title}
+                          </button>
+                        </div>
                       </td>
                       <td data-label="Type">{typeLabel(report)}</td>
                       <td data-label="Value">
@@ -556,15 +575,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className={styles.recentFooter}>
-          <button
-            className={styles.viewAllButton}
-            onClick={() => router.push("/reports")}
-          >
-            View all reports
-            <ChevronRight size={17} strokeWidth={1.8} aria-hidden />
-          </button>
-        </div>
       </section>
 
       <BottomDrawer

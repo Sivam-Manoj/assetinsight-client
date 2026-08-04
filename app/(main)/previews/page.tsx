@@ -29,6 +29,7 @@ import {
   RealEstateService,
   type RealEstateReport,
 } from "@/services/realEstate";
+import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -177,6 +178,35 @@ function summaryForReport(report: CombinedReport) {
       ["Industry", report.preview_data?.industry || "Not specified"],
     ],
   };
+}
+
+function previewThumbnailForReport(report: CombinedReport): string | null {
+  const directImages = Array.isArray((report as any).imageUrls)
+    ? (report as any).imageUrls
+    : [];
+  const previewImages = Array.isArray((report as any).preview_data?.imageUrls)
+    ? (report as any).preview_data.imageUrls
+    : [];
+  const lots = Array.isArray((report as any).lots)
+    ? (report as any).lots
+    : Array.isArray((report as any).preview_data?.lots)
+      ? (report as any).preview_data.lots
+      : [];
+  const lotImage = lots
+    .flatMap((lot: any) => [
+      ...(Array.isArray(lot?.image_urls) ? lot.image_urls : []),
+      ...(Array.isArray(lot?.imageUrls) ? lot.imageUrls : []),
+      ...(Array.isArray(lot?.images) ? lot.images : []),
+    ])
+    .find((value: unknown) => typeof value === "string" && value.length > 0);
+
+  return (
+    [...directImages, ...previewImages].find(
+      (value: unknown) => typeof value === "string" && value.length > 0
+    ) ||
+    lotImage ||
+    null
+  );
 }
 
 export default function PreviewsPage() {
@@ -514,20 +544,20 @@ export default function PreviewsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-[42px] lg:py-[34px]">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-6 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-[42px] lg:py-[34px]">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+          <h1 className="text-[1.85rem] font-semibold leading-[1.08] tracking-[-0.035em] text-[var(--app-text)] md:text-[2.1rem]">
             Report previews
           </h1>
-          <p className="mt-1 max-w-3xl text-sm text-[var(--app-text-muted)]">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
             Review new outputs, submit reports for approval, and manage already
             submitted preview packages.
           </p>
         </div>
         <button
           type="button"
-          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="app-button app-button--secondary min-w-[112px]"
           onClick={() => void handleManualRefresh()}
           disabled={refreshing}
         >
@@ -538,7 +568,7 @@ export default function PreviewsPage() {
 
       <section
         aria-label="Preview summary"
-        className="grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] xl:grid-cols-4"
+        className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:grid-cols-4"
       >
         {[
           { label: "New", value: summary.newCount },
@@ -551,22 +581,24 @@ export default function PreviewsPage() {
         ].map((item) => (
           <div
             key={item.label}
-            className="min-w-0 border-b border-[var(--app-border)] px-4 py-4 last:border-b-0 [&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
+            className="min-w-0 border-b border-[var(--app-border)] px-5 py-5 last:border-b-0 [&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
           >
-            <p className="text-xs font-semibold text-[var(--app-text-muted)] sm:text-sm">
+            <p className="text-sm font-medium text-[var(--app-text-muted)]">
               {item.label}
             </p>
-            <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-[var(--app-text)]">
+            <p className="mt-1.5 text-[1.75rem] font-semibold tabular-nums tracking-[-0.035em] text-[var(--app-text)]">
               {item.value}
             </p>
           </div>
         ))}
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)]">
-        <div className="border-b border-[var(--app-border)] px-4 pt-4 sm:px-5">
-          <h2 className="font-semibold text-[var(--app-text)]">Preview queue</h2>
-          <p className="mt-0.5 text-sm text-[var(--app-text-muted)]">
+      <section className="overflow-hidden rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)]">
+        <div className="border-b border-[var(--app-border)] px-4 pt-5 sm:px-5">
+          <h2 className="text-lg font-semibold tracking-[-0.02em] text-[var(--app-text)]">
+            Preview queue
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--app-text-muted)]">
             Switch between new previews and submitted items awaiting the next
             step.
           </p>
@@ -624,7 +656,7 @@ export default function PreviewsPage() {
               {activeTab === "new" ? (
                 <a
                   href="/dashboard"
-                  className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90"
+                  className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90"
                 >
                   Create new report
                 </a>
@@ -679,12 +711,18 @@ export default function PreviewsPage() {
                 return (
                   <li
                     key={report._id}
-                    className="px-4 py-5 [content-visibility:auto] [contain-intrinsic-size:auto_228px] sm:px-5"
+                    className="group px-4 py-5 transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_228px] hover:bg-[var(--app-panel-alt)] sm:px-5"
                   >
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-md bg-[var(--app-accent-soft)] px-2 py-1 text-xs font-semibold text-[var(--app-accent)]">
+                      <div className="flex min-w-0 items-start gap-3.5">
+                        <ReportThumbnail
+                          src={previewThumbnailForReport(report)}
+                          title={info.title}
+                          size="card"
+                        />
+                        <div className="min-w-0 pt-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-[var(--app-text-muted)]">
                             {info.typeLabel}
                           </span>
                           <span
@@ -710,7 +748,7 @@ export default function PreviewsPage() {
                             </span>
                           ) : null}
                         </div>
-                        <h3 className="mt-2 break-words font-semibold text-[var(--app-text)]">
+                        <h3 className="mt-2 break-words text-[0.98rem] font-semibold tracking-[-0.012em] text-[var(--app-text)]">
                           {info.title}
                         </h3>
                         <p className="mt-1 text-xs text-[var(--app-text-muted)]">
@@ -718,13 +756,14 @@ export default function PreviewsPage() {
                           {new Date(report.createdAt).toLocaleDateString()}
                         </p>
                       </div>
+                      </div>
 
                       <div className="flex flex-wrap gap-2 lg:max-w-[520px] lg:justify-end">
                         {hasPersistentPreviewAction ? (
                           <button
                             type="button"
                             aria-label={previewAccessibleName}
-                            className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-[var(--app-accent)] px-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--app-accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
+                            className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-[var(--app-accent)] px-3.5 text-sm font-semibold text-[var(--app-on-accent)] transition-colors hover:bg-[var(--app-accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
                             onClick={() =>
                               handleOpenPreview(report, previewIsSubmitted)
                             }
@@ -739,7 +778,7 @@ export default function PreviewsPage() {
                         !jobActive ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-[var(--app-on-accent)] hover:opacity-90"
                             onClick={() => handleOpenPreview(report)}
                           >
                             <FileSearch className="size-3.5" />
@@ -751,7 +790,7 @@ export default function PreviewsPage() {
                         report.status === "declined" ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-white hover:opacity-90"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-[var(--app-on-accent)] hover:opacity-90"
                             onClick={() => handleOpenPreview(report)}
                           >
                             <Pencil className="size-3.5" />
@@ -842,11 +881,11 @@ export default function PreviewsPage() {
                       </div>
                     </div>
 
-                    <dl className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <dl className="mt-5 grid grid-cols-2 gap-2.5 border-t border-[var(--app-border)] pt-4 sm:grid-cols-3">
                       {info.fields.map(([label, value]) => (
                         <div
                           key={label}
-                          className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] px-3 py-2.5"
+                          className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] px-3.5 py-3"
                         >
                           <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
                             {label}

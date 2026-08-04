@@ -244,7 +244,7 @@ export default function SettingsPage() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90 disabled:opacity-50"
                   onClick={() => void handleSave()}
                   disabled={saving}
                 >
@@ -255,7 +255,7 @@ export default function SettingsPage() {
             ) : (
               <button
                 type="button"
-                className="min-h-9 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-white hover:opacity-90"
+                className="min-h-9 rounded-lg bg-[var(--app-accent)] px-3 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90"
                 onClick={() => setIsEditing(true)}
               >
                 Edit profile
@@ -266,7 +266,7 @@ export default function SettingsPage() {
           <div className="p-4 sm:p-5">
             <div className="flex items-center gap-3">
               <div
-                className="grid size-14 shrink-0 place-items-center rounded-xl bg-[var(--app-accent)] text-xl font-bold text-white"
+                className="grid size-14 shrink-0 place-items-center rounded-xl bg-[var(--app-accent)] text-xl font-bold text-[var(--app-on-accent)]"
                 aria-hidden="true"
               >
                 {initial}
@@ -415,7 +415,7 @@ export default function SettingsPage() {
               ) : null}
               <button
                 type="button"
-                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => void handleUploadCv()}
                 disabled={!cvFile || uploadingCv}
               >
@@ -500,7 +500,7 @@ export default function SettingsPage() {
               ) : null}
               <button
                 type="button"
-                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                className="min-h-10 w-full rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90 disabled:opacity-50"
                 onClick={() => setIsOutlookDialogOpen(true)}
                 disabled={outlookBusy}
               >

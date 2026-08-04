@@ -50,7 +50,7 @@ describe("ReportThumbnail", () => {
     expect(image).toHaveAttribute("loading", "lazy");
     expect(image).toHaveAttribute("decoding", "async");
     expect(image).toHaveAttribute("fetchpriority", "low");
-    expect(image).toHaveAttribute("width", "64");
+    expect(image).toHaveAttribute("width", "76");
     expect(image).toHaveAttribute("height", "56");
 
     fireEvent.error(image);
@@ -73,6 +73,6 @@ describe("ReportThumbnail", () => {
       screen.getByLabelText(
         "No preview image available for Report without photos"
       )
-    ).toHaveClass("h-16", "w-[4.5rem]");
+    ).toHaveClass("h-[5.25rem]", "w-28", "sm:h-24", "sm:w-32");
   });
 });

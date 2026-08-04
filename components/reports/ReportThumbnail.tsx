@@ -53,13 +53,13 @@ export function ReportThumbnail({
   const hasImage = Boolean(src && shouldLoad && !failed);
   const frameSize =
     size === "card"
-      ? "h-16 w-[4.5rem] sm:h-[4.5rem] sm:w-20"
-      : "h-14 w-16";
+      ? "h-[5.25rem] w-28 sm:h-24 sm:w-32"
+      : "h-14 w-[4.75rem]";
 
   return (
     <div
       ref={frameRef}
-      className={`relative grid shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-panel-alt)] ${frameSize}`}
+      className={`relative grid shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] ${frameSize}`}
       aria-label={
         !src || failed ? `No preview image available for ${title}` : undefined
       }
@@ -72,8 +72,8 @@ export function ReportThumbnail({
         <img
           src={src || undefined}
           alt={`Preview image for ${title}`}
-          width={size === "card" ? 80 : 64}
-          height={size === "card" ? 72 : 56}
+          width={size === "card" ? 128 : 76}
+          height={size === "card" ? 96 : 56}
           loading="lazy"
           decoding="async"
           fetchPriority="low"

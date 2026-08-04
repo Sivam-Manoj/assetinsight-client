@@ -25,6 +25,8 @@ vi.mock("@/components/ui/toast", () => ({
 const delivery: AuctioneerDeliverySummary = {
   workItemId: "work-100",
   contractNo: "CV-100",
+  reportModel: "AssetReport",
+  reportType: "asset",
   state: "ready",
   canSend: true,
 };
@@ -104,5 +106,54 @@ describe("AuctioneerDeliveryDialog", () => {
         completeContract: true,
       })
     );
+  });
+
+  it.each([
+    [
+      "report type",
+      { reportType: "lotListing" as const, reportModel: "AssetReport" as const },
+    ],
+    [
+      "report model",
+      { reportType: undefined, reportModel: "LotListing" as const },
+    ],
+  ])(
+    "describes a Lot Listing delivery without approval or release wording when identified by %s",
+    async (_identifier, identity) => {
+      render(
+        <AuctioneerDeliveryDialog
+          open
+          delivery={{ ...delivery, ...identity }}
+          onClose={vi.fn()}
+          onUpdated={vi.fn()}
+        />
+      );
+
+      expect(
+        await screen.findByText(
+          /Contract CV-100 will send final generated listing data and photos\./
+        )
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/approved and released Asset Listing data/)
+      ).not.toBeInTheDocument();
+    }
+  );
+
+  it("keeps approval and release wording for an Asset Listing delivery", async () => {
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={delivery}
+        onClose={vi.fn()}
+        onUpdated={vi.fn()}
+      />
+    );
+
+    expect(
+      await screen.findByText(
+        /Contract CV-100 will send approved and released Asset Listing data and final report photos\./
+      )
+    ).toBeInTheDocument();
   });
 });

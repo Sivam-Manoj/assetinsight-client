@@ -665,7 +665,7 @@ export default function SmartUploadWorkspace({
                 <button
                   type="button"
                   onClick={() => inputRef.current?.click()}
-                  className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-white hover:brightness-95"
+                  className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-[var(--app-on-accent)] hover:brightness-95"
                 >
                   <CloudUpload className="h-5 w-5" />
                   Select images
@@ -722,7 +722,7 @@ export default function SmartUploadWorkspace({
                   <button
                     type="button"
                     onClick={() => void runUploadAndDetection()}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-white"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-[var(--app-on-accent)]"
                   >
                     <ScanLine className="h-5 w-5" />
                     {draft.stage === "failed" ? "Resume upload" : "Upload & detect lots"}
@@ -835,7 +835,7 @@ export default function SmartUploadWorkspace({
                             {item.originalOrder + 1}
                           </span>
                           {isDivider ? (
-                            <span className="absolute inset-x-1 top-1 rounded bg-[var(--app-accent)] px-1 py-1 text-[10px] font-bold uppercase text-white">
+                            <span className="absolute inset-x-1 top-1 rounded bg-[var(--app-accent)] px-1 py-1 text-[10px] font-bold uppercase text-[var(--app-on-accent)]">
                               Divider
                             </span>
                           ) : null}
@@ -890,7 +890,7 @@ export default function SmartUploadWorkspace({
             type="button"
             onClick={() => void createPreview()}
             disabled={hasInvalidGroups || Boolean(busyFileId)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-[var(--app-on-accent)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check className="h-5 w-5" />
             Create preview

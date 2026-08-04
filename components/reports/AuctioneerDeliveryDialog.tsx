@@ -31,6 +31,15 @@ function errorMessage(error: any, fallback: string) {
   );
 }
 
+function isLotListingDelivery(
+  delivery: AuctioneerDeliverySummary | null | undefined
+) {
+  return (
+    delivery?.reportType === "lotListing" ||
+    delivery?.reportModel === "LotListing"
+  );
+}
+
 function Notice({
   tone = "info",
   children,
@@ -114,6 +123,7 @@ export default function AuctioneerDeliveryDialog({
   const needsReconciliation = delivery?.state === "needs_reconciliation";
   const terminal = delivery?.state === "sent";
   const retrying = delivery?.state === "failed";
+  const lotListingDelivery = isLotListingDelivery(delivery);
 
   const handleSend = async () => {
     if (!delivery || busy) return;
@@ -250,9 +260,11 @@ export default function AuctioneerDeliveryDialog({
       <div className="app-dialog__body">
         <div style={{ display: "grid", gap: 16 }}>
           <p className="app-muted" style={{ margin: 0, fontSize: 13.5 }}>
-            Contract {delivery?.contractNo || "report"} will send approved
-            structured data and final report photos. Generated report files remain
-            in Asset Insight.
+            Contract {delivery?.contractNo || "report"} will send{" "}
+            {lotListingDelivery
+              ? "final generated listing data and photos"
+              : "approved and released Asset Listing data and final report photos"}
+            . Generated report files remain in Asset Insight.
           </p>
 
           {delivery?.error ? (

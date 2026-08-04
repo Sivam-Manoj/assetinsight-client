@@ -4,9 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
+  Boxes,
+  ChartNoAxesColumnIncreasing,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  EllipsisVertical,
+  Eye,
   FileArchive,
   FileImage,
-  FileSearch,
   FileSpreadsheet,
   FileText,
   Merge,
@@ -14,6 +20,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -65,6 +72,7 @@ type ReportGroup = {
   lotSummary?: string;
   lotCount?: number;
   thumbnail?: string;
+  displayTitle?: string;
   type?: string;
   isMergedReport?: boolean;
   mergedSourceCount?: number;
@@ -86,38 +94,38 @@ function auctioneerDeliveryPresentation(
   const values: Record<string, { label: string; color: string; bg: string }> = {
     not_ready: {
       label: "Auctioneer: not ready",
-      color: "#64748b",
-      bg: "rgba(100,116,139,0.12)",
+      color: "var(--app-text-muted)",
+      bg: "var(--app-panel-alt)",
     },
     ready: {
       label: "Ready to Send",
-      color: "#2563eb",
-      bg: "rgba(37,99,235,0.12)",
+      color: "var(--app-info)",
+      bg: "var(--app-info-soft)",
     },
     queued: {
       label: "Sending",
-      color: "#2563eb",
-      bg: "rgba(37,99,235,0.12)",
+      color: "var(--app-info)",
+      bg: "var(--app-info-soft)",
     },
     sending: {
       label: "Sending",
-      color: "#2563eb",
-      bg: "rgba(37,99,235,0.12)",
+      color: "var(--app-info)",
+      bg: "var(--app-info-soft)",
     },
     failed: {
       label: "Failed — Retry",
-      color: "#dc2626",
-      bg: "rgba(220,38,38,0.12)",
+      color: "var(--app-danger)",
+      bg: "var(--app-danger-soft)",
     },
     needs_reconciliation: {
       label: "Needs Reconciliation",
-      color: "#b45309",
-      bg: "rgba(217,119,6,0.12)",
+      color: "var(--app-warning)",
+      bg: "var(--app-warning-soft)",
     },
     sent: {
       label: "Sent",
-      color: "#087a43",
-      bg: "#e8f7ee",
+      color: "var(--app-success)",
+      bg: "var(--app-success-soft)",
     },
   };
   return values[delivery.state] || values.not_ready;
@@ -163,6 +171,34 @@ function summarizeLotNumbers(lots: any[], fallbackId: string) {
   return `#${String(fallbackId).slice(-6)}`;
 }
 
+function reportDisplayTitle(
+  lots: any[],
+  fallback: string,
+  report?: any
+): string {
+  const firstLot = Array.isArray(lots) ? lots[0] : undefined;
+  const firstItem = Array.isArray(firstLot?.items) ? firstLot.items[0] : undefined;
+  const candidates = [
+    report?.title,
+    report?.report_title,
+    report?.preview_data?.title,
+    firstLot?.title,
+    firstLot?.asset_name,
+    firstItem?.title,
+    firstItem?.asset_name,
+    fallback,
+  ];
+  const value = candidates.find(
+    (candidate) => typeof candidate === "string" && candidate.trim()
+  );
+  return value ? value.trim() : "Untitled report";
+}
+
+function reportTypeColumnLabel(type?: string) {
+  const label = typeLabel(type);
+  return label === "Asset" ? "Asset Report" : label;
+}
+
 function statusTone(
   status?: string,
   isGeneratingFiles = false,
@@ -172,67 +208,67 @@ function statusTone(
   workflowStage?: string
 ) {
   const workflowLabels: Record<string, { bg: string; color: string; label: string }> = {
-    preparing_preview: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" },
-    preview_ready: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preview ready" },
-    generating_files: { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Generating files" },
-    awaiting_approval: { bg: "rgba(217,119,6,0.12)", color: "#d97706", label: "Awaiting approval" },
-    awaiting_release: { bg: "rgba(217,119,6,0.12)", color: "#d97706", label: "Awaiting release" },
-    ready: { bg: "#e8f7ee", color: "#087a43", label: "Ready to download" },
-    error: { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Generation failed" },
+    preparing_preview: { bg: "var(--app-info-soft)", color: "var(--app-info)", label: "Generating" },
+    preview_ready: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "In review" },
+    generating_files: { bg: "var(--app-info-soft)", color: "var(--app-info)", label: "Generating" },
+    awaiting_approval: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "In review" },
+    awaiting_release: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "In review" },
+    ready: { bg: "var(--app-success-soft)", color: "var(--app-success)", label: "Ready" },
+    error: { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Failed" },
   };
   if (workflowStage && workflowLabels[workflowStage]) return workflowLabels[workflowStage];
   if (reportStatus === "processing") {
-    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" };
+    return { bg: "var(--app-info-soft)", color: "var(--app-info)", label: "Generating" };
   }
   if (reportStatus === "preview" && isGeneratingFiles) {
-    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preparing preview" };
+    return { bg: "var(--app-info-soft)", color: "var(--app-info)", label: "Generating" };
   }
   if (reportStatus === "preview") {
-    return { bg: "rgba(37,99,235,0.12)", color: "#2563eb", label: "Preview ready" };
+    return { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "In review" };
   }
   if (reportStatus === "declined") {
-    return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Changes required" };
+    return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Changes required" };
   }
   if (generationState === "error") {
-    return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Generation failed" };
+    return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Failed" };
   }
   if (isGeneratingFiles) {
     return {
-      bg: "rgba(37,99,235,0.12)",
-      color: "#2563eb",
-      label: "Generating files",
+      bg: "var(--app-info-soft)",
+      color: "var(--app-info)",
+      label: "Generating",
     };
   }
   if (status === "approved" && releaseStatus === "pending_release") {
     return {
-      bg: "rgba(217,119,6,0.12)",
-      color: "#d97706",
-      label: "Awaiting release",
+      bg: "var(--app-warning-soft)",
+      color: "var(--app-warning)",
+      label: "In review",
     };
   }
   if (status === "approved" && releaseStatus === "released") {
-    return { bg: "#e8f7ee", color: "#087a43", label: "Released" };
+    return { bg: "var(--app-success-soft)", color: "var(--app-success)", label: "Ready" };
   }
   if (status === "approved") {
-    return { bg: "#e8f7ee", color: "#087a43", label: "Approved" };
+    return { bg: "var(--app-success-soft)", color: "var(--app-success)", label: "Ready" };
   }
   if (status === "rejected") {
-    return { bg: "rgba(220,38,38,0.12)", color: "#dc2626", label: "Rejected" };
+    return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Rejected" };
   }
   return {
-    bg: "rgba(217,119,6,0.12)",
-    color: "#d97706",
-    label: "Awaiting approval",
+    bg: "var(--app-warning-soft)",
+    color: "var(--app-warning)",
+    label: "In review",
   };
 }
 
 function actionLabel(variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images") {
-  if (variant === "pdf") return "Data";
-  if (variant === "specPdf") return "CR";
+  if (variant === "pdf") return "PDF";
+  if (variant === "specPdf") return "CR PDF";
   if (variant === "crDocx") return "CR DOCX";
   if (variant === "docx") return "DOCX";
-  if (variant === "xlsx") return "Excel";
-  return "Images";
+  if (variant === "xlsx") return "XLSX";
+  return "ZIP";
 }
 
 function hasReportFileUrls(report: any) {
@@ -381,6 +417,7 @@ export default function ReportsPage() {
     "date-desc" | "date-asc" | "value-desc" | "value-asc"
   >("date-desc");
   const [typeFilter, setTypeFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
@@ -620,6 +657,11 @@ export default function ReportsPage() {
           reportStatus: String((report as any).status || "approved"),
           lotCount: Number((report as any).lot_count || 0),
           thumbnail: getFirstReportImage([], report),
+          displayTitle: reportDisplayTitle(
+            [],
+            report.address || report.filename || "Generated report",
+            report
+          ),
           type: (report as any).type,
           variants: {},
         };
@@ -715,6 +757,7 @@ export default function ReportsPage() {
         lotSummary: summarizeLotNumbers(lots, asset._id),
         lotCount: lots.length,
         thumbnail: getFirstReportImage(lots, asset),
+        displayTitle: reportDisplayTitle(lots, addressBase, asset),
         type: "Asset",
         isMergedReport: (asset as any).is_merged_report === true,
         mergedSourceCount: Array.isArray((asset as any).merged_from_report_ids)
@@ -804,6 +847,7 @@ export default function ReportsPage() {
         jobError: (report as any).job_error,
         lotCount: 1,
         thumbnail: getFirstReportImage([], report),
+        displayTitle: reportDisplayTitle([], addressBase, report),
         type: "RealEstate",
         variants: {
           pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
@@ -901,6 +945,7 @@ export default function ReportsPage() {
         lotSummary: summarizeLotNumbers(lots, listing._id),
         lotCount: lots.length,
         thumbnail: getFirstReportImage(lots, listing),
+        displayTitle: reportDisplayTitle(lots, addressBase, listing),
         type: "LotListing",
         variants: {
           specPdf: previewFiles.spec_pdf
@@ -1137,7 +1182,7 @@ export default function ReportsPage() {
     }
     if (isPreviewReady && !hasDownloads) {
       return (
-        <span className="text-xs font-semibold text-[var(--app-accent)]">
+        <span className="text-xs font-semibold leading-5 text-[var(--app-accent)]">
           Preview ready for review
         </span>
       );
@@ -1184,7 +1229,7 @@ export default function ReportsPage() {
     }
 
     return (
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1">
         {(["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map(
           (variant) => {
             const file = group.variants[variant];
@@ -1200,7 +1245,7 @@ export default function ReportsPage() {
                 type="button"
                 title={`Download ${label}`}
                 aria-label={`Download ${label}`}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--app-bg)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[var(--app-info-border)] bg-[var(--app-accent-soft)] px-2 text-xs font-semibold text-[var(--app-accent)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-panel)] disabled:cursor-not-allowed disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)] disabled:opacity-60"
                 onClick={() => void handleDownload(file._id)}
                 disabled={disabled}
               >
@@ -1235,6 +1280,14 @@ export default function ReportsPage() {
       group.workflowStage === "preparing_preview" ||
       (!group.workflowStage && group.reportStatus === "processing");
     const delivery = group.auctioneerDelivery;
+    const lotListingDelivery = Boolean(
+      delivery &&
+        (delivery.reportType === "lotListing" ||
+          delivery.reportModel === "LotListing")
+    );
+    const deliveryReadinessRequirement = lotListingDelivery
+      ? "final file generation"
+      : "approval, release, and final file generation";
     const deliveryDisabled = Boolean(
       delivery &&
         (["not_ready", "queued", "sending", "sent"].includes(delivery.state) ||
@@ -1252,19 +1305,21 @@ export default function ReportsPage() {
               : "Send";
     const deliveryTitle =
       delivery?.state === "not_ready"
-        ? "Available after approval, release, and file generation"
+        ? `Available after ${deliveryReadinessRequirement}`
         : delivery?.state === "sent"
           ? "This report has been sent to Auctioneer"
           : delivery?.state === "needs_reconciliation"
             ? "Resolve the uncertain Unknown Lot before retrying"
             : delivery?.state === "failed"
               ? delivery.canSend === false
-                ? "Retry is available after approval, release, and file generation"
+                ? `Retry is available after ${deliveryReadinessRequirement}`
                 : "Retry the failed Auctioneer delivery"
-              : "Send approved data and final photos to Auctioneer";
+              : lotListingDelivery
+                ? "Send final generated listing data and photos to Auctioneer"
+                : "Send approved and released data and final photos to Auctioneer";
 
     return (
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex items-center justify-end gap-2">
         {previewReportType ? (
           <button
             type="button"
@@ -1274,7 +1329,7 @@ export default function ReportsPage() {
                 ? "Preview is still being prepared"
                 : `Preview ${typeLabel(group.type)} report`
             }
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-[var(--app-info-border)] bg-[var(--app-panel)] px-3 text-sm font-semibold text-[var(--app-accent)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-accent-soft)] disabled:cursor-wait disabled:border-[var(--app-border)] disabled:text-[var(--app-text-muted)] disabled:opacity-55"
             onClick={() =>
               router.push(
                 `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
@@ -1282,47 +1337,58 @@ export default function ReportsPage() {
             }
             disabled={previewPreparing}
           >
-            <FileSearch className="size-3.5" />
+            <Eye className="size-4" strokeWidth={1.9} />
             Preview
           </button>
         ) : null}
-        {delivery ? (
-          <button
-            type="button"
-            title={deliveryTitle}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={() => setDeliveryDialogItem(delivery)}
-            disabled={deliveryDisabled}
+        <details className="group relative">
+          <summary
+            aria-label={`More actions for ${previewTitle}`}
+            title="More actions"
+            className="grid size-9 cursor-pointer list-none place-items-center rounded-md text-[var(--app-text-muted)] transition-colors hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent-ring)] [&::-webkit-details-marker]:hidden"
           >
-            <Send className="size-3.5" />
-            {deliveryLabel}
-          </button>
-        ) : null}
-        {String(group.type || "").toLowerCase() === "asset" ? (
-          <button
-            type="button"
-            title="Merge with other Asset reports using the same contract"
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]"
-            onClick={() => setMergeAnchorId(group.key)}
-          >
-            <Merge className="size-3.5" />
-            Merge
-          </button>
-        ) : null}
-        <button
-          type="button"
-          title="Permanently delete this report"
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--app-danger-border)] px-2.5 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-          onClick={() => void handleDelete(group)}
-          disabled={deletingKey === group.key}
-        >
-          {deletingKey === group.key ? (
-            <RefreshCw className="size-3.5 animate-spin" />
-          ) : (
-            <Trash2 className="size-3.5" />
-          )}
-          Delete
-        </button>
+            <EllipsisVertical className="size-[18px]" strokeWidth={2} />
+          </summary>
+          <div className="absolute right-0 z-30 mt-1.5 w-52 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.14)]">
+            {delivery ? (
+              <button
+                type="button"
+                title={deliveryTitle}
+                className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => setDeliveryDialogItem(delivery)}
+                disabled={deliveryDisabled}
+              >
+                <Send className="size-4 text-[var(--app-text-muted)]" />
+                {deliveryLabel}
+              </button>
+            ) : null}
+            {String(group.type || "").toLowerCase() === "asset" ? (
+              <button
+                type="button"
+                title="Merge with other Asset reports using the same contract"
+                className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                onClick={() => setMergeAnchorId(group.key)}
+              >
+                <Merge className="size-4 text-[var(--app-text-muted)]" />
+                Merge reports
+              </button>
+            ) : null}
+            <button
+              type="button"
+              title="Permanently delete this report"
+              className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => void handleDelete(group)}
+              disabled={deletingKey === group.key}
+            >
+              {deletingKey === group.key ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Delete report
+            </button>
+          </div>
+        </details>
       </div>
     );
   };
@@ -1340,52 +1406,89 @@ export default function ReportsPage() {
     const deliveryStatus = auctioneerDeliveryPresentation(
       group.auctioneerDelivery
     );
-    const title = group.contract_no
-      ? `${typeLabel(group.type)} · ${group.contract_no}`
-      : group.address || typeLabel(group.type);
-    return { status, deliveryStatus, title };
+    const title =
+      group.displayTitle ||
+      group.address ||
+      group.filename ||
+      typeLabel(group.type);
+    const subtitle = group.contract_no
+      ? `Contract ${group.contract_no}`
+      : group.address && group.address !== title
+        ? group.address
+        : group.lotSummary || reportTypeColumnLabel(group.type);
+    const thumbnailTitle = group.contract_no
+      ? `${reportTypeColumnLabel(group.type)} ${group.contract_no} — ${title}`
+      : `${reportTypeColumnLabel(group.type)} — ${title}`;
+    return { status, deliveryStatus, title, subtitle, thumbnailTitle };
   };
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-[42px] lg:py-[34px]">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-6 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-[var(--app-text)] md:text-3xl">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-[2rem] font-bold leading-none tracking-[-0.035em] text-[var(--app-text-strong)] sm:text-[2.25rem]">
               My reports
             </h1>
-            <span className="rounded-md bg-[var(--app-panel-alt)] px-2 py-0.5 text-xs font-bold text-[var(--app-text-muted)]">
+            <span
+              aria-label={`${groups.length} reports`}
+              className="inline-grid min-w-8 place-items-center rounded-lg bg-[var(--app-accent-soft)] px-2 py-1 text-sm font-bold text-[var(--app-accent)]"
+            >
               {groups.length}
             </span>
           </div>
-          <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--app-text-muted)] sm:text-[15px]">
             Track report status and download every available deliverable.
           </p>
         </div>
         <button
           type="button"
-          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => void handleManualRefresh()}
           disabled={loading || refreshing}
         >
-          <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "Refreshing..." : "Refresh"}
+          <RefreshCw
+            className={`size-[18px] ${refreshing ? "animate-spin" : ""}`}
+            strokeWidth={1.8}
+          />
+          <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
         </button>
       </header>
 
+      <button
+        type="button"
+        aria-expanded={filtersOpen}
+        aria-controls="report-filter-controls"
+        className="flex min-h-14 w-full items-center justify-between rounded-xl border border-[var(--app-control-border)] bg-[var(--app-panel)] px-4 text-base font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] xl:hidden"
+        onClick={() => setFiltersOpen((open) => !open)}
+      >
+        <span className="flex items-center gap-3">
+          <SlidersHorizontal className="size-5" strokeWidth={1.8} />
+          Filters
+          {query || typeFilter || sortBy !== "date-desc" || pageSize !== 20 ? (
+            <span className="size-2 rounded-full bg-[var(--app-accent)]" aria-label="Filters applied" />
+          ) : null}
+        </span>
+        <ChevronDown
+          className={`size-5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
+          strokeWidth={2}
+        />
+      </button>
+
       <section
+        id="report-filter-controls"
         aria-label="Report filters"
-        className="grid gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3 sm:grid-cols-2 lg:grid-cols-[minmax(240px,1.4fr)_minmax(140px,.7fr)_minmax(170px,.8fr)_120px_auto]"
+        className={`${filtersOpen ? "grid" : "hidden"} gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3 shadow-[var(--app-shadow-card)] sm:grid-cols-2 xl:grid xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.72fr)_minmax(170px,.82fr)_130px_auto]`}
       >
         <label className="relative block">
           <span className="sr-only">Search reports</span>
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--app-text-muted)]" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-[var(--app-text-muted)]" />
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search reports..."
-            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] pl-9 pr-3 text-sm text-[var(--app-text)] outline-none placeholder:text-[var(--app-text-muted)] focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
+            placeholder="Search reports by title, lot, address..."
+            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] pl-10 pr-3 text-sm font-medium text-[var(--app-text)] outline-none transition-shadow placeholder:font-normal placeholder:text-[var(--app-text-muted)] focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           />
         </label>
         <label>
@@ -1393,12 +1496,12 @@ export default function ReportsPage() {
           <select
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value)}
-            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
+            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             <option value="">All types</option>
             {availableTypes.map((type) => (
               <option key={type} value={type}>
-                {typeLabel(type)}
+                {reportTypeColumnLabel(type)}
               </option>
             ))}
           </select>
@@ -1408,7 +1511,7 @@ export default function ReportsPage() {
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
-            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
+            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
@@ -1421,7 +1524,7 @@ export default function ReportsPage() {
           <select
             value={pageSize}
             onChange={(event) => setPageSize(Number(event.target.value))}
-            className="min-h-10 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-bg)] px-3 text-sm text-[var(--app-text)] outline-none focus:border-[var(--app-accent)]"
+            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             {[10, 20, 50].map((size) => (
               <option key={size} value={size}>
@@ -1432,7 +1535,7 @@ export default function ReportsPage() {
         </label>
         <button
           type="button"
-          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[var(--app-border)] px-3 text-sm font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-[var(--app-accent)] transition-colors hover:bg-[var(--app-accent-soft)]"
           onClick={resetFilters}
         >
           <RotateCcw className="size-4" />
@@ -1442,7 +1545,7 @@ export default function ReportsPage() {
 
       {loading ? (
         <section
-          className="grid min-h-80 place-items-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)]"
+          className="grid min-h-80 place-items-center rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)]"
           role="status"
           aria-label="Loading reports"
         >
@@ -1459,8 +1562,10 @@ export default function ReportsPage() {
           {error}
         </div>
       ) : filteredGroups.length === 0 ? (
-        <section className="rounded-xl border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-5 py-12 text-center">
-          <FileText className="mx-auto size-6 text-[var(--app-text-muted)]" />
+        <section className="rounded-xl border border-dashed border-[var(--app-border-strong)] bg-[var(--app-panel)] px-5 py-14 text-center">
+          <span className="mx-auto grid size-12 place-items-center rounded-xl bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
+            <FileText className="size-5" />
+          </span>
           <h2 className="mt-3 font-semibold text-[var(--app-text)]">
             No reports found
           </h2>
@@ -1472,208 +1577,204 @@ export default function ReportsPage() {
         </section>
       ) : (
         <>
-          <ul className="space-y-3 xl:hidden">
+          <ul className="divide-y divide-[var(--app-border)] overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:hidden">
             {paginatedGroups.map((group) => {
-              const { status, deliveryStatus, title } =
+              const { status, title, subtitle, thumbnailTitle } =
                 reportPresentation(group);
               return (
                 <li
                   key={group.key}
-                  className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+                  className="p-4 sm:p-5"
                   style={{
                     contentVisibility: "auto",
-                    containIntrinsicSize: "280px",
+                    containIntrinsicSize: "260px",
                   }}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex items-start gap-4">
+                    <div className="flex min-w-0 flex-1 items-start gap-3.5">
                       <ReportThumbnail
                         src={group.thumbnail}
-                        title={title}
+                        title={thumbnailTitle}
                         size="card"
                       />
-                      <div className="min-w-0">
-                      <h2 className="break-words font-semibold text-[var(--app-text)]">
-                        {title}
-                      </h2>
-                      <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                        {typeLabel(group.type)} ·{" "}
-                        {new Date(group.createdAt).toLocaleDateString()}
-                      </p>
-                      {group.lotSummary ? (
-                        <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
-                          {group.lotSummary}
+                      <div className="min-w-0 pt-0.5">
+                        <h2 className="break-words text-[15px] font-semibold leading-5 text-[var(--app-accent)] sm:text-base">
+                          {title}
+                        </h2>
+                        <p className="mt-1 break-words text-sm leading-5 text-[var(--app-text-muted)]">
+                          {subtitle}
                         </p>
-                      ) : null}
+                        <p className="mt-1 text-xs text-[var(--app-text-subtle)] sm:hidden">
+                          {reportTypeColumnLabel(group.type)} ·{" "}
+                          {new Date(group.createdAt).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                     <span
-                      className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold"
+                      className="shrink-0 rounded-md border border-current/20 px-2.5 py-1.5 text-xs font-semibold"
                       style={{ backgroundColor: status.bg, color: status.color }}
                     >
                       {status.label}
                     </span>
                   </div>
-                  <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {[
-                      ["Lots", `${group.lotCount || "—"}`],
-                      ["Market value", group.fairMarketValue || "—"],
-                      [
-                        "Client",
-                        group.address && group.address !== group.contract_no
-                          ? group.address
-                          : "—",
-                      ],
-                      ["Delivery", deliveryStatus?.label || "—"],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] p-2"
-                      >
-                        <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                          {label}
-                        </dt>
-                        <dd className="mt-0.5 break-words text-sm font-medium text-[var(--app-text)]">
-                          {value}
-                        </dd>
+
+                  <div className="mt-5 flex flex-col gap-4 border-t border-[var(--app-border)] pt-4 sm:flex-row sm:items-end sm:justify-between">
+                    <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+                      <div className="flex min-w-0 gap-2.5">
+                        <Boxes className="mt-0.5 size-[18px] shrink-0 text-[var(--app-text-muted)]" strokeWidth={1.8} />
+                        <div>
+                          <dt className="text-xs font-medium text-[var(--app-text-muted)]">Lots</dt>
+                          <dd className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+                            {group.lotCount || "—"} {group.lotCount === 1 ? "lot" : group.lotCount ? "lots" : ""}
+                          </dd>
+                        </div>
                       </div>
-                    ))}
-                  </dl>
-                  <div className="mt-4 border-t border-[var(--app-border)] pt-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                      Files
-                    </p>
-                    {renderFileControls(group)}
-                  </div>
-                  <div className="mt-3 flex justify-end border-t border-[var(--app-border)] pt-3">
-                    {renderReportActions(group)}
+                      <div className="flex min-w-0 gap-2.5">
+                        <ChartNoAxesColumnIncreasing className="mt-0.5 size-[18px] shrink-0 text-[var(--app-text-muted)]" strokeWidth={1.8} />
+                        <div>
+                          <dt className="text-xs font-medium text-[var(--app-text-muted)]">Market value</dt>
+                          <dd className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+                            {group.fairMarketValue || "—"}
+                          </dd>
+                        </div>
+                      </div>
+                    </dl>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {renderReportActions(group)}
+                      {renderFileControls(group)}
+                    </div>
                   </div>
                 </li>
               );
             })}
           </ul>
 
-          <section className="hidden overflow-x-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] xl:block">
-            <table className="w-full min-w-[1040px] table-fixed border-collapse text-left">
-              <caption className="sr-only">Generated reports</caption>
-              <colgroup>
-                <col className="w-[20%]" />
-                <col className="w-[10%]" />
-                <col className="w-[9%]" />
-                <col className="w-[10%]" />
-                <col className="w-[12%]" />
-                <col className="w-[25%]" />
-                <col className="w-[14%]" />
-              </colgroup>
-              <thead className="bg-[var(--app-panel-alt)] text-xs font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
-                <tr>
-                  {[
-                    "Report",
-                    "Lots / FMV",
-                    "Type",
-                    "Created",
-                    "Status",
-                    "Files",
-                    "Actions",
-                  ].map((heading) => (
-                    <th
-                      key={heading}
-                      scope="col"
-                      className="border-b border-[var(--app-border)] px-3 py-3"
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--app-border)]">
-                {paginatedGroups.map((group) => {
-                  const { status, deliveryStatus, title } =
-                    reportPresentation(group);
-                  return (
-                    <tr
-                      key={group.key}
-                      className="align-top hover:bg-[var(--app-panel-alt)]"
-                    >
-                      <td className="px-3 py-4">
-                        <div className="flex items-start gap-3">
-                          <ReportThumbnail
-                            src={group.thumbnail}
-                            title={title}
-                          />
-                          <div className="min-w-0 pt-0.5">
-                        <p className="break-words text-sm font-semibold text-[var(--app-text)]">
-                          {title}
-                        </p>
-                        {group.lotSummary ? (
-                          <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
-                            {group.lotSummary}
-                          </p>
-                        ) : null}
-                        {group.isMergedReport ? (
-                          <p className="mt-1 text-xs font-semibold text-[var(--app-accent)]">
-                            Merged · {group.mergedSourceCount || 2} sources
-                          </p>
-                        ) : null}
+          <section className="hidden overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
+                <caption className="sr-only">Generated reports</caption>
+                <colgroup>
+                  <col className="w-[26%]" />
+                  <col className="w-[6.5%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10.5%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[13%]" />
+                </colgroup>
+                <thead className="bg-[var(--app-panel-soft)] text-xs font-semibold text-[var(--app-text-muted)]">
+                  <tr>
+                    {[
+                      "Report",
+                      "Lots",
+                      "Market value",
+                      "Type",
+                      "Created",
+                      "Status",
+                      "Files",
+                      "Actions",
+                    ].map((heading) => (
+                      <th
+                        key={heading}
+                        scope="col"
+                        className="border-b border-r border-[var(--app-border)] px-3.5 py-3 last:border-r-0"
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--app-border)]">
+                  {paginatedGroups.map((group) => {
+                    const {
+                      status,
+                      deliveryStatus,
+                      title,
+                      subtitle,
+                      thumbnailTitle,
+                    } = reportPresentation(group);
+                    return (
+                      <tr
+                        key={group.key}
+                        className="align-middle transition-colors hover:bg-[var(--app-panel-soft)]"
+                        style={{
+                          contentVisibility: "auto",
+                          containIntrinsicSize: "74px",
+                        }}
+                      >
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-2">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <ReportThumbnail
+                              src={group.thumbnail}
+                              title={thumbnailTitle}
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[var(--app-accent)]">
+                                {title}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-[var(--app-text-muted)]">
+                                {subtitle}
+                              </p>
+                              {group.isMergedReport ? (
+                                <p className="mt-0.5 text-[11px] font-semibold text-[var(--app-accent)]">
+                                  Merged · {group.mergedSourceCount || 2} sources
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-4">
-                        <p className="text-sm font-semibold text-[var(--app-text)]">
-                          {group.lotCount || "—"}{" "}
-                          {group.lotCount === 1 ? "lot" : "lots"}
-                        </p>
-                        <p className="mt-1 break-words text-xs text-[var(--app-text-muted)]">
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm font-medium text-[var(--app-text)]">
+                          {group.lotCount || "—"}
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm font-medium text-[var(--app-text)]">
                           {group.fairMarketValue || "—"}
-                        </p>
-                      </td>
-                      <td className="px-3 py-4 text-sm text-[var(--app-text)]">
-                        {typeLabel(group.type)}
-                      </td>
-                      <td className="px-3 py-4">
-                        <p className="text-sm text-[var(--app-text)]">
-                          {new Date(group.createdAt).toLocaleDateString()}
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                          {new Date(group.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </td>
-                      <td className="px-3 py-4">
-                        <span
-                          className="inline-flex rounded-md px-2 py-1 text-xs font-semibold"
-                          style={{
-                            backgroundColor: status.bg,
-                            color: status.color,
-                          }}
-                        >
-                          {status.label}
-                        </span>
-                        {deliveryStatus ? (
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm text-[var(--app-text)]">
+                          {reportTypeColumnLabel(group.type)}
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-3">
+                          <p className="text-sm text-[var(--app-text)]">
+                            {new Date(group.createdAt).toLocaleDateString()}
+                          </p>
+                          <p className="mt-0.5 text-xs text-[var(--app-text-muted)]">
+                            {new Date(group.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-3.5 py-3">
                           <span
-                            className="mt-1.5 block w-fit rounded-md px-2 py-1 text-xs font-semibold"
+                            className="inline-flex rounded-md border border-current/20 px-2 py-1 text-xs font-semibold"
                             style={{
-                              backgroundColor: deliveryStatus.bg,
-                              color: deliveryStatus.color,
+                              backgroundColor: status.bg,
+                              color: status.color,
                             }}
                           >
-                            {deliveryStatus.label}
+                            {status.label}
                           </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-3">
-                        {renderFileControls(group)}
-                      </td>
-                      <td className="px-3 py-3">
-                        {renderReportActions(group)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {deliveryStatus ? (
+                            <span
+                              className="mt-1 block w-fit text-[11px] font-medium"
+                              style={{ color: deliveryStatus.color }}
+                            >
+                              {deliveryStatus.label}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="border-r border-[var(--app-border)] px-2.5 py-2.5">
+                          {renderFileControls(group)}
+                        </td>
+                        <td className="px-2.5 py-2.5">
+                          {renderReportActions(group)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <nav
@@ -1686,24 +1787,29 @@ export default function ReportsPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                aria-label="Previous reports page"
+                className="grid size-9 place-items-center rounded-lg border border-[var(--app-border)] text-[var(--app-text)] transition-colors hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
                 disabled={currentPage <= 1}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
               >
-                Previous
+                <ChevronLeft className="size-4" />
               </button>
-              <span className="px-1 text-[var(--app-text-muted)]">
-                Page {currentPage} of {totalPages}
+              <span className="grid size-9 place-items-center rounded-lg border border-[var(--app-accent)] bg-[var(--app-accent-soft)] font-semibold text-[var(--app-accent)]">
+                {currentPage}
+              </span>
+              <span className="px-1 text-xs text-[var(--app-text-muted)]">
+                of {totalPages}
               </span>
               <button
                 type="button"
-                className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                aria-label="Next reports page"
+                className="grid size-9 place-items-center rounded-lg border border-[var(--app-border)] text-[var(--app-text)] transition-colors hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
                 disabled={currentPage >= totalPages}
                 onClick={() =>
                   setPage((value) => Math.min(totalPages, value + 1))
                 }
               >
-                Next
+                <ChevronRight className="size-4" />
               </button>
             </div>
           </nav>

@@ -198,7 +198,7 @@ export default function AssignedReleasesPage() {
                 <div className="md:text-right">
                   <button
                     type="button"
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={busyId === item._id}
                     onClick={() => void release(item)}
                   >

@@ -106,7 +106,7 @@ export default function LoginForm() {
           </div>
         ) : null}
 
-        <div className="mt-11 space-y-8">
+        <div className="mt-9 space-y-5">
           <label className="block">
             <span className={AUTH_LABEL_CLASS}>Email address</span>
             <input
@@ -154,7 +154,7 @@ export default function LoginForm() {
           </div>
         </div>
 
-        <div className="mt-8 flex items-center justify-between gap-4">
+        <div className="mt-6 flex items-center justify-between gap-4">
           <label className="flex cursor-pointer items-center gap-3 text-sm text-[var(--app-text)]">
             <input
               type="checkbox"
@@ -172,13 +172,13 @@ export default function LoginForm() {
           </Link>
         </div>
 
-        <button type="submit" disabled={loading} className={`mt-11 w-full ${AUTH_PRIMARY_BUTTON_CLASS}`}>
+        <button type="submit" disabled={loading} className={`mt-8 w-full ${AUTH_PRIMARY_BUTTON_CLASS}`}>
           {loading ? <AuthSpinner /> : null}
           <span>{loading ? "Signing in..." : "Open dashboard"}</span>
           {loading ? null : <ArrowRight className="h-4 w-4" />}
         </button>
 
-        <p className="mt-8 text-center text-sm text-[var(--app-text)]">
+        <p className="mt-6 text-center text-sm text-[var(--app-text)]">
           New to Asset Insight?{" "}
           <Link className="font-medium text-[var(--app-accent)] hover:underline hover:underline-offset-4" href="/signup">
             Create account
