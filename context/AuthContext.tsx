@@ -23,6 +23,7 @@ import { DeviceAccessService } from "@/services/device-access";
 
 export type AuthContextType = {
   user: AuthUser | null;
+  sessionPresent: boolean;
   loading: boolean;
   error: string | null;
   loggingOut: boolean;
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [sessionPresent, setSessionPresent] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -49,10 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const applyResponse = useCallback((data: AuthResponse) => {
     if (data.authState === "authenticated") {
       setUser(data.user);
+      setSessionPresent(true);
       setDeviceAccess(null);
       clearStoredDeviceAccess();
     } else {
       setUser(null);
+      setSessionPresent(false);
       setDeviceAccess(data);
       storeDeviceAccess(data);
     }
@@ -64,9 +68,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await UserService.getMe();
       setUser(me);
+      setSessionPresent(true);
       setLoggingOut(false);
     } catch (err: any) {
       setUser(null);
+      setSessionPresent(false);
       const restricted = err?.response?.data as RestrictedDeviceAccess | undefined;
       if (restricted?.authState) {
         setDeviceAccess(restricted);
@@ -94,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const exchangeIfApproved = useCallback(async () => {
     const authenticated = await DeviceAccessService.exchange();
     setUser(authenticated.user);
+    setSessionPresent(true);
     setDeviceAccess(null);
     setError(null);
   }, []);
@@ -135,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoggingOut(true);
     await AuthService.logout();
     setUser(null);
+    setSessionPresent(false);
     setDeviceAccess(null);
   }, []);
 
@@ -143,13 +151,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedDeviceAccess) {
       setDeviceAccess(storedDeviceAccess);
       setUser(null);
+      setSessionPresent(false);
       setLoggingOut(false);
       setLoading(false);
     } else if (typeof window !== "undefined" && hasStoredTokens()) {
+      setSessionPresent(true);
       refresh().finally(() => setLoading(false));
     } else {
       clearTokens();
       setUser(null);
+      setSessionPresent(false);
       setLoggingOut(false);
       setLoading(false);
     }
@@ -161,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!detail?.authState) return;
       clearTokens();
       setUser(null);
+      setSessionPresent(false);
       setDeviceAccess(detail);
       storeDeviceAccess(detail);
     };
@@ -173,6 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearTokens();
       clearStoredDeviceAccess();
       setUser(null);
+      setSessionPresent(false);
       setDeviceAccess(null);
       setLoggingOut(false);
       setError("Your device session is no longer valid. Sign in again to continue.");
@@ -184,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextType>(
     () => ({
       user,
+      sessionPresent,
       loading,
       error,
       loggingOut,
@@ -198,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       user,
+      sessionPresent,
       loading,
       error,
       loggingOut,

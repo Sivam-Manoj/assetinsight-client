@@ -8,7 +8,6 @@ import { toast } from "@/components/ui/toast";
 import Loading from "@/components/common/Loading";
 import SalvageCamera from "./salvage/SalvageCamera";
 import ImageAnnotatorModal from "./salvage/ImageAnnotatorModal";
-import JSZip from "jszip";
 
 type Props = {
   onSuccess?: (message?: string) => void;
@@ -97,6 +96,7 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
   async function downloadAllImagesZip() {
     try {
       if (images.length === 0) return;
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       for (const f of images) zip.file(f.name, f);
       const safePrefix = (

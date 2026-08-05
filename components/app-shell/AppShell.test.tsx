@@ -68,6 +68,7 @@ function authValue(
       username: "Alex Morgan",
       ...roles,
     },
+    sessionPresent: true,
     loading: false,
     error: null,
     loggingOut: false,
@@ -128,12 +129,27 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: "Releases" })).not.toBeInTheDocument();
   });
 
-  it("pauses the user-scoped summary request until identity is available", () => {
-    const signedOut = authValue();
-    signedOut.user = null;
-    vi.mocked(useAuthContext).mockReturnValue(signedOut);
+  it("starts the summary request while a stored session identity resolves", () => {
+    const resolvingSession = authValue();
+    resolvingSession.user = null;
+    vi.mocked(useAuthContext).mockReturnValue(resolvingSession);
 
     render(<AppShell>Queue content</AppShell>);
+
+    expect(mocks.swr).toHaveBeenCalledWith(
+      ["auctioneer/navigation-summary", "pending-session"],
+      expect.any(Function),
+      expect.objectContaining({ keepPreviousData: false })
+    );
+  });
+
+  it("pauses the summary request when no session is present", () => {
+    const signedOut = authValue();
+    signedOut.user = null;
+    signedOut.sessionPresent = false;
+    vi.mocked(useAuthContext).mockReturnValue(signedOut);
+
+    render(<AppShell>Signed out queue</AppShell>);
 
     expect(mocks.swr).toHaveBeenCalledWith(
       null,

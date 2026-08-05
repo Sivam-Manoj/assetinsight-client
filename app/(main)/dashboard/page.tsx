@@ -242,8 +242,9 @@ function Metric({
 }
 
 export default function DashboardPage() {
-  const { user } = useAuthContext();
+  const { user, sessionPresent } = useAuthContext();
   const userId = user?._id || user?.id;
+  const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
   const [greetingLabel] = useState(greeting);
@@ -258,7 +259,7 @@ export default function DashboardPage() {
     isLoading: statsLoading,
     mutate: mutateStats,
   } = useSWR<ReportStats>(
-    userId ? ["dashboard/report-stats", userId] : null,
+    requestOwner ? ["dashboard/report-stats", requestOwner] : null,
     ReportsService.getReportStats,
     { keepPreviousData: false }
   );
@@ -268,7 +269,7 @@ export default function DashboardPage() {
     isLoading: reportsLoading,
     mutate: mutateReports,
   } = useSWR<PdfReport[]>(
-    userId ? ["dashboard/recent-reports", userId] : null,
+    requestOwner ? ["dashboard/recent-reports", requestOwner] : null,
     ReportsService.getMyReports,
     { keepPreviousData: false }
   );
@@ -277,7 +278,7 @@ export default function DashboardPage() {
     error: incomingError,
     isLoading: incomingLoading,
   } = useSWR<IncomingSummary>(
-    userId ? ["auctioneer/navigation-summary", userId] : null,
+    requestOwner ? ["auctioneer/navigation-summary", requestOwner] : null,
     navSummaryFetcher,
     {
       keepPreviousData: false,

@@ -30,6 +30,7 @@ import {
   type RealEstateReport,
 } from "@/services/realEstate";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
+import styles from "./page.module.css";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -63,6 +64,12 @@ const WORKFLOW_LABELS: Record<string, string> = {
   ready: "Ready to download",
   error: "Generation failed",
 };
+
+const PREVIEW_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
 
 function isWorkflowActive(report: any): boolean {
   if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
@@ -544,20 +551,18 @@ export default function PreviewsPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-6 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-[42px] lg:py-[34px]">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-[1.85rem] font-semibold leading-[1.08] tracking-[-0.035em] text-[var(--app-text)] md:text-[2.1rem]">
-            Report previews
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--app-text-muted)]">
+    <main className={styles.page}>
+      <header className={styles.pageHeader}>
+        <div className={styles.headerCopy}>
+          <h1 className={styles.title}>Report previews</h1>
+          <p className={styles.subtitle}>
             Review new outputs, submit reports for approval, and manage already
             submitted preview packages.
           </p>
         </div>
         <button
           type="button"
-          className="app-button app-button--secondary min-w-[112px]"
+          className={styles.control}
           onClick={() => void handleManualRefresh()}
           disabled={refreshing}
         >
@@ -568,7 +573,7 @@ export default function PreviewsPage() {
 
       <section
         aria-label="Preview summary"
-        className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:grid-cols-4"
+        className={styles.summary}
       >
         {[
           { label: "New", value: summary.newCount },
@@ -579,31 +584,24 @@ export default function PreviewsPage() {
           { label: "Approved", value: summary.approvedCount },
           { label: "Declined", value: summary.declinedCount },
         ].map((item) => (
-          <div
-            key={item.label}
-            className="min-w-0 border-b border-[var(--app-border)] px-5 py-5 last:border-b-0 [&:nth-child(odd)]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
-          >
-            <p className="text-sm font-medium text-[var(--app-text-muted)]">
-              {item.label}
-            </p>
-            <p className="mt-1.5 text-[1.75rem] font-semibold tabular-nums tracking-[-0.035em] text-[var(--app-text)]">
-              {item.value}
-            </p>
+          <div key={item.label} className={styles.summaryItem}>
+            <p className={styles.summaryLabel}>{item.label}</p>
+            <p className={styles.summaryValue}>{item.value}</p>
           </div>
         ))}
       </section>
 
-      <section className="overflow-hidden rounded-[10px] border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)]">
-        <div className="border-b border-[var(--app-border)] px-4 pt-5 sm:px-5">
-          <h2 className="text-lg font-semibold tracking-[-0.02em] text-[var(--app-text)]">
-            Preview queue
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-[var(--app-text-muted)]">
-            Switch between new previews and submitted items awaiting the next
-            step.
-          </p>
+      <section className={styles.queue}>
+        <div className={styles.queueHeader}>
+          <div className={styles.queueIntro}>
+            <h2 className={styles.queueTitle}>Preview queue</h2>
+            <p className={styles.queueDescription}>
+              Switch between new previews and submitted items awaiting the next
+              step.
+            </p>
+          </div>
           <div
-            className="mt-4 flex gap-1"
+            className={styles.tabs}
             role="tablist"
             aria-label="Preview queue"
           >
@@ -622,10 +620,8 @@ export default function PreviewsPage() {
                 role="tab"
                 aria-selected={activeTab === tab.id}
                 aria-controls="preview-tabpanel"
-                className={`border-b-2 px-3 py-2.5 text-sm font-semibold ${
-                  activeTab === tab.id
-                    ? "border-[var(--app-accent)] text-[var(--app-accent)]"
-                    : "border-transparent text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                className={`${styles.tab} ${
+                  activeTab === tab.id ? styles.tabActive : ""
                 }`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -641,29 +637,33 @@ export default function PreviewsPage() {
           aria-labelledby={`preview-tab-${activeTab}`}
         >
           {reports.length === 0 ? (
-            <div className="px-5 py-12 text-center">
-              <FileSearch className="mx-auto size-6 text-[var(--app-text-muted)]" />
-              <h3 className="mt-3 font-semibold text-[var(--app-text)]">
-                {activeTab === "new"
-                  ? "No new previews"
-                  : "No submitted previews"}
-              </h3>
-              <p className="mx-auto mt-1 max-w-md text-sm text-[var(--app-text-muted)]">
-                {activeTab === "new"
-                  ? "Generate a new report to begin the review and submission flow."
-                  : "Submitted previews and approvals will appear here."}
-              </p>
-              {activeTab === "new" ? (
-                <a
-                  href="/dashboard"
-                  className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-on-accent)] hover:opacity-90"
-                >
-                  Create new report
-                </a>
-              ) : null}
+            <div className={styles.emptyState}>
+              <div>
+                <span className={styles.emptyIcon} aria-hidden="true">
+                  <FileSearch className="size-4" />
+                </span>
+                <h3 className={styles.emptyTitle}>
+                  {activeTab === "new"
+                    ? "No new previews"
+                    : "No submitted previews"}
+                </h3>
+                <p className={styles.emptyDescription}>
+                  {activeTab === "new"
+                    ? "Generate a new report to begin the review and submission flow."
+                    : "Submitted previews and approvals will appear here."}
+                </p>
+                {activeTab === "new" ? (
+                  <a
+                    href="/dashboard"
+                    className={`${styles.action} ${styles.actionPrimary} ${styles.emptyAction}`}
+                  >
+                    Create new report
+                  </a>
+                ) : null}
+              </div>
             </div>
           ) : (
-            <ul className="divide-y divide-[var(--app-border)]">
+            <ul className={styles.reportList}>
               {reports.map((report) => {
                 const info = summaryForReport(report);
                 const jobActive = isWorkflowActive(report);
@@ -684,14 +684,6 @@ export default function PreviewsPage() {
                 const badgeLabel =
                   WORKFLOW_LABELS[(report as any).workflow_stage] ||
                   String(badgeStatus).replace(/_/g, " ");
-                const badgeTone =
-                  badgeStatus === "error" || badgeStatus === "declined"
-                    ? "bg-[var(--app-danger-soft)] text-[var(--app-danger)]"
-                    : badgeStatus === "approved"
-                      ? "bg-[var(--app-success-soft)] text-[var(--app-success)]"
-                      : badgeStatus === "pending_approval"
-                        ? "bg-[var(--app-warning-soft)] text-[var(--app-warning)]"
-                        : "bg-[var(--app-accent-soft)] text-[var(--app-accent)]";
                 const progress = Math.max(
                   2,
                   Number(
@@ -711,59 +703,76 @@ export default function PreviewsPage() {
                 return (
                   <li
                     key={report._id}
-                    className="group px-4 py-5 transition-colors [content-visibility:auto] [contain-intrinsic-size:auto_228px] hover:bg-[var(--app-panel-alt)] sm:px-5"
+                    className={styles.reportRow}
                   >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="flex min-w-0 items-start gap-3.5">
-                        <ReportThumbnail
-                          src={previewThumbnailForReport(report)}
-                          title={info.title}
-                          size="card"
-                        />
-                        <div className="min-w-0 pt-0.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-semibold text-[var(--app-text-muted)]">
-                            {info.typeLabel}
-                          </span>
-                          <span
-                            className={`rounded-md px-2 py-1 text-xs font-semibold capitalize ${badgeTone}`}
-                          >
-                            {badgeLabel}
-                          </span>
-                          {report.reportType === "asset" &&
-                          (report as any).is_merged_report ? (
-                            <span className="rounded-md border border-[var(--app-border)] px-2 py-1 text-xs font-semibold text-[var(--app-text-muted)]">
-                              Merged ·{" "}
-                              {Array.isArray(
-                                (report as any).merged_from_report_ids
-                              )
-                                ? (report as any).merged_from_report_ids.length
-                                : 2}{" "}
-                              sources
+                    <div className={styles.rowMain}>
+                      <div className={styles.reportIdentity}>
+                        <span className={styles.thumbnail}>
+                          <ReportThumbnail
+                            src={previewThumbnailForReport(report)}
+                            title={info.title}
+                            size="table"
+                          />
+                        </span>
+                        <div className={styles.identityCopy}>
+                          <div className={styles.metaLine}>
+                            <span className={styles.typeLabel}>
+                              {info.typeLabel}
                             </span>
-                          ) : null}
-                          {(report as any).preview_transferred_at ? (
-                            <span className="rounded-md bg-[var(--app-warning-soft)] px-2 py-1 text-xs font-semibold text-[var(--app-warning)]">
-                              Assigned by admin
+                            <span
+                              className={`${styles.badge} ${
+                                badgeStatus === "error" ||
+                                badgeStatus === "declined"
+                                  ? styles.badgeDanger
+                                  : badgeStatus === "approved"
+                                    ? styles.badgeSuccess
+                                    : badgeStatus === "pending_approval"
+                                      ? styles.badgeWarning
+                                      : styles.badgeInfo
+                              }`}
+                            >
+                              {badgeLabel}
                             </span>
-                          ) : null}
+                            {report.reportType === "asset" &&
+                            (report as any).is_merged_report ? (
+                              <span
+                                className={`${styles.badge} ${styles.badgeNeutral}`}
+                              >
+                                Merged ·{" "}
+                                {Array.isArray(
+                                  (report as any).merged_from_report_ids
+                                )
+                                  ? (report as any).merged_from_report_ids.length
+                                  : 2}{" "}
+                                sources
+                              </span>
+                            ) : null}
+                            {(report as any).preview_transferred_at ? (
+                              <span
+                                className={`${styles.badge} ${styles.badgeWarning}`}
+                              >
+                                Assigned by admin
+                              </span>
+                            ) : null}
+                          </div>
+                          <h3 className={styles.reportTitle}>{info.title}</h3>
+                          <p className={styles.createdAt}>
+                            Created{" "}
+                            <time dateTime={report.createdAt}>
+                              {PREVIEW_DATE_FORMATTER.format(
+                                new Date(report.createdAt)
+                              )}
+                            </time>
+                          </p>
                         </div>
-                        <h3 className="mt-2 break-words text-[0.98rem] font-semibold tracking-[-0.012em] text-[var(--app-text)]">
-                          {info.title}
-                        </h3>
-                        <p className="mt-1 text-xs text-[var(--app-text-muted)]">
-                          Created{" "}
-                          {new Date(report.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 lg:max-w-[520px] lg:justify-end">
+                      <div className={styles.actions}>
                         {hasPersistentPreviewAction ? (
                           <button
                             type="button"
                             aria-label={previewAccessibleName}
-                            className="inline-flex min-h-10 items-center gap-1.5 rounded-md bg-[var(--app-accent)] px-3.5 text-sm font-semibold text-[var(--app-on-accent)] transition-colors hover:bg-[var(--app-accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
+                            className={`${styles.action} ${styles.actionPrimary}`}
                             onClick={() =>
                               handleOpenPreview(report, previewIsSubmitted)
                             }
@@ -778,7 +787,7 @@ export default function PreviewsPage() {
                         !jobActive ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-[var(--app-on-accent)] hover:opacity-90"
+                            className={`${styles.action} ${styles.actionPrimary}`}
                             onClick={() => handleOpenPreview(report)}
                           >
                             <FileSearch className="size-3.5" />
@@ -790,7 +799,7 @@ export default function PreviewsPage() {
                         report.status === "declined" ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent)] px-3 text-xs font-semibold text-[var(--app-on-accent)] hover:opacity-90"
+                            className={`${styles.action} ${styles.actionPrimary}`}
                             onClick={() => handleOpenPreview(report)}
                           >
                             <Pencil className="size-3.5" />
@@ -806,7 +815,7 @@ export default function PreviewsPage() {
                             {report.reportType === "realEstate" ? (
                               <button
                                 type="button"
-                                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                                className={`${styles.action} ${styles.actionSecondary}`}
                                 onClick={() => handleOpenPreview(report, true)}
                               >
                                 <Pencil className="size-3.5" />
@@ -815,7 +824,7 @@ export default function PreviewsPage() {
                             ) : null}
                             <button
                               type="button"
-                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                              className={`${styles.action} ${styles.actionSecondary}`}
                               onClick={() => void handleQuickResubmit(report)}
                               disabled={resubmitting === report._id}
                             >
@@ -834,7 +843,10 @@ export default function PreviewsPage() {
                         ) : null}
 
                         {jobActive ? (
-                          <span className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[var(--app-accent-soft)] px-3 text-xs font-semibold text-[var(--app-accent)]">
+                          <span
+                            className={`${styles.action} ${styles.actionStatus}`}
+                            role="status"
+                          >
                             <RefreshCw className="size-3.5 animate-spin" />
                             {WORKFLOW_LABELS[
                               (report as any).workflow_stage
@@ -848,7 +860,7 @@ export default function PreviewsPage() {
                         {canRetryFailedJob ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:opacity-40"
+                            className={`${styles.action} ${styles.actionSecondary}`}
                             onClick={() => void handleQuickResubmit(report)}
                             disabled={resubmitting === report._id}
                           >
@@ -862,7 +874,7 @@ export default function PreviewsPage() {
                         {report.reportType === "asset" && !jobActive ? (
                           <button
                             type="button"
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
+                            className={`${styles.action} ${styles.actionSecondary}`}
                             onClick={() => setMergeAnchorId(report._id)}
                           >
                             <Merge className="size-3.5" />
@@ -872,7 +884,7 @@ export default function PreviewsPage() {
 
                         <button
                           type="button"
-                          className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-3.5 text-sm font-semibold text-[var(--app-text-muted)] transition-colors hover:border-[var(--app-danger-border)] hover:bg-[var(--app-danger-soft)] hover:text-[var(--app-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-danger)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--app-panel)]"
+                          className={`${styles.action} ${styles.actionDanger}`}
                           onClick={() => setDeleteTarget(report)}
                         >
                           <Trash2 className="size-3.5" />
@@ -881,18 +893,11 @@ export default function PreviewsPage() {
                       </div>
                     </div>
 
-                    <dl className="mt-5 grid grid-cols-2 gap-2.5 border-t border-[var(--app-border)] pt-4 sm:grid-cols-3">
+                    <dl className={styles.details}>
                       {info.fields.map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="min-w-0 rounded-lg bg-[var(--app-panel-alt)] px-3.5 py-3"
-                        >
-                          <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
-                            {label}
-                          </dt>
-                          <dd className="mt-1 break-words text-sm font-medium text-[var(--app-text)]">
-                            {value}
-                          </dd>
+                        <div key={label} className={styles.detail}>
+                          <dt className={styles.detailLabel}>{label}</dt>
+                          <dd className={styles.detailValue}>{value}</dd>
                         </div>
                       ))}
                     </dl>
@@ -901,27 +906,33 @@ export default function PreviewsPage() {
                     report.decline_reason ? (
                       <div
                         role="alert"
-                        className="mt-4 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+                        className={`${styles.rowContinuation} ${styles.notice} ${styles.noticeDanger}`}
                       >
                         {report.decline_reason}
                       </div>
                     ) : null}
                     {(report as any).workflow_stage ===
                     "awaiting_approval" ? (
-                      <div className="mt-4 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-2.5 text-sm text-[var(--app-warning)]">
+                      <div
+                        className={`${styles.rowContinuation} ${styles.notice} ${styles.noticeWarning}`}
+                      >
                         Files are ready and awaiting the assigned report
                         approver.
                       </div>
                     ) : null}
                     {(report as any).workflow_stage === "awaiting_release" ? (
-                      <div className="mt-4 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-2.5 text-sm text-[var(--app-warning)]">
+                      <div
+                        className={`${styles.rowContinuation} ${styles.notice} ${styles.noticeWarning}`}
+                      >
                         Approved and awaiting the assigned release manager.
                       </div>
                     ) : null}
 
                     {jobActive ? (
-                      <div className="mt-4 rounded-lg bg-[var(--app-accent-soft)] px-3 py-3">
-                        <div className="flex justify-between gap-3 text-xs font-semibold text-[var(--app-accent)]">
+                      <div
+                        className={`${styles.rowContinuation} ${styles.progressPanel}`}
+                      >
+                        <div className={styles.progressHeader}>
                           <span>
                             {(report as any).workflow_message ||
                               (report as any).generation_progress?.message ||
@@ -932,19 +943,19 @@ export default function PreviewsPage() {
                           <span>{Math.round(progress)}%</span>
                         </div>
                         <div
-                          className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--app-border)]"
+                          className={styles.progressTrack}
                           role="progressbar"
                           aria-valuemin={0}
                           aria-valuemax={100}
                           aria-valuenow={Math.round(progress)}
                         >
                           <span
-                            className="block h-full rounded-full bg-[var(--app-accent)]"
+                            className={styles.progressValue}
                             style={{ width: `${Math.min(100, progress)}%` }}
                           />
                         </div>
                         {(report as any).generation_progress?.totalLots ? (
-                          <p className="mt-1.5 text-xs text-[var(--app-text-muted)]">
+                          <p className={styles.progressMeta}>
                             Lot{" "}
                             {(report as any).generation_progress.currentLot ||
                               0}{" "}
@@ -957,7 +968,7 @@ export default function PreviewsPage() {
                     {jobFailed ? (
                       <div
                         role="alert"
-                        className="mt-4 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+                        className={`${styles.rowContinuation} ${styles.notice} ${styles.noticeDanger}`}
                       >
                         {(report as any).job_error ||
                           (report as any).error_message ||
@@ -969,7 +980,9 @@ export default function PreviewsPage() {
                     ((report as any).preview_files?.spec_pdf ||
                       (report as any).preview_files?.cr_docx ||
                       (report as any).preview_files?.docx) ? (
-                      <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--app-border)] pt-3">
+                      <div
+                        className={`${styles.rowContinuation} ${styles.downloads}`}
+                      >
                         {[
                           [
                             "CR",
@@ -990,7 +1003,7 @@ export default function PreviewsPage() {
                               href={href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)]"
+                              className={`${styles.action} ${styles.actionSecondary} ${styles.downloadAction}`}
                             >
                               <Download className="size-3.5" />
                               {label}
@@ -1010,7 +1023,7 @@ export default function PreviewsPage() {
       <dialog
         ref={deleteDialogRef}
         aria-labelledby="delete-preview-title"
-        className="m-auto w-[min(92vw,460px)] rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-0 text-[var(--app-text)] shadow-[var(--app-shadow-modal)] backdrop:bg-[var(--app-overlay)]"
+        className={styles.dialog}
         onCancel={(event) => {
           if (deleting) event.preventDefault();
           else setDeleteTarget(null);
@@ -1019,18 +1032,18 @@ export default function PreviewsPage() {
           if (deleteTarget && !deleting) setDeleteTarget(null);
         }}
       >
-        <div className="p-5">
-          <h2 id="delete-preview-title" className="text-lg font-bold">
+        <div className={styles.dialogBody}>
+          <h2 id="delete-preview-title" className={styles.dialogTitle}>
             Delete preview?
           </h2>
-          <p className="mt-2 text-sm text-[var(--app-text-muted)]">
+          <p className={styles.dialogDescription}>
             This permanently removes the selected preview and its associated
             data.
           </p>
-          <div className="mt-5 flex justify-end gap-2">
+          <div className={styles.dialogActions}>
             <button
               type="button"
-              className="min-h-10 rounded-lg border border-[var(--app-border)] px-4 text-sm font-semibold hover:bg-[var(--app-panel-alt)]"
+              className={`${styles.action} ${styles.actionSecondary}`}
               onClick={() => setDeleteTarget(null)}
               disabled={Boolean(deleting)}
             >
@@ -1038,7 +1051,7 @@ export default function PreviewsPage() {
             </button>
             <button
               type="button"
-              className="min-h-10 rounded-lg bg-[var(--app-danger)] px-4 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className={`${styles.action} ${styles.deleteConfirm}`}
               onClick={() => void handleDeleteReport()}
               disabled={deleting === deleteTarget?._id}
             >

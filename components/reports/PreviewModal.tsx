@@ -233,7 +233,7 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
           type="button"
           onClick={handleClear}
           disabled={disabled || !value}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="app-button app-button--secondary !min-h-8 !px-3 !py-1 !text-xs"
         >
           Clear
         </button>
@@ -935,7 +935,7 @@ export default function PreviewModal({
     <button
       type="button"
       onClick={() => openLotFieldEditor(lotIndex, field, variant)}
-      className="rounded-md border border-slate-200 bg-[var(--app-panel)] px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
+      className="app-button app-button--secondary !min-h-7 !rounded-md !px-2 !py-1 !text-[11px]"
       aria-label={`Open ${lotTextFieldMeta[field].label} editor`}
     >
       Edit
@@ -1135,6 +1135,7 @@ export default function PreviewModal({
 
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report" fullscreen>
+      <div className="preview-editor">
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -1197,7 +1198,7 @@ export default function PreviewModal({
           <button
             type="button"
             onClick={handlePrintSpecPdf}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="app-button app-button--secondary"
           >
             <Printer className="h-4 w-4" />
             Print
@@ -1205,7 +1206,7 @@ export default function PreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadSpecPdf()}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+            className="app-button app-button--primary"
           >
             <Download className="h-4 w-4" />
             Download CR
@@ -1213,7 +1214,7 @@ export default function PreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadCrDocx()}
-            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-[var(--app-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+            className="app-button app-button--secondary"
             title={crDocxUrl ? "Download editable CR Word file" : "Generate and download editable CR Word file"}
           >
             <Download className="h-4 w-4" />
@@ -1234,7 +1235,7 @@ export default function PreviewModal({
             ))}
           </datalist>
           {/* Report Details */}
-          <div className="space-y-6 max-w-none pb-28">
+          <div className="space-y-4 max-w-none pb-24">
             {/* Basic Information Section */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
@@ -1293,15 +1294,15 @@ export default function PreviewModal({
                     onClick={() =>
                       updateField("bank_photos_enabled", !previewData?.bank_photos_enabled)
                     }
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    className={`app-button w-full justify-between ${
                       previewData?.bank_photos_enabled
-                        ? "border-blue-400 bg-blue-50 text-blue-700"
-                        : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
+                        ? "app-button--primary"
+                        : "app-button--secondary"
                     }`}
                     aria-pressed={!!previewData?.bank_photos_enabled}
                   >
                     <span>Include all photos in CR</span>
-                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs shadow-sm">
+                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs text-[var(--app-accent)] shadow-sm">
                       {previewData?.bank_photos_enabled ? "On" : "Off"}
                     </span>
                   </button>
@@ -1643,7 +1644,7 @@ export default function PreviewModal({
               <button
                 type="button"
                 onClick={addLot}
-                className="inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
+                className="app-button app-button--primary"
               >
                 Add Lot
               </button>
@@ -1665,7 +1666,7 @@ export default function PreviewModal({
                               <button
                                 onClick={() => deleteLot(idx)}
                                 aria-label={`Delete lot ${idx + 1}`}
-                                className="px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-xs"
+                                className="app-button app-button--danger !min-h-7 !rounded-md !px-2 !py-1 !text-xs"
                               >
                                 Delete
                               </button>
@@ -1703,7 +1704,7 @@ export default function PreviewModal({
                                       type="button"
                                       disabled={uploadingLotKey === lotUploadKey}
                                       onClick={() => document.getElementById(uploadInputId)?.click()}
-                                      className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                      className="app-button app-button--secondary !min-h-7 !rounded-md !px-2.5 !py-1 !text-[11px]"
                                     >
                                       <Upload className="h-3 w-3" />
                                       {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -1737,7 +1738,7 @@ export default function PreviewModal({
                                       {lotImages.length > 20 && (
                                         <button
                                           type="button"
-                                          className="flex-shrink-0 w-20 h-20 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
+                                          className="flex h-20 w-20 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-accent-soft)] hover:text-[var(--app-accent)]"
                                           onClick={() => openLotGallery(20)}
                                           aria-label={`Open ${lotImages.length - 20} more photos`}
                                         >
@@ -1935,7 +1936,7 @@ export default function PreviewModal({
                                       {lotImages.length > 6 && (
                                         <button
                                           type="button"
-                                          className="w-14 h-14 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 transition-all flex items-center justify-center"
+                                          className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-accent-soft)] hover:text-[var(--app-accent)]"
                                           onClick={() => openLotGallery(6)}
                                           aria-label={`Open ${lotImages.length - 6} more photos`}
                                         >
@@ -1949,7 +1950,7 @@ export default function PreviewModal({
                                         type="button"
                                         disabled={uploadingLotKey === lotUploadKey}
                                         onClick={() => document.getElementById(uploadInputId)?.click()}
-                                        className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2 py-1 text-[10px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                        className="app-button app-button--secondary !min-h-7 !rounded-md !px-2 !py-1 !text-[10px]"
                                       >
                                         <Upload className="h-3 w-3" />
                                         {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload"}
@@ -1961,7 +1962,7 @@ export default function PreviewModal({
                                     type="button"
                                     disabled={uploadingLotKey === lotUploadKey}
                                     onClick={() => document.getElementById(uploadInputId)?.click()}
-                                    className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-3 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                                    className="app-button app-button--secondary !min-h-8 !rounded-md !px-3 !py-1.5 !text-xs"
                                   >
                                     <Upload className="h-3.5 w-3.5" />
                                     {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -2014,7 +2015,7 @@ export default function PreviewModal({
                                 <button
                                   onClick={() => deleteLot(idx)}
                                   aria-label={`Delete lot ${idx + 1}`}
-                                  className="px-2.5 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-xs"
+                                  className="app-button app-button--danger !min-h-8 !rounded-md !px-2.5 !py-1.5 !text-xs"
                                 >
                                   Delete
                                 </button>
@@ -2319,10 +2320,10 @@ export default function PreviewModal({
           })()}
 
           {/* Actions */}
-          <div className="sticky bottom-0 z-10 mt-6 flex flex-col gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-4 pb-1  sm:flex-row sm:items-center sm:justify-between">
+          <div className="sticky bottom-0 z-10 mt-4 flex flex-col gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-3 pb-1 sm:flex-row sm:items-center sm:justify-between">
             <button
               onClick={onClose}
-              className="order-2 sm:order-1 px-4 py-2.5 text-[var(--app-text-muted)] hover:text-[var(--app-text)] font-medium transition-colors hover:bg-[var(--app-panel)] rounded-lg"
+              className="app-button order-2 text-[var(--app-text-muted)] sm:order-1"
             >
               Cancel
             </button>
@@ -2337,7 +2338,7 @@ export default function PreviewModal({
                 onClick={handleSaveChanges}
                 disabled={!hasChanges || saving || workflowLocked}
                 aria-label="Save changes"
-                className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-all shadow-md hover:shadow-sm text-sm sm:text-base"
+                className="app-button app-button--secondary"
               >
                 <Save className="h-4 w-4" />
                 <span className="hidden sm:inline">{saving ? "Saving..." : "Save Changes"}</span>
@@ -2353,11 +2354,7 @@ export default function PreviewModal({
                       ? "Resubmit report"
                       : "Submit report"
                 }
-                className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm transition-all hover:shadow-sm text-sm sm:text-base ${
-                  isResubmitMode 
-                    ? "bg-[var(--app-panel)] from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 shadow-indigo-500/30"
-                    : "bg-[var(--app-panel)] from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-blue-500/30"
-                }`}
+                className="app-button app-button--primary"
               >
                 {isResubmitMode ? <RefreshCw className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 <span className="hidden sm:inline">
@@ -2383,6 +2380,7 @@ export default function PreviewModal({
           </div>
         </>
       )}
+      </div>
     </BottomDrawer>
   );
 }

@@ -16,46 +16,14 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Asset Insight | Appraisal Reports & Auction Lot Packages",
+    default: "Asset Insight",
     template: "%s | Asset Insight",
   },
-  description:
-    "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
-  keywords: [
-    "asset appraisal",
-    "auction lot listing",
-    "valuation report",
-    "appraisal report",
-    "asset report",
-    "client report package",
-    "Asset Insight",
-  ],
   applicationName: "Asset Insight",
-  category: "Real Estate",
   robots: {
-    index: true,
-    follow: true,
-  },
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    title: "Asset Insight | Appraisal Reports & Auction Lot Packages",
-    description:
-      "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
-    url: "/",
-    siteName: "Asset Insight",
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Asset Insight | Appraisal Reports & Auction Lot Packages",
-    description:
-      "Create polished appraisal reports, organize auction lots, and deliver client-ready packages from one clean workspace.",
-  },
-  other: {
-    tags: "asset appraisal, auction lot listing, valuation report, appraisal report, asset report, client report package, Asset Insight",
+    index: false,
+    follow: false,
+    nocache: true,
   },
 };
 

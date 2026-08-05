@@ -44,7 +44,7 @@ function getSafeNextPath(request: NextRequest) {
   return next;
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { nextUrl } = request;
   const pathname = nextUrl.pathname;
   const hasSession = getSessionState(request);

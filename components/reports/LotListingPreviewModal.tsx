@@ -944,10 +944,10 @@ export default function LotListingPreviewModal({
                 key={option}
                 type="button"
                 onClick={() => applyRunningConditionToAllLots(option)}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
                   selected
-                    ? "border-amber-500 bg-[var(--app-panel)] text-amber-950 shadow-sm"
-                    : "border-amber-200 bg-[var(--app-panel)] text-amber-900 hover:border-amber-400 hover:bg-[var(--app-panel)]"
+                    ? "app-button--primary"
+                    : "app-button--secondary"
                 }`}
               >
                 {option}
@@ -961,6 +961,7 @@ export default function LotListingPreviewModal({
 
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Lot Listing Preview">
+      <div className="preview-editor">
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -979,7 +980,7 @@ export default function LotListingPreviewModal({
           <button
             type="button"
             onClick={handlePrintSpecPdf}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="app-button app-button--secondary"
           >
             <Printer className="h-4 w-4" />
             Print
@@ -987,7 +988,7 @@ export default function LotListingPreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadSpecPdf()}
-            className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-500"
+            className="app-button app-button--primary"
           >
             <Download className="h-4 w-4" />
             Download CR
@@ -995,7 +996,7 @@ export default function LotListingPreviewModal({
           <button
             type="button"
             onClick={() => void handleDownloadCrDocx()}
-            className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-[var(--app-panel)] px-3 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+            className="app-button app-button--secondary"
             title={crDocxUrl ? "Download editable CR Word file" : "Generate and download editable CR Word file"}
           >
             <Download className="h-4 w-4" />
@@ -1016,7 +1017,7 @@ export default function LotListingPreviewModal({
             ))}
           </datalist>
           {/* Listing Details */}
-          <div className="space-y-6 max-w-5xl mx-auto pb-28">
+          <div className="mx-auto max-w-5xl space-y-4 pb-24">
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                 <span className="text-purple-600">📋</span>
@@ -1044,15 +1045,15 @@ export default function LotListingPreviewModal({
                     onClick={() =>
                       updateField("bank_photos_enabled", !previewData?.bank_photos_enabled)
                     }
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    className={`app-button w-full justify-between ${
                       previewData?.bank_photos_enabled
-                        ? "border-purple-400 bg-purple-50 text-purple-700"
-                        : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
+                        ? "app-button--primary"
+                        : "app-button--secondary"
                     }`}
                     aria-pressed={!!previewData?.bank_photos_enabled}
                   >
                     <span>Include all photos in CR</span>
-                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs shadow-sm">
+                    <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-xs text-[var(--app-accent)] shadow-sm">
                       {previewData?.bank_photos_enabled ? "On" : "Off"}
                     </span>
                   </button>
@@ -1088,10 +1089,10 @@ export default function LotListingPreviewModal({
                   onClick={() =>
                     updateField("include_damage_analysis", !includeDamageAnalysis)
                   }
-                  className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
+                  className={`app-button ${
                     includeDamageAnalysis
-                      ? "border-purple-500 bg-purple-50 text-purple-700"
-                      : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:bg-[var(--app-panel-alt)]"
+                      ? "app-button--primary"
+                      : "app-button--secondary"
                   }`}
                 >
                   {includeDamageAnalysis ? "Included" : "Excluded"}
@@ -1242,7 +1243,7 @@ export default function LotListingPreviewModal({
                         </div>
                         <button
                           onClick={() => deleteLot(idx)}
-                          className="px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-xs"
+                          className="app-button app-button--danger !min-h-7 !rounded-md !px-2 !py-1 !text-xs"
                         >
                           Delete
                         </button>
@@ -1270,7 +1271,7 @@ export default function LotListingPreviewModal({
                             type="button"
                             disabled={uploadingLotKey === lotUploadKey}
                             onClick={() => document.getElementById(uploadInputId)?.click()}
-                            className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                            className="app-button app-button--secondary !min-h-7 !rounded-md !px-2.5 !py-1 !text-[11px]"
                           >
                             <Upload className="h-3 w-3" />
                             {uploadingLotKey === lotUploadKey ? "Uploading" : "Upload images"}
@@ -1303,7 +1304,7 @@ export default function LotListingPreviewModal({
                             {lotImages.length > 10 && (
                               <button
                                 type="button"
-                                className="flex-shrink-0 w-16 h-16 rounded-lg bg-[var(--app-panel-alt)] border border-[var(--app-border)] cursor-pointer hover:bg-gray-200 flex items-center justify-center"
+                                className="flex h-16 w-16 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-accent-soft)] hover:text-[var(--app-accent)]"
                                 onClick={() => openLotGallery(10)}
                                 aria-label={`Open ${lotImages.length - 10} more photos`}
                               >
@@ -1430,7 +1431,7 @@ export default function LotListingPreviewModal({
           </div>
 
           {/* Action Buttons */}
-          <div className="sticky bottom-0 z-10 mt-6 flex max-w-5xl mx-auto flex-wrap items-center justify-between gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-4 pb-1 ">
+          <div className="sticky bottom-0 z-10 mx-auto mt-4 flex max-w-5xl flex-wrap items-center justify-between gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-3 pb-1">
             <div className="flex items-center gap-2">
               {hasChanges && (
                 <span className="text-xs text-amber-600">Changes will be saved when files generate</span>
@@ -1443,7 +1444,7 @@ export default function LotListingPreviewModal({
               <button
                 onClick={handleSubmitForApproval}
                 disabled={submitting || saving || filesGenerating || filesRegenerating}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-[var(--app-panel)] from-purple-500 to-purple-600 rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-purple-500/30 transition-all"
+                className="app-button app-button--primary"
               >
                 {submitting || saving ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1456,6 +1457,7 @@ export default function LotListingPreviewModal({
           </div>
         </>
       )}
+      </div>
     </BottomDrawer>
   );
 }

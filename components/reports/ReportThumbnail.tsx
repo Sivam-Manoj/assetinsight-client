@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { FileImage } from "lucide-react";
 
 type ReportThumbnailProps = {
@@ -14,52 +14,18 @@ export function ReportThumbnail({
   title,
   size = "table",
 }: ReportThumbnailProps) {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const [shouldLoad, setShouldLoad] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setFailed(false);
-    setShouldLoad(false);
-
-    if (!src) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setShouldLoad(true);
-      return;
-    }
-
-    const frame = frameRef.current;
-    if (!frame) {
-      setShouldLoad(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        setShouldLoad(true);
-        observer.disconnect();
-      },
-      {
-        rootMargin: "320px 0px",
-        threshold: 0.01,
-      }
-    );
-
-    observer.observe(frame);
-    return () => observer.disconnect();
-  }, [src]);
-
-  const hasImage = Boolean(src && shouldLoad && !failed);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = Boolean(src && failedSrc === src);
+  const hasImage = Boolean(src && !failed);
   const frameSize =
     size === "card"
-      ? "h-[5.25rem] w-28 sm:h-24 sm:w-32"
-      : "h-14 w-[4.75rem]";
+      ? "h-[4.5rem] w-24"
+      : "h-12 w-16";
 
   return (
     <div
-      ref={frameRef}
       className={`relative grid shrink-0 place-items-center overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] ${frameSize}`}
+      style={{ contain: "layout paint" }}
       aria-label={
         !src || failed ? `No preview image available for ${title}` : undefined
       }
@@ -72,14 +38,14 @@ export function ReportThumbnail({
         <img
           src={src || undefined}
           alt={`Preview image for ${title}`}
-          width={size === "card" ? 128 : 76}
-          height={size === "card" ? 96 : 56}
+          width={size === "card" ? 96 : 64}
+          height={size === "card" ? 72 : 48}
           loading="lazy"
           decoding="async"
           fetchPriority="low"
           draggable={false}
           className="absolute inset-0 size-full object-cover"
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(src || null)}
         />
       ) : null}
     </div>

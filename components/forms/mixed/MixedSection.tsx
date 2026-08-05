@@ -24,7 +24,6 @@ import {
   RotateCcw,
   Video,
 } from "lucide-react";
-import JSZip from "jszip";
 import {
   Button,
   Dialog,
@@ -1435,6 +1434,7 @@ export default function MixedSection({
     try {
       const lot = lots[idx];
       if (!lot || lot.files.length === 0) return;
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       for (const f of lot.files) zip.file(f.name, f);
       const safePrefix = (downloadPrefix || "asset").replace(

@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import { Camera, Trash2, Upload, Play, Download } from "lucide-react";
 import { toast } from "@/components/ui/toast";
-import JSZip from "jszip";
 import { useLocalImagePreview } from "./useLocalImagePreview";
 
 type Props = {
@@ -101,6 +100,7 @@ export default function ImageManager({
   async function downloadAllMainImages() {
     try {
       if (mainImages.length === 0) return;
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       for (const f of mainImages) zip.file(f.name, f);
       const blob = await zip.generateAsync({ type: "blob" });
@@ -127,6 +127,7 @@ export default function ImageManager({
   async function downloadAllExtraImages() {
     try {
       if (extraImages.length === 0) return;
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       for (const f of extraImages) zip.file(f.name, f);
       const blob = await zip.generateAsync({ type: "blob" });

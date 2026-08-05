@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
-  Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import BrandLockup from "@/components/auth/BrandLockup";
 import { useColorMode } from "@/components/providers/ColorModeProvider";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
@@ -96,15 +96,16 @@ function NavLink({
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, logout, loggingOut } = useAuthContext();
+  const { user, sessionPresent, logout, loggingOut } = useAuthContext();
   const userId = user?._id || user?.id;
+  const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const { resolvedTheme, setMode, toggleMode } = useColorMode();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
 
   const { data: summary } = useSWR(
-    userId ? ["auctioneer/navigation-summary", userId] : null,
+    requestOwner ? ["auctioneer/navigation-summary", requestOwner] : null,
     navSummaryFetcher,
     {
       keepPreviousData: false,
@@ -194,13 +195,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className={styles.brandRow}>
           <Link className={styles.brand} href="/dashboard" onClick={closeMobile}>
-            <span className={styles.brandMark} aria-hidden>
-              <Box size={42} strokeWidth={1.65} />
+            <span className={styles.brandLogo}>
+              <BrandLockup compact />
             </span>
-            <span className={styles.brandLockup}>
-              <span className={styles.brandName}>Asset Insight</span>
-              <span className={styles.brandSubtitle}>Enterprise workspace</span>
-            </span>
+            <span className="sr-only">Enterprise workspace</span>
           </Link>
           <button
             className={styles.collapseButton}

@@ -28,6 +28,7 @@ vi.mock("@/lib/device-access", () => ({
 
 const base = {
   user: null,
+  sessionPresent: false,
   loading: false,
   error: null,
   loggingOut: false,

@@ -26,11 +26,11 @@
 
 .brandRow {
   position: relative;
-  min-height: 97px;
+  min-height: 66px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 22px;
+  gap: 8px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--app-border);
 }
 
@@ -39,56 +39,27 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 13px;
   overflow: hidden;
 }
 
-.brandMark {
-  width: 41px;
-  height: 41px;
+.brandLogo {
+  width: 124px;
+  height: 40px;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  color: var(--app-accent);
-}
-
-.brandLockup {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-}
-
-.brandName {
-  color: var(--app-text-strong);
-  font-size: 1.2rem;
-  font-weight: 720;
-  letter-spacing: -0.035em;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.brandSubtitle {
-  color: var(--app-text-muted);
-  font-size: 0.73rem;
-  font-weight: 520;
-  letter-spacing: 0;
-  white-space: nowrap;
+  display: block;
+  overflow: hidden;
 }
 
 .collapseButton {
-  position: absolute;
-  z-index: 2;
-  top: 106px;
-  right: 20px;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   padding: 0;
+  margin-left: auto;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 7px;
   border-color: transparent;
   background: transparent;
   color: var(--app-text-muted);
@@ -111,7 +82,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  padding: 51px 18px 20px;
+  padding: 10px 12px 12px;
   scrollbar-width: none;
 }
 
@@ -120,15 +91,15 @@
 }
 
 .navGroup + .navGroup {
-  margin-top: 20px;
-  padding-top: 20px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--app-border);
 }
 
 .navLabel {
-  margin: 0 8px 9px;
+  margin: 0 7px 5px;
   color: var(--app-text-muted);
-  font-size: 0.71rem;
+  font-size: 0.66rem;
   font-weight: 670;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -137,7 +108,7 @@
 .navList {
   display: grid;
   gap: 2px;
-  margin: 0 0 0 -18px;
+  margin: 0 0 0 -12px;
   padding: 0;
   list-style: none;
 }
@@ -145,16 +116,16 @@
 .navLink {
   position: relative;
   width: 100%;
-  min-height: 52px;
+  min-height: 42px;
   display: flex;
   align-items: center;
-  gap: 17px;
-  padding: 7px 20px 7px 22px;
+  gap: 10px;
+  padding: 5px 14px;
   border: 0;
-  border-radius: 0 9px 9px 0;
+  border-radius: 0 7px 7px 0;
   background: transparent;
   color: var(--app-text-muted);
-  font-size: 0.93rem;
+  font-size: 0.84rem;
   font-weight: 540;
   line-height: 1.25;
   text-align: left;
@@ -175,18 +146,18 @@
   color: var(--app-accent);
   font-weight: 650;
   box-shadow:
-    inset 4px 0 0 var(--app-accent),
+    inset 3px 0 0 var(--app-accent),
     inset 0 0 0 1px color-mix(in srgb, var(--app-info-border) 45%, transparent);
 }
 
 .navIconFrame {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   color: inherit;
   transition:
     background-color 130ms ease,
@@ -206,8 +177,8 @@
 }
 
 .navIcon {
-  width: 21px;
-  height: 21px;
+  width: 18px;
+  height: 18px;
 }
 
 .navText {
@@ -218,17 +189,17 @@
 }
 
 .badge {
-  min-width: 28px;
-  height: 28px;
+  min-width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 7px;
+  padding: 0 5px;
   border-radius: 999px;
   border: 1px solid var(--app-info-border);
   background: var(--app-panel);
   color: var(--app-accent);
-  font-size: 0.76rem;
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   font-weight: 720;
 }
@@ -246,19 +217,19 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 14px 20px 60px;
+  padding: 10px 12px 12px;
   border-top: 1px solid var(--app-border);
 }
 
 .profile {
   min-width: 0;
-  min-height: 56px;
+  min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 7px 8px;
+  gap: 9px;
+  padding: 5px 6px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 7px;
   transition:
     background-color 130ms ease,
     border-color 130ms ease;
@@ -274,16 +245,16 @@
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   border-radius: 999px;
   background: var(--app-accent);
   color: var(--app-on-accent);
-  box-shadow: 0 0 0 3px var(--app-accent-soft);
-  font-size: 0.9rem;
+  box-shadow: 0 0 0 2px var(--app-accent-soft);
+  font-size: 0.76rem;
   font-weight: 720;
 }
 
@@ -302,14 +273,14 @@
 
 .profileName {
   color: var(--app-text);
-  font-size: 0.87rem;
+  font-size: 0.79rem;
   font-weight: 650;
   transition: color 130ms ease;
 }
 
 .profileEmail {
   color: var(--app-text-muted);
-  font-size: 0.69rem;
+  font-size: 0.64rem;
 }
 
 .profileChevron {
@@ -318,14 +289,14 @@
 }
 
 .themeSwitch {
-  height: 47px;
+  height: 36px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
-  margin-top: 38px;
+  margin-top: 8px;
   padding: 3px;
   border: 1px solid var(--app-border-strong);
-  border-radius: 10px;
+  border-radius: 7px;
   background: var(--app-panel-alt);
 }
 
@@ -334,19 +305,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 0 8px;
+  gap: 5px;
+  padding: 0 6px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 5px;
   background: transparent;
   color: var(--app-text-muted);
-  font-size: 0.83rem;
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1;
   transition:
     border-color 130ms ease,
     background-color 130ms ease,
     color 130ms ease;
+}
+
+.themeOption svg {
+  width: 15px;
+  height: 15px;
 }
 
 .themeOption:hover {
@@ -371,12 +347,12 @@
   position: sticky;
   z-index: 40;
   top: 0;
-  height: 74px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 0 28px 0 21px;
+  gap: 16px;
+  padding: 0 20px 0 12px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-panel);
 }
@@ -394,8 +370,8 @@
 }
 
 .topbarMenu {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
 }
 
 .topbarMenu:hover,
@@ -410,25 +386,24 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 16px;
+  gap: 8px;
 }
 
 .searchForm {
   position: relative;
-  width: min(380px, 38vw);
-  margin-right: 3px;
+  width: min(340px, 36vw);
 }
 
 .searchInput {
   width: 100%;
-  height: 45px;
-  padding: 10px 45px 10px 14px;
+  height: 38px;
+  padding: 8px 39px 8px 12px;
   border: 1px solid var(--app-control-border);
-  border-radius: 9px;
+  border-radius: 7px;
   outline: 0;
   background: var(--app-panel-soft);
   color: var(--app-text);
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   transition:
     border-color 130ms ease,
     box-shadow 130ms ease;
@@ -457,15 +432,15 @@
 
 .searchButton {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 37px;
-  height: 37px;
+  top: 3px;
+  right: 3px;
+  width: 32px;
+  height: 32px;
 }
 
 .topbarIcon {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   border: 1px solid transparent;
 }
@@ -493,14 +468,14 @@ button.topbarIcon:disabled {
 
 .mobileMenuButton,
 .mobileIconButton {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   display: inline-grid;
   place-items: center;
   padding: 0;
   border: 1px solid var(--app-border);
-  border-radius: 9px;
+  border-radius: 7px;
   background: var(--app-panel);
   color: var(--app-text-muted);
   box-shadow: var(--app-shadow-control);
@@ -526,10 +501,10 @@ button.topbarIcon:disabled {
 }
 
 .shell[data-collapsed="true"] .brand {
-  justify-content: center;
+  flex: 0 0 34px;
+  justify-content: flex-start;
 }
 
-.shell[data-collapsed="true"] .brandLockup,
 .shell[data-collapsed="true"] .navLabel,
 .shell[data-collapsed="true"] .navText,
 .shell[data-collapsed="true"] .profileCopy,
@@ -541,11 +516,15 @@ button.topbarIcon:disabled {
 
 .shell[data-collapsed="true"] .brandRow {
   justify-content: center;
-  padding: 12px;
+  padding: 8px;
+}
+
+.shell[data-collapsed="true"] .brandLogo {
+  width: 34px;
 }
 
 .shell[data-collapsed="true"] .collapseButton {
-  right: 18px;
+  display: none;
 }
 
 .shell[data-collapsed="true"] .navScroll {
@@ -561,10 +540,10 @@ button.topbarIcon:disabled {
 .shell[data-collapsed="true"] .navLink {
   justify-content: center;
   gap: 0;
-  margin: 0 8px;
-  width: calc(100% - 16px);
-  padding: 8px;
-  border-radius: 10px;
+  margin: 0 4px;
+  width: calc(100% - 8px);
+  padding: 6px;
+  border-radius: 7px;
 }
 
 .shell[data-collapsed="true"] .navLink[data-active="true"] {
@@ -572,8 +551,8 @@ button.topbarIcon:disabled {
 }
 
 .shell[data-collapsed="true"] .navIconFrame {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
 }
 
 .shell[data-collapsed="true"] .navGroup + .navGroup {
@@ -581,7 +560,7 @@ button.topbarIcon:disabled {
 }
 
 .shell[data-collapsed="true"] .footer {
-  padding: 12px 8px;
+  padding: 8px;
 }
 
 .shell[data-collapsed="true"] .profile {
@@ -590,7 +569,7 @@ button.topbarIcon:disabled {
 }
 
 .shell[data-collapsed="true"] .themeSwitch {
-  height: 84px;
+  height: 72px;
   grid-template-columns: 1fr;
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 4px;
@@ -598,135 +577,6 @@ button.topbarIcon:disabled {
 
 .shell[data-collapsed="true"] .themeOption {
   min-height: 0;
-}
-
-@media (min-width: 1024px) and (max-height: 900px) {
-  .brandRow,
-  .shell[data-collapsed="true"] .brandRow {
-    min-height: 72px;
-    padding-top: 8px;
-    padding-bottom: 8px;
-  }
-
-  .brandMark {
-    width: 34px;
-    height: 34px;
-  }
-
-  .brandMark svg {
-    width: 34px;
-    height: 34px;
-  }
-
-  .brandName {
-    font-size: 1.05rem;
-  }
-
-  .brandSubtitle {
-    display: none;
-  }
-
-  .collapseButton,
-  .shell[data-collapsed="true"] .collapseButton {
-    top: 76px;
-  }
-
-  .navScroll {
-    padding: 40px 16px 8px;
-  }
-
-  .navGroup + .navGroup {
-    margin-top: 8px;
-    padding-top: 10px;
-  }
-
-  .navLabel {
-    margin-bottom: 5px;
-    font-size: 0.68rem;
-  }
-
-  .navList {
-    margin-right: 0;
-    margin-left: -16px;
-  }
-
-  .navLink {
-    min-height: 40px;
-    gap: 12px;
-    padding: 4px 20px;
-    font-size: 0.88rem;
-  }
-
-  .navIconFrame {
-    width: 30px;
-    height: 30px;
-    border-radius: 7px;
-  }
-
-  .navIcon {
-    width: 19px;
-    height: 19px;
-  }
-
-  .badge {
-    min-width: 24px;
-    height: 24px;
-    padding: 0 6px;
-    font-size: 0.7rem;
-  }
-
-  .footer {
-    padding: 10px 12px;
-  }
-
-  .profile {
-    min-height: 44px;
-    padding: 3px 5px;
-  }
-
-  .avatar {
-    width: 34px;
-    height: 34px;
-    font-size: 0.78rem;
-  }
-
-  .profileName {
-    font-size: 0.8rem;
-  }
-
-  .profileEmail {
-    font-size: 0.66rem;
-  }
-
-  .themeSwitch {
-    height: 40px;
-    margin-top: 8px;
-  }
-
-  .themeOption {
-    gap: 5px;
-    padding: 0 5px;
-    font-size: 0.76rem;
-  }
-
-  .shell[data-collapsed="true"] .navScroll {
-    padding-top: 40px;
-    padding-bottom: 8px;
-  }
-
-  .shell[data-collapsed="true"] .navIconFrame {
-    width: 34px;
-    height: 34px;
-  }
-
-  .shell[data-collapsed="true"] .footer {
-    padding: 8px;
-  }
-
-  .shell[data-collapsed="true"] .themeSwitch {
-    height: 76px;
-    margin-top: 8px;
-  }
 }
 
 @media (max-width: 1023px) {
@@ -738,7 +588,7 @@ button.topbarIcon:disabled {
   .sidebar {
     position: fixed;
     left: 0;
-    width: min(312px, 90vw);
+    width: min(278px, 88vw);
     transform: translateX(-102%);
     visibility: hidden;
     transition:
@@ -755,39 +605,21 @@ button.topbarIcon:disabled {
 
   .brandRow,
   .shell[data-collapsed="true"] .brandRow {
-    min-height: 72px;
+    min-height: 64px;
     justify-content: initial;
-    padding: 10px 14px 10px 18px;
-  }
-
-  .brandMark {
-    width: 38px;
-    height: 38px;
-  }
-
-  .brandMark svg {
-    width: 38px;
-    height: 38px;
-  }
-
-  .brandName {
-    font-size: 1.08rem;
-  }
-
-  .brandSubtitle {
-    display: none;
+    padding: 8px 12px;
   }
 
   .collapseButton,
   .shell[data-collapsed="true"] .collapseButton {
     position: static;
-    width: 40px;
-    min-height: 40px;
+    width: 34px;
+    min-height: 34px;
+    display: grid;
     margin-left: auto;
-    border-radius: 8px;
+    border-radius: 7px;
   }
 
-  .shell[data-collapsed="true"] .brandLockup,
   .shell[data-collapsed="true"] .navLabel,
   .shell[data-collapsed="true"] .navText,
   .shell[data-collapsed="true"] .profileCopy,
@@ -797,45 +629,46 @@ button.topbarIcon:disabled {
     display: initial;
   }
 
-  .shell[data-collapsed="true"] .brandLockup {
-    display: flex;
+  .shell[data-collapsed="true"] .brand {
+    flex: 1;
+    justify-content: flex-start;
   }
 
-  .shell[data-collapsed="true"] .brand {
-    justify-content: flex-start;
+  .shell[data-collapsed="true"] .brandLogo {
+    width: 124px;
   }
 
   .navScroll,
   .shell[data-collapsed="true"] .navScroll {
-    padding: 14px 18px;
+    padding: 10px 12px;
   }
 
   .navList,
   .shell[data-collapsed="true"] .navList {
     margin-right: 0;
-    margin-left: -18px;
+    margin-left: -12px;
   }
 
   .navLink,
   .shell[data-collapsed="true"] .navLink {
     width: 100%;
-    min-height: 48px;
+    min-height: 42px;
     justify-content: flex-start;
-    gap: 12px;
+    gap: 10px;
     margin: 0;
-    padding: 8px 22px;
-    border-radius: 0 9px 9px 0;
+    padding: 6px 16px;
+    border-radius: 0 7px 7px 0;
   }
 
   .shell[data-collapsed="true"] .navLink[data-active="true"] {
     box-shadow:
-      inset 4px 0 0 var(--app-accent),
+      inset 3px 0 0 var(--app-accent),
       inset 0 0 0 1px color-mix(in srgb, var(--app-info-border) 45%, transparent);
   }
 
   .shell[data-collapsed="true"] .navIconFrame {
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
   }
 
   .shell[data-collapsed="true"] .navGroup + .navGroup {
@@ -843,26 +676,26 @@ button.topbarIcon:disabled {
   }
 
   .navGroup + .navGroup {
-    margin-top: 12px;
-    padding-top: 14px;
+    margin-top: 10px;
+    padding-top: 10px;
   }
 
   .footer,
   .shell[data-collapsed="true"] .footer {
-    min-height: 186px;
-    padding: 18px;
+    min-height: 0;
+    padding: 10px 12px 12px;
   }
 
   .profile,
   .shell[data-collapsed="true"] .profile {
     justify-content: flex-start;
-    padding: 7px 0;
+    padding: 5px 6px;
   }
 
   .themeSwitch,
   .shell[data-collapsed="true"] .themeSwitch {
-    height: 47px;
-    margin-top: 14px;
+    height: 36px;
+    margin-top: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -885,12 +718,12 @@ button.topbarIcon:disabled {
     position: sticky;
     z-index: 40;
     top: 0;
-    min-height: 66px;
+    min-height: 56px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--app-border);
     background: var(--app-panel-soft);
     box-shadow: 0 1px 0 var(--app-border);
@@ -904,7 +737,7 @@ button.topbarIcon:disabled {
   .mobileEyebrow {
     display: block;
     color: var(--app-text-muted);
-    font-size: 0.66rem;
+    font-size: 0.62rem;
     font-weight: 620;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -914,7 +747,7 @@ button.topbarIcon:disabled {
     display: block;
     overflow: hidden;
     color: var(--app-text);
-    font-size: 0.96rem;
+    font-size: 0.9rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     text-overflow: ellipsis;

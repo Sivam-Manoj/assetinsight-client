@@ -1423,27 +1423,27 @@ export default function ReportsPage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-6 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+    <main className="mx-auto w-full max-w-[1600px] min-w-0 space-y-4 overflow-x-hidden px-4 py-5 sm:px-5 lg:px-7 lg:py-6">
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-[2rem] font-bold leading-none tracking-[-0.035em] text-[var(--app-text-strong)] sm:text-[2.25rem]">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-[1.65rem] font-bold leading-none tracking-[-0.035em] text-[var(--app-text-strong)] sm:text-[1.8rem]">
               My reports
             </h1>
             <span
               aria-label={`${groups.length} reports`}
-              className="inline-grid min-w-8 place-items-center rounded-lg bg-[var(--app-accent-soft)] px-2 py-1 text-sm font-bold text-[var(--app-accent)]"
+              className="inline-grid min-w-7 place-items-center rounded-md bg-[var(--app-accent-soft)] px-2 py-0.5 text-xs font-bold text-[var(--app-accent)]"
             >
               {groups.length}
             </span>
           </div>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--app-text-muted)] sm:text-[15px]">
+          <p className="mt-1.5 max-w-xl text-sm leading-5 text-[var(--app-text-muted)]">
             Track report status and download every available deliverable.
           </p>
         </div>
         <button
           type="button"
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel)] px-3.5 text-sm font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel)] px-3 text-sm font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => void handleManualRefresh()}
           disabled={loading || refreshing}
         >
@@ -1459,7 +1459,7 @@ export default function ReportsPage() {
         type="button"
         aria-expanded={filtersOpen}
         aria-controls="report-filter-controls"
-        className="flex min-h-14 w-full items-center justify-between rounded-xl border border-[var(--app-control-border)] bg-[var(--app-panel)] px-4 text-base font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] xl:hidden"
+        className="flex min-h-10 w-full items-center justify-between rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel)] px-3 text-sm font-semibold text-[var(--app-text)] shadow-[var(--app-shadow-control)] transition-colors hover:border-[var(--app-control-border-hover)] xl:hidden"
         onClick={() => setFiltersOpen((open) => !open)}
       >
         <span className="flex items-center gap-3">
@@ -1478,7 +1478,7 @@ export default function ReportsPage() {
       <section
         id="report-filter-controls"
         aria-label="Report filters"
-        className={`${filtersOpen ? "grid" : "hidden"} gap-3 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3 shadow-[var(--app-shadow-card)] sm:grid-cols-2 xl:grid xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.72fr)_minmax(170px,.82fr)_130px_auto]`}
+        className={`${filtersOpen ? "grid" : "hidden"} gap-2.5 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2.5 shadow-[var(--app-shadow-card)] sm:grid-cols-2 xl:grid xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.72fr)_minmax(170px,.82fr)_130px_auto]`}
       >
         <label className="relative block">
           <span className="sr-only">Search reports</span>
@@ -1488,7 +1488,7 @@ export default function ReportsPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search reports by title, lot, address..."
-            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] pl-10 pr-3 text-sm font-medium text-[var(--app-text)] outline-none transition-shadow placeholder:font-normal placeholder:text-[var(--app-text-muted)] focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
+            className="min-h-9 w-full rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] pl-10 pr-3 text-sm font-medium text-[var(--app-text)] outline-none transition-shadow placeholder:font-normal placeholder:text-[var(--app-text-muted)] focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           />
         </label>
         <label>
@@ -1496,7 +1496,7 @@ export default function ReportsPage() {
           <select
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value)}
-            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
+            className="min-h-9 w-full rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             <option value="">All types</option>
             {availableTypes.map((type) => (
@@ -1511,7 +1511,7 @@ export default function ReportsPage() {
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
-            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
+            className="min-h-9 w-full rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             <option value="date-desc">Newest first</option>
             <option value="date-asc">Oldest first</option>
@@ -1524,7 +1524,7 @@ export default function ReportsPage() {
           <select
             value={pageSize}
             onChange={(event) => setPageSize(Number(event.target.value))}
-            className="min-h-11 w-full rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
+            className="min-h-9 w-full rounded-md border border-[var(--app-control-border)] bg-[var(--app-panel-soft)] px-3 text-sm font-medium text-[var(--app-text)] outline-none focus:border-[var(--app-accent)] focus:ring-2 focus:ring-[var(--app-accent-ring)]"
           >
             {[10, 20, 50].map((size) => (
               <option key={size} value={size}>
@@ -1535,7 +1535,7 @@ export default function ReportsPage() {
         </label>
         <button
           type="button"
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-[var(--app-accent)] transition-colors hover:bg-[var(--app-accent-soft)]"
+          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[var(--app-accent)] transition-colors hover:bg-[var(--app-accent-soft)]"
           onClick={resetFilters}
         >
           <RotateCcw className="size-4" />
@@ -1577,21 +1577,21 @@ export default function ReportsPage() {
         </section>
       ) : (
         <>
-          <ul className="divide-y divide-[var(--app-border)] overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:hidden">
+          <ul className="divide-y divide-[var(--app-border)] overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:hidden">
             {paginatedGroups.map((group) => {
               const { status, title, subtitle, thumbnailTitle } =
                 reportPresentation(group);
               return (
                 <li
                   key={group.key}
-                  className="p-4 sm:p-5"
+                  className="app-render-row p-3.5 sm:p-4"
                   style={{
                     contentVisibility: "auto",
                     containIntrinsicSize: "260px",
                   }}
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                  <div className="flex items-start gap-3">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
                       <ReportThumbnail
                         src={group.thumbnail}
                         title={thumbnailTitle}
@@ -1618,7 +1618,7 @@ export default function ReportsPage() {
                     </span>
                   </div>
 
-                  <div className="mt-5 flex flex-col gap-4 border-t border-[var(--app-border)] pt-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="mt-3.5 flex flex-col gap-3 border-t border-[var(--app-border)] pt-3 sm:flex-row sm:items-end sm:justify-between">
                     <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <div className="flex min-w-0 gap-2.5">
                         <Boxes className="mt-0.5 size-[18px] shrink-0 text-[var(--app-text-muted)]" strokeWidth={1.8} />
@@ -1649,7 +1649,7 @@ export default function ReportsPage() {
             })}
           </ul>
 
-          <section className="hidden overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:block">
+          <section className="hidden overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:block">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
                 <caption className="sr-only">Generated reports</caption>
@@ -1678,7 +1678,7 @@ export default function ReportsPage() {
                       <th
                         key={heading}
                         scope="col"
-                        className="border-b border-r border-[var(--app-border)] px-3.5 py-3 last:border-r-0"
+                        className="border-b border-r border-[var(--app-border)] px-3 py-2.5 last:border-r-0"
                       >
                         {heading}
                       </th>
@@ -1697,14 +1697,14 @@ export default function ReportsPage() {
                     return (
                       <tr
                         key={group.key}
-                        className="align-middle transition-colors hover:bg-[var(--app-panel-soft)]"
+                        className="app-render-row align-middle transition-colors hover:bg-[var(--app-panel-soft)]"
                         style={{
                           contentVisibility: "auto",
                           containIntrinsicSize: "74px",
                         }}
                       >
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-2">
-                          <div className="flex min-w-0 items-center gap-3">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2">
+                          <div className="flex min-w-0 items-center gap-2.5">
                             <ReportThumbnail
                               src={group.thumbnail}
                               title={thumbnailTitle}
@@ -1724,16 +1724,16 @@ export default function ReportsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm font-medium text-[var(--app-text)]">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2.5 text-sm font-medium text-[var(--app-text)]">
                           {group.lotCount || "—"}
                         </td>
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm font-medium text-[var(--app-text)]">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2.5 text-sm font-medium text-[var(--app-text)]">
                           {group.fairMarketValue || "—"}
                         </td>
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-3 text-sm text-[var(--app-text)]">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2.5 text-sm text-[var(--app-text)]">
                           {reportTypeColumnLabel(group.type)}
                         </td>
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-3">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2.5">
                           <p className="text-sm text-[var(--app-text)]">
                             {new Date(group.createdAt).toLocaleDateString()}
                           </p>
@@ -1744,7 +1744,7 @@ export default function ReportsPage() {
                             })}
                           </p>
                         </td>
-                        <td className="border-r border-[var(--app-border)] px-3.5 py-3">
+                        <td className="border-r border-[var(--app-border)] px-3 py-2.5">
                           <span
                             className="inline-flex rounded-md border border-current/20 px-2 py-1 text-xs font-semibold"
                             style={{

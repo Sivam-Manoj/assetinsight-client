@@ -137,8 +137,9 @@ function visibleRefreshInterval() {
 }
 
 export default function IncomingPage() {
-  const { user } = useAuthContext();
+  const { user, sessionPresent } = useAuthContext();
   const userId = user?._id || user?.id;
+  const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -160,7 +161,7 @@ export default function IncomingPage() {
     isValidating,
     mutate,
   } = useSWR<IncomingData>(
-    userId ? ["auctioneer/incoming", userId] : null,
+    requestOwner ? ["auctioneer/incoming", requestOwner] : null,
     incomingFetcher,
     {
       keepPreviousData: false,

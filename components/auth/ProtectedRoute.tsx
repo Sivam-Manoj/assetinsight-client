@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthContext } from "@/context/AuthContext";
-import { hasStoredTokens } from "@/lib/auth-storage";
 
 export default function ProtectedRoute({
   children,
@@ -12,39 +11,32 @@ export default function ProtectedRoute({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading, loggingOut, deviceAccess } = useAuthContext();
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [hasSession, setHasSession] = useState(true);
+  const { user, sessionPresent, loading, loggingOut, deviceAccess } =
+    useAuthContext();
 
   useEffect(() => {
-    setHasSession(hasStoredTokens());
-    setSessionChecked(true);
-  }, [deviceAccess, loading, user]);
-
-  useEffect(() => {
-    if (!sessionChecked || loading || loggingOut || user) return;
+    if (loading || loggingOut || user) return;
     if (deviceAccess) {
       router.replace("/device-access");
       return;
     }
-    if (!hasSession) {
+    if (!sessionPresent) {
       const loginUrl = `/login?next=${encodeURIComponent(pathname || "/dashboard")}`;
       router.replace(loginUrl);
     }
   }, [
     deviceAccess,
-    hasSession,
     loading,
     loggingOut,
     pathname,
     router,
-    sessionChecked,
+    sessionPresent,
     user,
   ]);
 
   if (
     deviceAccess ||
-    (sessionChecked && !loading && !hasSession && !user)
+    (!loading && !sessionPresent && !user)
   ) {
     return (
       <div className="app-page" role="status" aria-live="polite">

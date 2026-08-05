@@ -164,6 +164,7 @@ export default function RealEstatePreviewModal({
 
   return (
     <BottomDrawer open={isOpen} onClose={onClose} title="Real Estate Report Preview">
+      <div className="preview-editor">
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -180,7 +181,7 @@ export default function RealEstatePreviewModal({
         </div>
       ) : (
         <>
-          <div className="space-y-6 max-w-5xl mx-auto pb-28">
+          <div className="mx-auto max-w-5xl space-y-4 pb-24">
             {/* Report Type Badge */}
             <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
               <Building2 className="h-6 w-6 text-emerald-600" />
@@ -668,11 +669,11 @@ export default function RealEstatePreviewModal({
           )}
 
           {/* Action Buttons */}
-          <div className="sticky bottom-0 z-10 mt-8 flex flex-col items-center justify-end gap-3 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-6 pb-1  sm:flex-row">
+          <div className="sticky bottom-0 z-10 mt-4 flex flex-col items-center justify-end gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-3 pb-1 sm:flex-row">
             <button
               onClick={handleSaveChanges}
               disabled={saving || !hasChanges || filesGenerating || filesRegenerating}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[var(--app-panel)] border border-[var(--app-border)] text-[var(--app-text-muted)] rounded-xl hover:bg-[var(--app-panel-alt)] font-medium transition-all disabled:opacity-50"
+              className="app-button app-button--secondary w-full sm:w-auto"
             >
               <Save className="h-5 w-5" />
               {saving ? "Saving..." : "Save Changes"}
@@ -680,7 +681,7 @@ export default function RealEstatePreviewModal({
             <button
               onClick={handleSubmitForApproval}
               disabled={submitting || filesGenerating || filesRegenerating || (!isAssignedApprovalMode && hasChanges)}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-[var(--app-panel)] from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 font-semibold shadow-sm shadow-emerald-500/30 transition-all disabled:opacity-50"
+              className="app-button app-button--primary w-full sm:w-auto"
             >
               <Send className="h-5 w-5" />
               {submitting
@@ -694,6 +695,7 @@ export default function RealEstatePreviewModal({
           </div>
         </>
       )}
+      </div>
     </BottomDrawer>
   );
 }
