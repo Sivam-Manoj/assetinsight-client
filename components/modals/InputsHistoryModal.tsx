@@ -11,6 +11,7 @@ import {
   type SavedInput,
 } from "@/services/savedInputs";
 import { toast } from "@/components/ui/toast";
+import styles from "./InputsHistoryModal.module.css";
 
 type Props = {
   isOpen: boolean;
@@ -136,7 +137,7 @@ export default function InputsHistoryModal({
   return (
     <dialog
       ref={dialogRef}
-      className="app-dialog"
+      className={`app-dialog ${styles.dialog}`}
       aria-labelledby="drafts-dialog-title"
       onCancel={(event) => {
         event.preventDefault();
@@ -146,7 +147,6 @@ export default function InputsHistoryModal({
         if (event.target === event.currentTarget) onClose();
       }}
       style={{
-        width: "min(760px, calc(100% - 32px))",
         padding: 0,
         color: "var(--app-text)",
       }}

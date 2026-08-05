@@ -1,0 +1,12 @@
+.dialog {
+  width: min(760px, calc(100% - 32px));
+  margin: auto;
+}
+
+@media (max-width: 767px) {
+  dialog.dialog {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+  }
+}

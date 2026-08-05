@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  EllipsisVertical,
   Eye,
   FileArchive,
   FileImage,
@@ -86,6 +85,18 @@ type ReportGroup = {
     images?: PdfReport;
   };
 };
+
+const FILE_VARIANTS = [
+  "pdf",
+  "specPdf",
+  "crDocx",
+  "docx",
+  "xlsx",
+  "images",
+] as const;
+
+const REPORT_ACTION_CLASS_NAME =
+  "inline-flex min-h-8 min-w-[5.75rem] flex-1 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent-ring)] disabled:cursor-not-allowed disabled:opacity-45";
 
 function auctioneerDeliveryPresentation(
   delivery?: AuctioneerDeliverySummary
@@ -301,10 +312,16 @@ function hasGroupDownloadVariants(group: ReportGroup) {
 function fileActionIcon(
   variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images"
 ) {
-  if (variant === "xlsx") return <FileSpreadsheet className="size-4" />;
-  if (variant === "images") return <FileArchive className="size-4" />;
-  if (variant === "specPdf") return <FileImage className="size-4" />;
-  return <FileText className="size-4" />;
+  if (variant === "xlsx") {
+    return <FileSpreadsheet aria-hidden className="size-4 shrink-0" />;
+  }
+  if (variant === "images") {
+    return <FileArchive aria-hidden className="size-4 shrink-0" />;
+  }
+  if (variant === "specPdf") {
+    return <FileImage aria-hidden className="size-4 shrink-0" />;
+  }
+  return <FileText aria-hidden className="size-4 shrink-0" />;
 }
 
 function imageUrlsFrom(value: unknown): string[] {
@@ -1144,6 +1161,12 @@ export default function ReportsPage() {
   };
 
   const renderFileControls = (group: ReportGroup) => {
+    const fileGroupName =
+      group.contract_no ||
+      group.displayTitle ||
+      group.address ||
+      group.filename ||
+      group.key;
     const hasDownloads = hasGroupDownloadVariants(group);
     const workflowProgress = {
       ...(group.generationProgress || {}),
@@ -1229,36 +1252,38 @@ export default function ReportsPage() {
     }
 
     return (
-      <div className="flex flex-wrap items-center gap-1">
-        {(["pdf", "specPdf", "crDocx", "docx", "xlsx", "images"] as const).map(
-          (variant) => {
-            const file = group.variants[variant];
-            if (!file) return null;
-            const disabled =
-              downloadingId === file._id ||
-              !downloadable ||
-              (!!file.approvalStatus && file.approvalStatus !== "approved");
-            const label = actionLabel(variant);
-            return (
-              <button
-                key={variant}
-                type="button"
-                title={`Download ${label}`}
-                aria-label={`Download ${label}`}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[var(--app-info-border)] bg-[var(--app-accent-soft)] px-2 text-xs font-semibold text-[var(--app-accent)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-panel)] disabled:cursor-not-allowed disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)] disabled:opacity-60"
-                onClick={() => void handleDownload(file._id)}
-                disabled={disabled}
-              >
-                {downloadingId === file._id ? (
-                  <RefreshCw className="size-3.5 animate-spin" />
-                ) : (
-                  fileActionIcon(variant)
-                )}
-                <span>{label}</span>
-              </button>
-            );
-          }
-        )}
+      <div
+        className="grid w-full min-w-[9.5rem] grid-cols-2 gap-1.5"
+        role="group"
+        aria-label={`Available files for ${fileGroupName}`}
+      >
+        {FILE_VARIANTS.map((variant) => {
+          const file = group.variants[variant];
+          if (!file) return null;
+          const disabled =
+            downloadingId === file._id ||
+            !downloadable ||
+            (!!file.approvalStatus && file.approvalStatus !== "approved");
+          const label = actionLabel(variant);
+          return (
+            <button
+              key={variant}
+              type="button"
+              title={`Download ${label}`}
+              aria-label={`Download ${label}`}
+              className="inline-flex min-h-8 min-w-0 items-center justify-start gap-1 rounded-md border border-[var(--app-info-border)] bg-[var(--app-accent-soft)] px-1.5 text-xs font-semibold text-[var(--app-accent)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent-ring)] disabled:cursor-not-allowed disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)] disabled:opacity-60"
+              onClick={() => void handleDownload(file._id)}
+              disabled={disabled}
+            >
+              {downloadingId === file._id ? (
+                <RefreshCw className="size-3.5 shrink-0 animate-spin" />
+              ) : (
+                fileActionIcon(variant)
+              )}
+              <span className="whitespace-nowrap">{label}</span>
+            </button>
+          );
+        })}
       </div>
     );
   };
@@ -1319,7 +1344,11 @@ export default function ReportsPage() {
                 : "Send approved and released data and final photos to Auctioneer";
 
     return (
-      <div className="flex items-center justify-end gap-2">
+      <div
+        className="flex w-full flex-wrap items-center justify-end gap-1.5"
+        role="group"
+        aria-label={`Actions for ${previewTitle}`}
+      >
         {previewReportType ? (
           <button
             type="button"
@@ -1329,7 +1358,7 @@ export default function ReportsPage() {
                 ? "Preview is still being prepared"
                 : `Preview ${typeLabel(group.type)} report`
             }
-            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-[var(--app-info-border)] bg-[var(--app-panel)] px-3 text-sm font-semibold text-[var(--app-accent)] transition-colors hover:border-[var(--app-accent)] hover:bg-[var(--app-accent-soft)] disabled:cursor-wait disabled:border-[var(--app-border)] disabled:text-[var(--app-text-muted)] disabled:opacity-55"
+            className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-on-accent)] hover:border-[var(--app-accent-hover)] hover:bg-[var(--app-accent-hover)] disabled:cursor-wait disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)]`}
             onClick={() =>
               router.push(
                 `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
@@ -1337,58 +1366,50 @@ export default function ReportsPage() {
             }
             disabled={previewPreparing}
           >
-            <Eye className="size-4" strokeWidth={1.9} />
+            <Eye className="size-3.5 shrink-0" strokeWidth={1.9} />
             Preview
           </button>
         ) : null}
-        <details className="group relative">
-          <summary
-            aria-label={`More actions for ${previewTitle}`}
-            title="More actions"
-            className="grid size-9 cursor-pointer list-none place-items-center rounded-md text-[var(--app-text-muted)] transition-colors hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent-ring)] [&::-webkit-details-marker]:hidden"
+        {delivery ? (
+          <button
+            type="button"
+            aria-label={`${deliveryLabel} for ${previewTitle}`}
+            title={deliveryTitle}
+            className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-control-border)] bg-[var(--app-panel)] text-[var(--app-text)] hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)]`}
+            onClick={() => setDeliveryDialogItem(delivery)}
+            disabled={deliveryDisabled}
           >
-            <EllipsisVertical className="size-[18px]" strokeWidth={2} />
-          </summary>
-          <div className="absolute right-0 z-30 mt-1.5 w-52 overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.14)]">
-            {delivery ? (
-              <button
-                type="button"
-                title={deliveryTitle}
-                className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-text)] hover:bg-[var(--app-panel-alt)] disabled:cursor-not-allowed disabled:opacity-40"
-                onClick={() => setDeliveryDialogItem(delivery)}
-                disabled={deliveryDisabled}
-              >
-                <Send className="size-4 text-[var(--app-text-muted)]" />
-                {deliveryLabel}
-              </button>
-            ) : null}
-            {String(group.type || "").toLowerCase() === "asset" ? (
-              <button
-                type="button"
-                title="Merge with other Asset reports using the same contract"
-                className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-text)] hover:bg-[var(--app-panel-alt)]"
-                onClick={() => setMergeAnchorId(group.key)}
-              >
-                <Merge className="size-4 text-[var(--app-text-muted)]" />
-                Merge reports
-              </button>
-            ) : null}
-            <button
-              type="button"
-              title="Permanently delete this report"
-              className="flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-medium text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => void handleDelete(group)}
-              disabled={deletingKey === group.key}
-            >
-              {deletingKey === group.key ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-              Delete report
-            </button>
-          </div>
-        </details>
+            <Send className="size-3.5 shrink-0" />
+            <span className="truncate">{deliveryLabel}</span>
+          </button>
+        ) : null}
+        {String(group.type || "").toLowerCase() === "asset" ? (
+          <button
+            type="button"
+            aria-label={`Merge reports for ${previewTitle}`}
+            title="Merge with other Asset reports using the same contract"
+            className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-control-border)] bg-[var(--app-panel)] text-[var(--app-text)] hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)]`}
+            onClick={() => setMergeAnchorId(group.key)}
+          >
+            <Merge className="size-3.5 shrink-0 text-[var(--app-text-muted)]" />
+            Merge
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-label={`Delete report ${previewTitle}`}
+          title="Permanently delete this report"
+          className={`${REPORT_ACTION_CLASS_NAME} border-transparent bg-transparent text-[var(--app-danger)] hover:border-[var(--app-danger-border)] hover:bg-[var(--app-danger-soft)]`}
+          onClick={() => void handleDelete(group)}
+          disabled={deletingKey === group.key}
+        >
+          {deletingKey === group.key ? (
+            <RefreshCw className="size-3.5 shrink-0 animate-spin" />
+          ) : (
+            <Trash2 className="size-3.5 shrink-0" />
+          )}
+          Delete
+        </button>
       </div>
     );
   };
@@ -1577,7 +1598,7 @@ export default function ReportsPage() {
         </section>
       ) : (
         <>
-          <ul className="divide-y divide-[var(--app-border)] overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:hidden">
+          <ul className="divide-y divide-[var(--app-border)] overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] min-[1440px]:hidden">
             {paginatedGroups.map((group) => {
               const { status, title, subtitle, thumbnailTitle } =
                 reportPresentation(group);
@@ -1639,9 +1660,9 @@ export default function ReportsPage() {
                         </div>
                       </div>
                     </dl>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      {renderReportActions(group)}
-                      {renderFileControls(group)}
+                    <div className="grid w-full gap-2 sm:max-w-xl sm:grid-cols-2">
+                      <div>{renderFileControls(group)}</div>
+                      <div>{renderReportActions(group)}</div>
                     </div>
                   </div>
                 </li>
@@ -1649,19 +1670,19 @@ export default function ReportsPage() {
             })}
           </ul>
 
-          <section className="hidden overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] xl:block">
+          <section className="hidden overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] shadow-[var(--app-shadow-card)] min-[1440px]:block">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1120px] table-fixed border-collapse text-left">
                 <caption className="sr-only">Generated reports</caption>
                 <colgroup>
-                  <col className="w-[26%]" />
-                  <col className="w-[6.5%]" />
-                  <col className="w-[10%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
                   <col className="w-[9%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[10.5%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[13%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[23%]" />
                 </colgroup>
                 <thead className="bg-[var(--app-panel-soft)] text-xs font-semibold text-[var(--app-text-muted)]">
                   <tr>

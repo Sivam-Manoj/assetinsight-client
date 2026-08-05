@@ -105,6 +105,11 @@ const reportWithThumbnail: AssetReport = {
   contract_no: "CV-THUMB-100",
   preview_files: {
     pdf: "/files/cv-thumb-100.pdf",
+    spec_pdf: "/files/cv-thumb-100-cr.pdf",
+    cr_docx: "/files/cv-thumb-100-cr.docx",
+    docx: "/files/cv-thumb-100.docx",
+    excel: "/files/cv-thumb-100.xlsx",
+    images: "/files/cv-thumb-100.zip",
   },
   createdAt: "2026-08-02T09:00:00.000Z",
   updatedAt: "2026-08-02T09:30:00.000Z",
@@ -300,5 +305,64 @@ describe("My Reports thumbnails", () => {
     expect(mocks.routerPush).toHaveBeenLastCalledWith(
       "/previews?reportId=lot-preview-ready&reportType=lotListing"
     );
+  });
+
+  it("keeps report files aligned and exposes every row action without an overflow menu", async () => {
+    mocks.getDeliveries.mockResolvedValue([
+      {
+        workItemId: "delivery-work-item",
+        reportId: reportWithThumbnail._id,
+        reportModel: "AssetReport",
+        reportType: "asset",
+        contractNo: reportWithThumbnail.contract_no,
+        state: "ready",
+        canSend: true,
+      },
+    ]);
+    render(<ReportsPage />);
+
+    const desktopTable = await screen.findByRole("table", {
+      name: "Generated reports",
+    });
+    const reportRow = within(desktopTable).getByRole("row", {
+      name: /CV-THUMB-100/i,
+    });
+    const fileGroup = within(reportRow).getByRole("group", {
+      name: "Available files for CV-THUMB-100",
+    });
+    const actionGroup = within(reportRow).getByRole("group", {
+      name: /Actions for Asset .* CV-THUMB-100/i,
+    });
+
+    for (const label of ["PDF", "CR PDF", "CR DOCX", "DOCX", "XLSX", "ZIP"]) {
+      expect(
+        within(fileGroup).getByRole("button", {
+          name: `Download ${label}`,
+        })
+      ).toBeInTheDocument();
+    }
+    expect(
+      within(actionGroup).getByRole("button", {
+        name: /Preview Asset report/i,
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(actionGroup).getByRole("button", {
+        name: /Merge reports for Asset .* CV-THUMB-100/i,
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(actionGroup).getByRole("button", {
+        name: /Send for Asset .* CV-THUMB-100/i,
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(actionGroup).getByRole("button", {
+        name: /Delete report Asset .* CV-THUMB-100/i,
+      })
+    ).toBeInTheDocument();
+    expect(
+      within(reportRow).queryByRole("button", { name: /More actions/i })
+    ).not.toBeInTheDocument();
   });
 });
