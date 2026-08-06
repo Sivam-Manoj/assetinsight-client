@@ -334,7 +334,14 @@ describe("My Reports thumbnails", () => {
       name: /Actions for Asset .* CV-THUMB-100/i,
     });
 
-    for (const label of ["PDF", "CR PDF", "CR DOCX", "DOCX", "XLSX", "ZIP"]) {
+    for (const label of [
+      "Schedule A",
+      "CR PDF",
+      "CR DOCX",
+      "Appraisal report",
+      "XLSX",
+      "ZIP",
+    ]) {
       expect(
         within(fileGroup).getByRole("button", {
           name: `Download ${label}`,

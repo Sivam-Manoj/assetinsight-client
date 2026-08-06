@@ -273,11 +273,22 @@ function statusTone(
   };
 }
 
-function actionLabel(variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images") {
-  if (variant === "pdf") return "PDF";
+function actionLabel(
+  variant: "pdf" | "specPdf" | "crDocx" | "docx" | "xlsx" | "images",
+  reportType?: string
+) {
+  const normalizedType = String(reportType || "")
+    .toLowerCase()
+    .replace(/[\s_-]/g, "");
+
+  if (variant === "pdf") return normalizedType === "asset" ? "Schedule A" : "PDF";
   if (variant === "specPdf") return "CR PDF";
   if (variant === "crDocx") return "CR DOCX";
-  if (variant === "docx") return "DOCX";
+  if (variant === "docx") {
+    return normalizedType === "asset" || normalizedType === "realestate"
+      ? "Appraisal report"
+      : "DOCX";
+  }
   if (variant === "xlsx") return "XLSX";
   return "ZIP";
 }
@@ -1264,7 +1275,7 @@ export default function ReportsPage() {
             downloadingId === file._id ||
             !downloadable ||
             (!!file.approvalStatus && file.approvalStatus !== "approved");
-          const label = actionLabel(variant);
+          const label = actionLabel(variant, group.type);
           return (
             <button
               key={variant}
@@ -1280,7 +1291,7 @@ export default function ReportsPage() {
               ) : (
                 fileActionIcon(variant)
               )}
-              <span className="whitespace-nowrap">{label}</span>
+              <span className="min-w-0 text-left leading-4">{label}</span>
             </button>
           );
         })}
