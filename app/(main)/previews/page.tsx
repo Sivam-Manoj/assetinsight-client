@@ -237,6 +237,8 @@ export default function PreviewsPage() {
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
   const loadingReportsRef = useRef(false);
   const deepLinkHandledRef = useRef(false);
+  const isPreviewEditorOpen =
+    previewModalOpen || realEstateModalOpen || lotListingModalOpen;
 
   const loadReports = useCallback(async (
     options: { showLoading?: boolean; silent?: boolean; successToast?: boolean } = {}
@@ -358,7 +360,10 @@ export default function PreviewsPage() {
 
   useEffect(() => {
     const refreshOwnership = () => {
-      if (document.visibilityState === "visible") {
+      if (
+        document.visibilityState === "visible" &&
+        !isPreviewEditorOpen
+      ) {
         void loadReports({ silent: true });
       }
     };
@@ -368,25 +373,27 @@ export default function PreviewsPage() {
       window.removeEventListener("focus", refreshOwnership);
       document.removeEventListener("visibilitychange", refreshOwnership);
     };
-  }, [loadReports]);
+  }, [isPreviewEditorOpen, loadReports]);
 
   useEffect(() => {
-    if (!hasActiveJobs) return;
+    // Editing must remain stable. Queue polling resumes as soon as the drawer
+    // closes, so status updates never steal focus or move the active lot.
+    if (!hasActiveJobs || isPreviewEditorOpen) return;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       void loadReports({ silent: true });
     }, 10000);
     return () => window.clearInterval(intervalId);
-  }, [hasActiveJobs, loadReports]);
+  }, [hasActiveJobs, isPreviewEditorOpen, loadReports]);
 
   useEffect(() => {
-    if (hasActiveJobs) return;
+    if (hasActiveJobs || isPreviewEditorOpen) return;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       void loadReports({ silent: true });
     }, 60_000);
     return () => window.clearInterval(intervalId);
-  }, [hasActiveJobs, loadReports]);
+  }, [hasActiveJobs, isPreviewEditorOpen, loadReports]);
 
   const handleManualRefresh = async () => {
     await loadReports({ successToast: true });

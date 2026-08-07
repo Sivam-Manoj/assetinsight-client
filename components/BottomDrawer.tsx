@@ -26,17 +26,26 @@ export default function BottomDrawer({
 }) {
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = title ? `drawer-title-${id}` : undefined;
   const descriptionId = description ? `drawer-description-${id}` : undefined;
+
+  // Parent polling can recreate callback props while a drawer is open. Keep the
+  // latest callback in a ref so the focus lock is installed once per open cycle.
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    requestAnimationFrame(() => panelRef.current?.focus());
+    const focusFrame = requestAnimationFrame(() => {
+      if (!panelRef.current?.contains(document.activeElement)) {
+        panelRef.current?.focus({ preventScroll: true });
+      }
+    });
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
       if (event.key !== "Tab" || !panelRef.current) return;
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
         'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -54,11 +63,12 @@ export default function BottomDrawer({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
+      previousFocus?.focus({ preventScroll: true });
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") return null;
 
