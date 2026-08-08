@@ -1133,8 +1133,26 @@ export default function PreviewModal({
     }
   };
 
+  const requestClose = () => {
+    if (saving || submitting) return;
+    if (
+      hasChanges &&
+      !window.confirm("You have unsaved preview changes. Close without saving them?")
+    ) {
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <BottomDrawer open={isOpen} onClose={onClose} title="Preview & Edit Report" fullscreen>
+    <BottomDrawer
+      open={isOpen}
+      onClose={requestClose}
+      title="Preview & Edit Report"
+      description="Review the complete report, save your progress, and return when you are ready to submit."
+      fullscreen
+      dismissOnBackdrop={false}
+    >
       <div className="preview-editor">
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
@@ -2322,7 +2340,7 @@ export default function PreviewModal({
           {/* Actions */}
           <div className="sticky bottom-0 z-10 mt-4 flex flex-col gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-3 pb-1 sm:flex-row sm:items-center sm:justify-between">
             <button
-              onClick={onClose}
+              onClick={requestClose}
               className="app-button order-2 text-[var(--app-text-muted)] sm:order-1"
             >
               Cancel

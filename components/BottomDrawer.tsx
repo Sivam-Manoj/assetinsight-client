@@ -14,6 +14,7 @@ export default function BottomDrawer({
   children,
   fullscreen = false,
   contentScrollable = true,
+  dismissOnBackdrop = true,
 }: {
   open: boolean;
   title?: React.ReactNode;
@@ -23,6 +24,7 @@ export default function BottomDrawer({
   children: React.ReactNode;
   fullscreen?: boolean;
   contentScrollable?: boolean;
+  dismissOnBackdrop?: boolean;
 }) {
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export default function BottomDrawer({
     <div
       className={styles.backdrop}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
       <div

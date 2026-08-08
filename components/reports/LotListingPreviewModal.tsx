@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2 } from "lucide-react";
+import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2, Save } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import {
   getLotListingPreview,
@@ -959,8 +959,26 @@ export default function LotListingPreviewModal({
     );
   };
 
+  const requestClose = () => {
+    if (saving || submitting) return;
+    if (
+      hasChanges &&
+      !window.confirm("You have unsaved preview changes. Close without saving them?")
+    ) {
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <BottomDrawer open={isOpen} onClose={onClose} title="Lot Listing Preview">
+    <BottomDrawer
+      open={isOpen}
+      onClose={requestClose}
+      title="Lot Listing Preview"
+      description="Review the complete listing, save your progress, and return when you are ready to generate files."
+      fullscreen
+      dismissOnBackdrop={false}
+    >
       <div className="preview-editor">
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
@@ -1434,14 +1452,21 @@ export default function LotListingPreviewModal({
           <div className="sticky bottom-0 z-10 mx-auto mt-4 flex max-w-5xl flex-wrap items-center justify-between gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-3 pb-1">
             <div className="flex items-center gap-2">
               {hasChanges && (
-                <span className="text-xs text-amber-600">Changes will be saved when files generate</span>
-              )}
-              {false && hasChanges && (
-                <span className="text-xs text-amber-600">⚠️ Unsaved changes</span>
+                <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <button
+                type="button"
+                onClick={handleSaveChanges}
+                disabled={!hasChanges || saving || submitting || filesGenerating || filesRegenerating}
+                className="app-button app-button--secondary"
+              >
+                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+              <button
+                type="button"
                 onClick={handleSubmitForApproval}
                 disabled={submitting || saving || filesGenerating || filesRegenerating}
                 className="app-button app-button--primary"
