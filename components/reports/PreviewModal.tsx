@@ -29,6 +29,10 @@ import {
   removeGalleryPhotoEntry,
   removeLotPhotoReference,
 } from "@/lib/previewPhotoDeletion";
+import {
+  applyPrimarySerialEdit,
+  isPrimarySerialField,
+} from "@/lib/previewSerialNumber";
 
 interface PreviewModalProps {
   reportId: string;
@@ -674,7 +678,10 @@ export default function PreviewModal({
   const updateLot = (index: number, field: string, value: any) => {
     setPreviewData((prev: any) => {
       const newLots = [...(prev.lots || [])];
-      const nextLot = { ...newLots[index], [field]: value };
+      const nextLot =
+        field === "serial_number"
+          ? applyPrimarySerialEdit(newLots[index] || {}, value)
+          : { ...newLots[index], [field]: value };
       if (
         field === "lot_number" &&
         !isDamageAnalysisEligibleForLot(getLotNumberForDamagePolicy(nextLot))
@@ -707,6 +714,10 @@ export default function PreviewModal({
             .filter(Boolean)
         : [];
       const fieldKey = normalizeSpecKey(fieldName);
+      if (isPrimarySerialField(fieldName)) {
+        newLots[index] = applyPrimarySerialEdit(lot, value);
+        return { ...prev, lots: newLots };
+      }
       existingSpecs[fieldName] = value;
       lot.condition_report_specs_deleted = deletedSpecs.filter(
         (field: string) => normalizeSpecKey(field) !== fieldKey
@@ -738,6 +749,10 @@ export default function PreviewModal({
             .filter(Boolean)
         : [];
       const fieldKey = normalizeSpecKey(fieldName);
+      if (isPrimarySerialField(fieldName)) {
+        newLots[index] = applyPrimarySerialEdit(lot, "");
+        return { ...prev, lots: newLots };
+      }
       const existingKey = Object.keys(existingSpecs).find(
         (field) => normalizeSpecKey(field) === fieldKey
       );
