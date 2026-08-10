@@ -37,6 +37,7 @@ import {
   createSmartUploadDraft,
   deleteSmartUploadDraft,
   loadSmartUploadDraft,
+  saveServerSmartUploadDraft,
   updateSmartUploadDraft,
   type SmartUploadDraft,
   type SmartUploadKind,
@@ -48,6 +49,7 @@ type Props = {
   userId: string;
   scopeId?: string;
   clientSubmissionId?: string;
+  resumeSessionId?: string;
   details: Record<string, unknown>;
   onClose: () => void;
   onSubmitted: (result: {
@@ -79,19 +81,29 @@ function formatBytes(value: number) {
 
 function ImagePreview({
   file,
+  url,
   alt,
   className,
 }: {
-  file: File;
+  file?: File;
+  url?: string;
   alt: string;
   className?: string;
 }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
+    if (url) {
+      setSrc(url);
+      return;
+    }
+    if (!file) {
+      setSrc("");
+      return;
+    }
     const next = URL.createObjectURL(file);
     setSrc(next);
     return () => URL.revokeObjectURL(next);
-  }, [file]);
+  }, [file, url]);
   return src ? (
     // A local object URL has no useful Next Image optimization path.
 
@@ -116,6 +128,7 @@ export default function SmartUploadWorkspace({
   userId,
   scopeId,
   clientSubmissionId,
+  resumeSessionId,
   details,
   onClose,
   onSubmitted,
@@ -146,24 +159,67 @@ export default function SmartUploadWorkspace({
     setGrouping(null);
     void loadSmartUploadDraft(userId, kind, scopeId)
       .then(async (saved) => {
-        if (cancelled || !saved) return;
+        let restored = saved;
+        let serverGrouping: SmartUploadGrouping | null = null;
+        if (!restored && resumeSessionId) {
+          serverGrouping = await getSmartUploadGrouping(kind, resumeSessionId);
+          const serverFiles = [
+            ...(serverGrouping.files || []),
+            ...serverGrouping.groups.flatMap((group) => group.files || []),
+          ];
+          const uniqueFiles = Array.from(
+            new Map(serverFiles.map((file) => [file.fileId, file])).values()
+          ).sort((left, right) => left.originalOrder - right.originalOrder);
+          const stage =
+            serverGrouping.groupingStatus === "review_ready" ||
+            serverGrouping.groupingStatus === "confirmed"
+              ? ("review" as const)
+              : serverGrouping.groupingStatus === "classifying"
+                ? ("classifying" as const)
+                : serverGrouping.groupingStatus === "failed"
+                  ? ("failed" as const)
+                  : ("uploading" as const);
+          restored = await saveServerSmartUploadDraft({
+            userId,
+            kind,
+            scopeId,
+            clientSubmissionId:
+              clientSubmissionId || newSubmissionId(kind),
+            sessionId: resumeSessionId,
+            details: detailsRef.current,
+            stage,
+            files: uniqueFiles.map((file) => ({
+              fileId: file.fileId,
+              name: file.name,
+              type: file.mimeType,
+              size: file.size,
+              lastModified: 0,
+              originalOrder: file.originalOrder,
+              uploaded: true,
+              url: file.url,
+            })),
+          });
+        }
+        if (cancelled || !restored) return;
         // Current form details win when a user resumes before upload. Once a
         // session exists the same client submission id keeps server retries safe.
         const resumed = {
-          ...saved,
-          details: { ...saved.details, ...detailsRef.current },
+          ...restored,
+          details: { ...restored.details, ...detailsRef.current },
           // A browser close can interrupt an in-flight PUT. The server session
           // and confirmed files are reusable, so expose an explicit resume action.
-          stage: saved.stage === "uploading" ? ("failed" as const) : saved.stage,
+          stage:
+            restored.stage === "uploading" && !resumeSessionId
+              ? ("failed" as const)
+              : restored.stage,
         };
         setDraft(resumed);
         setVisibleLimit(VISIBLE_IMAGE_BATCH);
         if (resumed.sessionId) {
           try {
-            const result = await getSmartUploadGrouping(
-              kind,
-              resumed.sessionId
-            );
+            const result =
+              serverGrouping ||
+              (await getSmartUploadGrouping(kind, resumed.sessionId));
             if (!cancelled) {
               setGrouping(result);
               if (
@@ -211,7 +267,9 @@ export default function SmartUploadWorkspace({
                   current ? { ...current, stage: "failed" } : current
                 );
                 setError(
-                  "The previous upload was interrupted. Resume to upload only the remaining images."
+                  resumed.files.some((file) => !file.file)
+                    ? "This upload is incomplete and its remaining originals are stored on another browser. Resume it from that browser."
+                    : "The previous upload was interrupted. Resume to upload only the remaining images."
                 );
                 await updateSmartUploadDraft(
                   userId,
@@ -258,7 +316,7 @@ export default function SmartUploadWorkspace({
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, [kind, open, scopeId, userId]);
+  }, [clientSubmissionId, kind, open, resumeSessionId, scopeId, userId]);
 
   const active =
     draft?.stage === "uploading" ||
@@ -290,7 +348,7 @@ export default function SmartUploadWorkspace({
   }, [open, requestClose]);
 
   const fileById = useMemo(
-    () => new Map((draft?.files || []).map((item) => [item.fileId, item.file])),
+    () => new Map((draft?.files || []).map((item) => [item.fileId, item])),
     [draft?.files]
   );
   const dividerSet = useMemo(
@@ -758,11 +816,12 @@ export default function SmartUploadWorkspace({
                       >
                         <div className="grid h-28 grid-cols-4 bg-[var(--app-panel-alt)]">
                           {group.fileIds.slice(0, 4).map((fileId) => {
-                            const file = fileById.get(fileId);
-                            return file ? (
+                            const item = fileById.get(fileId);
+                            return item ? (
                               <ImagePreview
                                 key={fileId}
-                                file={file}
+                                file={item.file}
+                                url={item.url}
                                 alt=""
                                 className="h-full w-full border-r border-[var(--app-border)] object-cover last:border-r-0"
                               />
@@ -826,6 +885,7 @@ export default function SmartUploadWorkspace({
                         >
                           <ImagePreview
                             file={item.file}
+                            url={item.url}
                             alt=""
                             className={`h-full w-full object-cover transition ${
                               isDivider ? "opacity-35" : ""

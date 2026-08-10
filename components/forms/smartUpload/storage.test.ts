@@ -80,7 +80,7 @@ describe("Smart Upload IndexedDB recovery", () => {
       true,
       false,
     ]);
-    await expect(restored?.files[2].file.text()).resolves.toBe("third");
+    await expect(restored!.files[2]!.file!.text()).resolves.toBe("third");
   });
 
   it("keeps Asset and Lot Listing recovery sessions isolated", async () => {

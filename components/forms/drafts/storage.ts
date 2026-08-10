@@ -52,6 +52,17 @@ export type LoadedScopedDraft<T> = {
   missingMediaCount: number;
 };
 
+export type ScopedDraftSummary = {
+  kind: FormDraftKind;
+  userId: string;
+  scopeId?: string;
+  revision: number;
+  savedAt: string;
+  contractNo: string;
+  lotCount: number;
+  mediaCount: number;
+};
+
 export class DraftEnvelopeError extends Error {
   constructor(
     message: string,
@@ -349,6 +360,70 @@ export async function hasScopedDraft(
 ) {
   const database = await getDatabase();
   return Boolean(await database.get("drafts", scopeFor(userId, kind, scopeId)));
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function summarizeStoredDraft(
+  record: StoredDraft,
+  expectedUserId: string
+): ScopedDraftSummary | null {
+  const envelope = asRecord(record.envelope);
+  if (!envelope || envelope.version !== FORM_DRAFT_VERSION) return null;
+  if (envelope.userId !== expectedUserId) return null;
+  if (envelope.kind !== "asset" && envelope.kind !== "lot-listing") return null;
+
+  const kind = envelope.kind;
+  const data = asRecord(kind === "asset" ? envelope.formData : envelope.data);
+  const lots = Array.isArray(
+    kind === "asset" ? envelope.lots : data?.lots
+  )
+    ? ((kind === "asset" ? envelope.lots : data?.lots) as unknown[])
+    : [];
+  const ordinaryScope = scopeFor(expectedUserId, kind);
+  const scopedPrefix = `${ordinaryScope}:`;
+  const scopeId = record.scope.startsWith(scopedPrefix)
+    ? record.scope.slice(scopedPrefix.length)
+    : undefined;
+
+  return {
+    kind,
+    userId: expectedUserId,
+    scopeId,
+    revision: Number(envelope.revision) || 0,
+    savedAt:
+      typeof envelope.savedAt === "string" ? envelope.savedAt : record.savedAt,
+    contractNo:
+      typeof data?.contractNo === "string" ? data.contractNo.trim() : "",
+    lotCount: lots.length,
+    mediaCount: record.mediaIds.length,
+  };
+}
+
+/**
+ * Lists draft metadata without hydrating Blob records. The sidebar uses this
+ * to remain fast even when a report contains hundreds of original photos.
+ * Auctioneer-scoped drafts stay in their Incoming work item unless explicitly
+ * requested because they require that work item's integration context.
+ */
+export async function listScopedDrafts(
+  userId: string,
+  options: { includeScoped?: boolean } = {}
+): Promise<ScopedDraftSummary[]> {
+  const database = await getDatabase();
+  const records = await database.getAll("drafts");
+  return records
+    .map((record) => summarizeStoredDraft(record, userId))
+    .filter((summary): summary is ScopedDraftSummary => Boolean(summary))
+    .filter((summary) => options.includeScoped || !summary.scopeId)
+    .sort(
+      (left, right) =>
+        new Date(right.savedAt).getTime() - new Date(left.savedAt).getTime()
+    );
 }
 
 export async function deleteScopedDraft(

@@ -24,6 +24,16 @@ export type SmartUploadGroup = {
   imageCount: number;
   fileIds: string[];
   overLimit: boolean;
+  files?: SmartUploadServerFile[];
+};
+
+export type SmartUploadServerFile = {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url: string;
+  originalOrder: number;
 };
 
 export type SmartUploadMetric = {
@@ -54,6 +64,7 @@ export type SmartUploadGrouping = {
   error?: string;
   expectedFileCount: number;
   confirmedFileCount: number;
+  files?: SmartUploadServerFile[];
 };
 
 type UploadSession = {
@@ -217,6 +228,11 @@ export async function uploadSmartUploadFiles(args: {
           throw new Error(`Upload file ${target.fileId} is missing locally.`);
         }
         if (stateById.get(target.fileId)?.uploaded) return;
+        if (!item.file) {
+          throw new Error(
+            `${item.name} is not stored on this browser. Resume this unfinished upload on the browser where the images were selected.`
+          );
+        }
         let lastLoaded = 0;
         await uploadFileToReportSession({
           endpoint,

@@ -1,8 +1,28 @@
 "use client";
 
-import { FileText, History, Trash2, X } from "lucide-react";
+import {
+  Cloud,
+  FileText,
+  HardDrive,
+  HelpCircle,
+  History,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthContext } from "@/context/AuthContext";
+import {
+  deleteScopedDraft,
+  listScopedDrafts,
+  type ScopedDraftSummary,
+} from "@/components/forms/drafts/storage";
+import { deleteSmartUploadDraft } from "@/components/forms/smartUpload/storage";
+import {
+  ReportDraftService,
+  draftKindForRecord,
+  type ReportDraftRecord,
+} from "@/services/reportDrafts";
 import {
   SavedInputService,
   type AssetFormData,
@@ -20,6 +40,8 @@ type Props = {
   formType?: FormType;
 };
 
+const DRAFT_STORAGE_NOTICE_KEY = "clearvalue:draft-storage-notice:v1";
+
 export default function InputsHistoryModal({
   isOpen,
   onClose,
@@ -27,10 +49,15 @@ export default function InputsHistoryModal({
   formType,
 }: Props) {
   const router = useRouter();
+  const { user } = useAuthContext();
+  const userId = user?._id || user?.id || null;
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [localDrafts, setLocalDrafts] = useState<ScopedDraftSummary[]>([]);
+  const [reportDrafts, setReportDrafts] = useState<ReportDraftRecord[]>([]);
   const [savedInputs, setSavedInputs] = useState<SavedInput[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showStorageNotice, setShowStorageNotice] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -45,24 +72,81 @@ export default function InputsHistoryModal({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (isOpen) {
-      void fetchSavedInputs();
-    }
-    // fetchSavedInputs intentionally reads the latest formType whenever the modal opens.
-
-  }, [isOpen, formType]);
-
-  const fetchSavedInputs = async () => {
+  const fetchSavedInputs = useCallback(async () => {
     try {
       setLoading(true);
-      const inputs = await SavedInputService.getAll(formType);
-      setSavedInputs(inputs);
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Failed to load drafts");
+      const reportKind = formType === "asset" ? "asset" : undefined;
+      const [localResult, reportResult, serverResult] = await Promise.allSettled([
+        userId
+          ? listScopedDrafts(userId, { includeScoped: true })
+          : Promise.resolve([]),
+        formType === "realEstate"
+          ? Promise.resolve([])
+          : ReportDraftService.list(reportKind),
+        SavedInputService.getAll(formType),
+      ]);
+
+      const local = localResult.status === "fulfilled" ? localResult.value : [];
+      const filteredLocal =
+        formType === "asset"
+          ? local.filter((draft) => draft.kind === "asset")
+          : formType === "realEstate"
+            ? []
+            : local;
+      const cloud =
+        reportResult.status === "fulfilled" ? reportResult.value : [];
+      const cloudKeys = new Set(
+        cloud.map((draft) => `${draftKindForRecord(draft)}:${draft.clientDraftId}`)
+      );
+      setReportDrafts(cloud);
+      setLocalDrafts(
+        filteredLocal.filter(
+          (draft) =>
+            !cloudKeys.has(`${draft.kind}:${draft.scopeId || ""}`)
+        )
+      );
+      setSavedInputs(
+        serverResult.status === "fulfilled" ? serverResult.value : []
+      );
+
+      if (localResult.status === "rejected") {
+        toast.error("Local drafts are unavailable in this browser.");
+      } else if (
+        reportResult.status === "rejected" &&
+        serverResult.status === "rejected" &&
+        local.length === 0
+      ) {
+        const error = serverResult.reason as any;
+        toast.error(error?.response?.data?.message || "Failed to load drafts");
+      }
     } finally {
       setLoading(false);
     }
+  }, [formType, userId]);
+
+  useEffect(() => {
+    if (isOpen) void fetchSavedInputs();
+  }, [fetchSavedInputs, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      if (window.localStorage.getItem(DRAFT_STORAGE_NOTICE_KEY) !== "seen") {
+        setShowStorageNotice(true);
+      }
+    } catch {
+      // Privacy modes may disable storage; the explanation remains available.
+      setShowStorageNotice(true);
+    }
+  }, [isOpen]);
+
+  const acknowledgeStorageNotice = () => {
+    try {
+      window.localStorage.setItem(DRAFT_STORAGE_NOTICE_KEY, "seen");
+    } catch {
+      // Closing the notice must not depend on localStorage availability.
+    }
+    setShowStorageNotice(false);
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -92,12 +176,80 @@ export default function InputsHistoryModal({
     }, 300);
   };
 
+  const handleResumeLocal = (draft: ScopedDraftSummary) => {
+    onClose();
+    router.push("/dashboard");
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("resume-local-draft", {
+          detail: { kind: draft.kind, scopeId: draft.scopeId },
+        })
+      );
+    }, 300);
+  };
+
+  const handleResumeReportDraft = (draft: ReportDraftRecord) => {
+    onClose();
+    router.push("/dashboard");
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("resume-report-draft", { detail: draft })
+      );
+    }, 300);
+  };
+
+  const handleDeleteReportDraft = async (draft: ReportDraftRecord) => {
+    const kind = draftKindForRecord(draft);
+    const label = draft.contractNo || draft.title || "Untitled draft";
+    if (!confirm(`Delete "${label}"?`)) return;
+    const deleteKey = `report:${draft._id}`;
+    try {
+      setDeleting(deleteKey);
+      await ReportDraftService.delete(draft._id);
+      if (userId) {
+        await Promise.allSettled([
+          deleteScopedDraft(userId, kind, draft.clientDraftId),
+          deleteSmartUploadDraft(userId, kind, draft.clientDraftId),
+        ]);
+      }
+      setReportDrafts((current) =>
+        current.filter((item) => item._id !== draft._id)
+      );
+      toast.success("Draft deleted");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || "Failed to delete draft");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleDeleteLocal = async (draft: ScopedDraftSummary) => {
+    const label = draft.contractNo || (draft.kind === "asset" ? "Asset draft" : "Lot Listing draft");
+    if (!confirm(`Delete "${label}"?`)) return;
+    const deleteKey = `local:${draft.kind}:${draft.scopeId || "default"}`;
+    try {
+      setDeleting(deleteKey);
+      await deleteScopedDraft(draft.userId, draft.kind, draft.scopeId);
+      setLocalDrafts((current) =>
+        current.filter(
+          (item) =>
+            item.kind !== draft.kind || item.scopeId !== draft.scopeId
+        )
+      );
+      toast.success("Draft deleted");
+    } catch {
+      toast.error("Failed to delete the local draft");
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const totalLabel = useMemo(
     () =>
-      `${savedInputs.length} saved ${
-        savedInputs.length === 1 ? "entry" : "entries"
+      `${reportDrafts.length + localDrafts.length + savedInputs.length} saved ${
+        reportDrafts.length + localDrafts.length + savedInputs.length === 1 ? "entry" : "entries"
       }`,
-    [savedInputs.length]
+    [localDrafts.length, reportDrafts.length, savedInputs.length]
   );
 
   const formatDateTime = (value: string) => {
@@ -187,15 +339,25 @@ export default function InputsHistoryModal({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          className="app-button app-button--icon"
-          onClick={onClose}
-          aria-label="Close drafts"
-          autoFocus
-        >
-          <X size={18} aria-hidden />
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={`app-button ${styles.helpButton}`}
+            onClick={() => setShowStorageNotice(true)}
+            aria-label="How draft storage works"
+          >
+            <HelpCircle size={17} aria-hidden />
+            <span>How drafts work</span>
+          </button>
+          <button
+            type="button"
+            className="app-button app-button--icon"
+            onClick={onClose}
+            aria-label="Close drafts"
+          >
+            <X size={18} aria-hidden />
+          </button>
+        </div>
       </header>
 
       <div className="app-dialog__body" style={{ padding: 16 }}>
@@ -207,10 +369,12 @@ export default function InputsHistoryModal({
           >
             <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
               <span className="app-spinner" aria-hidden />
-              Loading saved drafts…
+              Loading saved drafts...
             </span>
           </div>
-        ) : savedInputs.length === 0 ? (
+        ) : reportDrafts.length === 0 &&
+          localDrafts.length === 0 &&
+          savedInputs.length === 0 ? (
           <div
             style={{
               minHeight: 260,
@@ -242,10 +406,226 @@ export default function InputsHistoryModal({
             </div>
           </div>
         ) : (
-          <ul
-            aria-label="Saved drafts"
-            style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 10 }}
-          >
+          <div style={{ display: "grid", gap: 18 }}>
+            {reportDrafts.length ? (
+              <section aria-labelledby="report-drafts-heading">
+                <h3
+                  id="report-drafts-heading"
+                  style={{ margin: "0 0 9px", fontSize: 13, fontWeight: 750 }}
+                >
+                  Report drafts
+                </h3>
+                <ul
+                  aria-label="Report drafts"
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    listStyle: "none",
+                    display: "grid",
+                    gap: 10,
+                  }}
+                >
+                  {reportDrafts.map((draft) => {
+                    const deleteKey = `report:${draft._id}`;
+                    const kind = draftKindForRecord(draft);
+                    const label =
+                      draft.contractNo ||
+                      draft.title ||
+                      (kind === "asset"
+                        ? "Untitled asset draft"
+                        : "Untitled lot listing draft");
+                    const lotCount =
+                      draft.smartUploadSummary?.groups?.length || draft.lots.length;
+                    const mediaCount =
+                      draft.smartUploadSummary?.groups?.reduce(
+                        (total, group) => total + group.imageCount,
+                        0
+                      ) || draft.media.length;
+
+                    return (
+                      <li
+                        key={draft._id}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          alignItems: "stretch",
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 8,
+                          background: "var(--app-panel)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleResumeReportDraft(draft)}
+                          style={{
+                            minWidth: 0,
+                            padding: 14,
+                            border: 0,
+                            background: "transparent",
+                            color: "inherit",
+                            textAlign: "left",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              gap: 8,
+                            }}
+                          >
+                            <strong>{label}</strong>
+                            <span className="app-chip app-chip--info">
+                              {kind === "asset" ? "Asset" : "Lot Listing"}
+                            </span>
+                            <span className="app-chip">
+                              {draft.storageMode === "smart_upload"
+                                ? "Smart Upload"
+                                : "Manual media"}
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              display: "grid",
+                              gap: 5,
+                              marginTop: 9,
+                              fontSize: 13,
+                            }}
+                          >
+                            <span className="app-muted">
+                              {lotCount} {lotCount === 1 ? "lot" : "lots"}
+                              {mediaCount > 0
+                                ? ` - ${mediaCount} media ${mediaCount === 1 ? "file" : "files"}`
+                                : ""}
+                            </span>
+                            <span className="app-muted">
+                              Saved {formatDateTime(draft.updatedAt)}
+                            </span>
+                            {draft.storageMode === "local_media" && mediaCount > 0 ? (
+                              <span className="app-muted">
+                                Original media restores on the browser where it was saved.
+                              </span>
+                            ) : null}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="app-button app-button--icon app-button--danger"
+                          onClick={() => void handleDeleteReportDraft(draft)}
+                          disabled={deleting === deleteKey}
+                          aria-label={`Delete ${label}`}
+                          style={{
+                            alignSelf: "center",
+                            marginRight: 12,
+                            borderColor: "transparent",
+                          }}
+                        >
+                          {deleting === deleteKey ? (
+                            <span className="app-spinner" aria-hidden />
+                          ) : (
+                            <Trash2 size={17} aria-hidden />
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+
+            {localDrafts.length ? (
+              <section aria-labelledby="local-drafts-heading">
+                <h3
+                  id="local-drafts-heading"
+                  style={{ margin: "0 0 9px", fontSize: 13, fontWeight: 750 }}
+                >
+                  Local drafts
+                </h3>
+                <ul
+                  aria-label="Local drafts"
+                  style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 10 }}
+                >
+                  {localDrafts.map((draft) => {
+                    const deleteKey = `local:${draft.kind}:${draft.scopeId || "default"}`;
+                    const label = draft.contractNo ||
+                      (draft.kind === "asset" ? "Untitled asset draft" : "Untitled lot listing draft");
+                    return (
+                      <li
+                        key={`${draft.kind}:${draft.scopeId || "default"}`}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          alignItems: "stretch",
+                          border: "1px solid var(--app-border)",
+                          borderRadius: 8,
+                          background: "var(--app-panel)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleResumeLocal(draft)}
+                          style={{
+                            minWidth: 0,
+                            padding: 14,
+                            border: 0,
+                            background: "transparent",
+                            color: "inherit",
+                            textAlign: "left",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                            <strong>{label}</strong>
+                            <span className="app-chip app-chip--info">
+                              {draft.kind === "asset" ? "Asset" : "Lot Listing"}
+                            </span>
+                          </span>
+                          <span style={{ display: "grid", gap: 5, marginTop: 9, fontSize: 13 }}>
+                            <span className="app-muted">
+                              {draft.lotCount} {draft.lotCount === 1 ? "lot" : "lots"}
+                              {draft.mediaCount > 0 ? ` - ${draft.mediaCount} media files` : ""}
+                            </span>
+                            <span className="app-muted">
+                              Saved {formatDateTime(draft.savedAt)}
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="app-button app-button--icon app-button--danger"
+                          onClick={() => void handleDeleteLocal(draft)}
+                          disabled={deleting === deleteKey}
+                          aria-label={`Delete ${label}`}
+                          style={{ alignSelf: "center", marginRight: 12, borderColor: "transparent" }}
+                        >
+                          {deleting === deleteKey ? (
+                            <span className="app-spinner" aria-hidden />
+                          ) : (
+                            <Trash2 size={17} aria-hidden />
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+
+            {savedInputs.length ? (
+              <section aria-labelledby="saved-inputs-heading">
+                <h3
+                  id="saved-inputs-heading"
+                  style={{ margin: "0 0 9px", fontSize: 13, fontWeight: 750 }}
+                >
+                  Saved inputs
+                </h3>
+                <ul
+                  aria-label="Saved inputs"
+                  style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 10 }}
+                >
             {savedInputs.map((item) => (
               <li
                 key={item._id}
@@ -325,9 +705,106 @@ export default function InputsHistoryModal({
                 </button>
               </li>
             ))}
-          </ul>
+                </ul>
+              </section>
+            ) : null}
+          </div>
         )}
       </div>
+
+      {showStorageNotice ? (
+        <div
+          className={styles.noticeBackdrop}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) acknowledgeStorageNotice();
+          }}
+        >
+          <section
+            className={styles.noticePanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="draft-storage-notice-title"
+          >
+            <header className={styles.noticeHeader}>
+              <div>
+                <span className={styles.noticeEyebrow}>Draft recovery</span>
+                <h3 id="draft-storage-notice-title">How your drafts are saved</h3>
+                <p>
+                  Your work is protected in two places so large photo drafts stay fast
+                  and reliable.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="app-button app-button--icon"
+                onClick={acknowledgeStorageNotice}
+                aria-label="Close draft storage information"
+              >
+                <X size={18} aria-hidden />
+              </button>
+            </header>
+
+            <div className={styles.noticeItems}>
+              <article className={styles.noticeItem}>
+                <span className={styles.noticeIcon} aria-hidden>
+                  <Cloud size={20} />
+                </span>
+                <div>
+                  <h4>Report details sync to your account</h4>
+                  <p>
+                    Contract details, lots, selections, specifications, and other text
+                    are saved to the server and appear in Drafts after you sign in.
+                  </p>
+                </div>
+              </article>
+
+              <article className={styles.noticeItem}>
+                <span className={styles.noticeIcon} aria-hidden>
+                  <HardDrive size={20} />
+                </span>
+                <div>
+                  <h4>Manual photos stay on this device</h4>
+                  <p>
+                    Original manual-upload photos are stored securely in this browser.
+                    Open the draft on this same device to restore every photo. On another
+                    device, the report details return but those local originals do not.
+                  </p>
+                </div>
+              </article>
+
+              <article className={styles.noticeItem}>
+                <span className={styles.noticeIcon} aria-hidden>
+                  <FileText size={20} />
+                </span>
+                <div>
+                  <h4>Smart Upload can resume from the server</h4>
+                  <p>
+                    Smart Upload images and grouping progress are server-backed, so that
+                    workflow can continue from another signed-in device.
+                  </p>
+                </div>
+              </article>
+            </div>
+
+            <div className={styles.noticeCallout}>
+              Do not clear browser site data or remove the original files until a manual
+              draft has been submitted successfully.
+            </div>
+
+            <footer className={styles.noticeFooter}>
+              <button
+                type="button"
+                className="app-button app-button--primary"
+                onClick={acknowledgeStorageNotice}
+                autoFocus
+              >
+                Got it
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
 
       <footer className="app-dialog__footer">
         <button

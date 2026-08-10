@@ -32,6 +32,14 @@ import {
   uploadReportFilesDirectToR2,
   type DirectUploadFile,
 } from "@/services/directUpload";
+import {
+  ReportDraftService,
+  buildReportDraftMediaManifest,
+  createReportDraftClientId,
+  getReportDraftDeviceId,
+  serializeReportDraftLots,
+  type ReportDraftRecord,
+} from "@/services/reportDrafts";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import {
   auctioneerDateOnly,
@@ -53,6 +61,7 @@ import {
   requestDurableDraftStorage,
   saveScopedDraft,
 } from "./drafts/storage";
+import { deleteSmartUploadDraft } from "./smartUpload/storage";
 import {
   ConfirmDialog,
   FormActionBar,
@@ -85,6 +94,9 @@ type Props = {
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
+  restoreDraftOnMount?: boolean;
+  resumeDraft?: ReportDraftRecord | null;
+  resumeLocalDraftScopeId?: string;
 };
 
 type DraftSnapshot = {
@@ -248,10 +260,22 @@ export default function LotListingForm({
   onCancel: _onCancel,
   onDraftStatusChange,
   auctioneer,
+  restoreDraftOnMount = false,
+  resumeDraft = null,
+  resumeLocalDraftScopeId,
 }: Props) {
   const { user } = useAuthContext();
   const userId = user?._id || null;
-  const draftScopeId = auctioneerDraftScope(auctioneer);
+  const draftClientIdRef = useRef(
+    resumeDraft?.clientDraftId ||
+      resumeLocalDraftScopeId ||
+      (restoreDraftOnMount ? auctioneerDraftScope(auctioneer) : "") ||
+      auctioneer?.clientSubmissionId ||
+      (auctioneer
+        ? `auctioneer-${auctioneer.workItemId}`
+        : createReportDraftClientId("lot-listing"))
+  );
+  const draftScopeId = draftClientIdRef.current;
   const draftKey = useMemo(
     () => getScopedDraftKey(userId, "lot-listing", draftScopeId),
     [draftScopeId, userId]
@@ -304,8 +328,7 @@ export default function LotListingForm({
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
 
   const jobIdRef = useRef<string | null>(
-    auctioneer?.clientSubmissionId ||
-      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null)
+    draftClientIdRef.current
   );
   const forceNewSubmissionRef = useRef(false);
   const submitLockRef = useRef(false);
@@ -316,7 +339,10 @@ export default function LotListingForm({
   const committedRevisionRef = useRef(0);
   const saveFlightRef = useRef<Promise<boolean> | null>(null);
   const snapshotRef = useRef<DraftSnapshot | null>(null);
+  const accountSyncPendingRef = useRef(false);
+  const retryAccountSyncRef = useRef<() => void>(() => undefined);
   const statusCallbackRef = useRef(onDraftStatusChange);
+  const mountRestoreStartedRef = useRef(false);
 
   useEffect(() => {
     statusCallbackRef.current = onDraftStatusChange;
@@ -428,11 +454,52 @@ export default function LotListingForm({
         try {
           const envelope = await buildDraftEnvelope(snapshot, revision);
           if (autosaveBlockedRef.current) break;
+
+          // Originals are committed locally first. Mongo receives only the
+          // small, portable form structure and media descriptors.
           await saveScopedDraft(envelope, draftScopeId);
+
+          let accountSyncError: unknown;
+          const { lots: _lots, ...formData } = snapshot;
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              await ReportDraftService.upsert({
+                clientDraftId: draftScopeId,
+                kind: "lot-listing",
+                storageMode: "local_media",
+                revision,
+                deviceId: getReportDraftDeviceId(),
+                contractNo: snapshot.contractNo,
+                title: snapshot.contractNo
+                  ? `Lot Listing - ${snapshot.contractNo}`
+                  : "Lot Listing draft",
+                formData,
+                lots: serializeReportDraftLots(snapshot.lots),
+                media: buildReportDraftMediaManifest(snapshot.lots),
+              });
+              accountSyncPendingRef.current = false;
+              accountSyncError = undefined;
+              break;
+            } catch (syncError) {
+              accountSyncPendingRef.current = true;
+              accountSyncError = syncError;
+            }
+          }
+
           committedRevisionRef.current = revision;
           committed = true;
           setHasDraft(true);
           setShowDraftBanner(false);
+          if (accountSyncError) {
+            setDraftIssue({
+              tone: "warning",
+              title: "Draft saved on this browser",
+              message:
+                "The original photos are safe here, but the account draft list could not be updated. Keep this browser available and save again when the connection is stable.",
+            });
+            reportDraftStatus("partial", "Saved locally - sync pending");
+            break;
+          }
           setDraftIssue(null);
 
           if (revision === requestedRevisionRef.current) {
@@ -483,6 +550,26 @@ export default function LotListingForm({
       void flushDraft();
     }, 2000);
   }, [flushDraft, reportDraftStatus]);
+
+  retryAccountSyncRef.current = () => {
+    if (
+      !accountSyncPendingRef.current ||
+      autosaveBlockedRef.current ||
+      !snapshotRef.current
+    ) {
+      return;
+    }
+    requestedRevisionRef.current =
+      Math.max(requestedRevisionRef.current, committedRevisionRef.current) + 1;
+    reportDraftStatus("saving", "Connection restored - syncing draft...");
+    void flushDraft();
+  };
+
+  useEffect(() => {
+    const handleOnline = () => retryAccountSyncRef.current();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
 
   useEffect(
     () => () => {
@@ -686,16 +773,144 @@ export default function LotListingForm({
     userId,
   ]);
 
+  const restoreAccountDraft = useCallback(async () => {
+    if (!resumeDraft || !userId) return false;
+
+    const local = await loadScopedDraft<LotListingDraftEnvelope>(
+      userId,
+      "lot-listing",
+      draftScopeId
+    );
+    if (local) {
+      applyRestoredDraft(
+        local.envelope.data,
+        Number(local.envelope.revision) || resumeDraft.revision || 0,
+        local.missingMediaCount
+      );
+      return true;
+    }
+
+    const formData = resumeDraft.formData as Record<string, unknown>;
+    const restoredLots: MixedLot[] =
+      resumeDraft.storageMode === "smart_upload"
+        ? []
+        : (resumeDraft.lots || []).map((value, index) => {
+            const lot = (value || {}) as Partial<MixedLot>;
+            return {
+              ...lot,
+              id: String(lot.id || `lot-${index + 1}`),
+              files: [],
+              extraFiles: [],
+              videoFiles: [],
+              coverIndex: Number(lot.coverIndex || 0),
+              annotations: lot.annotations || {},
+            } as MixedLot;
+          });
+    const serverSnapshot: DraftSnapshot = {
+      contractNo: String(
+        formData.contractNo || formData.contract_no || resumeDraft.contractNo || ""
+      ),
+      salesDate: String(
+        formData.salesDate || formData.sales_date || isoDate(new Date())
+      ),
+      location: String(
+        formData.location || CURRENT_BROWSER_LOCATION_LABEL
+      ),
+      latitude:
+        typeof formData.latitude === "number" ? formData.latitude : null,
+      longitude:
+        typeof formData.longitude === "number" ? formData.longitude : null,
+      language:
+        formData.language === "fr" || formData.language === "es"
+          ? formData.language
+          : "en",
+      currency: String(formData.currency || "CAD"),
+      bankPhotosEnabled: Boolean(
+        formData.bankPhotosEnabled ?? formData.bank_photos_enabled
+      ),
+      clientSubmissionId: resumeDraft.clientDraftId,
+      lots: restoredLots,
+    };
+    applyRestoredDraft(serverSnapshot, resumeDraft.revision || 0, 0);
+
+    if (resumeDraft.storageMode === "smart_upload") {
+      setDraftIssue(null);
+      setSmartUploadOpen(true);
+      reportDraftStatus("saved", "Smart Upload restored");
+    } else {
+      const missingCount = resumeDraft.media.length;
+      setDraftIssue({
+        tone: "warning",
+        title: "Original media is on another browser",
+        message: missingCount
+          ? `${missingCount} original file${missingCount === 1 ? " is" : "s are"} stored on the browser where this draft was created. The report details and lot structure were restored; use that browser to continue with all photos.`
+          : "The report details and lot structure were restored. No local media was found for this browser.",
+      });
+      reportDraftStatus("partial", "Text restored - media unavailable here");
+    }
+    return true;
+  }, [
+    applyRestoredDraft,
+    draftScopeId,
+    reportDraftStatus,
+    resumeDraft,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (!resumeDraft || mountRestoreStartedRef.current) return;
+    mountRestoreStartedRef.current = true;
+    setRestoringDraft(true);
+    void restoreAccountDraft()
+      .then(() => toast.success("Draft restored"))
+      .catch((restoreError) => {
+        const message =
+          restoreError instanceof Error
+            ? restoreError.message
+            : "The saved draft could not be restored.";
+        setDraftIssue({ tone: "error", title: "Draft restore failed", message });
+        reportDraftStatus("error", "Draft restore failed");
+        toast.error(message);
+      })
+      .finally(() => setRestoringDraft(false));
+  }, [reportDraftStatus, restoreAccountDraft, resumeDraft]);
+
+  useEffect(() => {
+    if (
+      !restoreDraftOnMount ||
+      Boolean(resumeDraft) ||
+      !hasDraft ||
+      mountRestoreStartedRef.current
+    ) {
+      return;
+    }
+    mountRestoreStartedRef.current = true;
+    void restoreDraft();
+  }, [hasDraft, restoreDraft, restoreDraftOnMount, resumeDraft]);
+
   const deleteDraftStorage = useCallback(async () => {
     let durableDeleteError: unknown;
+    if (userId) {
+      const localDeletes = await Promise.allSettled([
+        deleteScopedDraft(userId, "lot-listing", draftScopeId),
+        deleteSmartUploadDraft(userId, "lot-listing", draftScopeId),
+      ]);
+      durableDeleteError = localDeletes.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected"
+      )?.reason;
+    }
     try {
-      if (userId) {
-        await deleteScopedDraft(userId, "lot-listing", draftScopeId);
+      await ReportDraftService.deleteByClientId(
+        draftScopeId,
+        "lot-listing"
+      );
+    } catch (deleteError: any) {
+      if (deleteError?.response?.status !== 404) {
+        durableDeleteError ||= deleteError;
       }
-    } catch (deleteError) {
-      durableDeleteError = deleteError;
     }
     if (draftKey) localStorage.removeItem(draftKey);
+    accountSyncPendingRef.current = false;
     if (durableDeleteError) throw durableDeleteError;
   }, [draftKey, draftScopeId, userId]);
 
@@ -774,7 +989,9 @@ export default function LotListingForm({
   const handleSaveDraft = useCallback(async () => {
     requestedRevisionRef.current += 1;
     const committed = await flushDraft();
-    if (committed) toast.success("Draft saved");
+    if (committed) {
+      toast.success("Draft saved. Manual photos stay on this device.");
+    }
   }, [flushDraft]);
 
   const validateForm = useCallback(
@@ -1599,10 +1816,8 @@ export default function LotListingForm({
         kind="lot-listing"
         userId={userId || ""}
         scopeId={draftScopeId}
-        clientSubmissionId={
-          auctioneer?.clientSubmissionId ||
-          (auctioneer ? `auctioneer-${auctioneer.workItemId}` : undefined)
-        }
+        clientSubmissionId={draftScopeId}
+        resumeSessionId={resumeDraft?.smartUploadSession}
         details={smartUploadDetails}
         onClose={() => setSmartUploadOpen(false)}
         onSubmitted={() => handleSmartUploadSubmitted()}

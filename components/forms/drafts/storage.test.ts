@@ -6,6 +6,7 @@ import {
   getScopedDraftKey,
   hasScopedDraft,
   loadScopedDraft,
+  listScopedDrafts,
   parseScopedDraftEnvelope,
   saveScopedDraft,
 } from "./storage";
@@ -74,6 +75,83 @@ describe("scoped v2 form drafts", () => {
 });
 
 describe("scoped v3 IndexedDB drafts", () => {
+  it("lists ordinary draft metadata without exposing another user's drafts", async () => {
+    const userId = "draft-list-user";
+    const otherUserId = "draft-list-other-user";
+    const scopedId = "auctioneer:incoming-1";
+    await Promise.all([
+      deleteScopedDraft(userId, "asset"),
+      deleteScopedDraft(userId, "lot-listing"),
+      deleteScopedDraft(userId, "asset", scopedId),
+      deleteScopedDraft(otherUserId, "asset"),
+    ]);
+
+    await saveScopedDraft({
+      version: 3,
+      kind: "asset",
+      userId,
+      revision: 2,
+      savedAt: "2026-08-02T10:00:00.000Z",
+      formData: { contractNo: "ASSET-12" },
+      lots: [{ files: [new File(["a"], "a.jpg", { type: "image/jpeg" })] }],
+    });
+    await saveScopedDraft({
+      version: 3,
+      kind: "lot-listing",
+      userId,
+      revision: 3,
+      savedAt: "2026-08-03T10:00:00.000Z",
+      data: {
+        contractNo: "LOT-34",
+        lots: [{ files: [] }, { files: [] }],
+      },
+    });
+    await saveScopedDraft(
+      {
+        version: 3,
+        kind: "asset",
+        userId,
+        revision: 4,
+        savedAt: "2026-08-04T10:00:00.000Z",
+        formData: { contractNo: "INCOMING" },
+        lots: [],
+      },
+      scopedId
+    );
+    await saveScopedDraft({
+      version: 3,
+      kind: "asset",
+      userId: otherUserId,
+      revision: 1,
+      savedAt: "2026-08-05T10:00:00.000Z",
+      formData: { contractNo: "OTHER" },
+      lots: [],
+    });
+
+    expect(await listScopedDrafts(userId)).toEqual([
+      expect.objectContaining({
+        kind: "lot-listing",
+        contractNo: "LOT-34",
+        lotCount: 2,
+        mediaCount: 0,
+      }),
+      expect.objectContaining({
+        kind: "asset",
+        contractNo: "ASSET-12",
+        lotCount: 1,
+        mediaCount: 1,
+      }),
+    ]);
+    expect(await listScopedDrafts(userId, { includeScoped: true })).toHaveLength(3);
+
+    await Promise.all([
+      deleteScopedDraft(userId, "asset"),
+      deleteScopedDraft(userId, "lot-listing"),
+      deleteScopedDraft(userId, "asset", scopedId),
+      deleteScopedDraft(otherUserId, "asset"),
+    ]);
+  });
+
   it("isolates Auctioneer work-item drafts from ordinary form drafts", async () => {
     const userId = "auctioneer-scope-user";
     const scopeId = "auctioneer:work-item-1";

@@ -17,6 +17,7 @@ export type SmartUploadStoredFile = {
   lastModified: number;
   originalOrder: number;
   uploaded: boolean;
+  url?: string;
 };
 
 export type SmartUploadDraftState = {
@@ -33,7 +34,7 @@ export type SmartUploadDraftState = {
 };
 
 export type SmartUploadDraft = Omit<SmartUploadDraftState, "files"> & {
-  files: Array<SmartUploadStoredFile & { file: File }>;
+  files: Array<SmartUploadStoredFile & { file?: File }>;
 };
 
 type StoredSmartMedia = {
@@ -154,6 +155,34 @@ export async function createSmartUploadDraft(args: {
   return hydrateState(state, database);
 }
 
+export async function saveServerSmartUploadDraft(args: {
+  userId: string;
+  kind: SmartUploadKind;
+  scopeId?: string;
+  clientSubmissionId: string;
+  sessionId: string;
+  details: Record<string, unknown>;
+  stage: SmartUploadStage;
+  files: SmartUploadStoredFile[];
+}) {
+  const database = await getDatabase();
+  const scope = getSmartUploadScope(args.userId, args.kind, args.scopeId);
+  const state: SmartUploadDraftState = {
+    version: 1,
+    scope,
+    userId: args.userId,
+    kind: args.kind,
+    clientSubmissionId: args.clientSubmissionId,
+    sessionId: args.sessionId,
+    stage: args.stage,
+    details: args.details,
+    files: args.files,
+    savedAt: new Date().toISOString(),
+  };
+  await database.put("sessions", state);
+  return hydrateState(state, database);
+}
+
 export async function updateSmartUploadDraft(
   userId: string,
   kind: SmartUploadKind,
@@ -195,9 +224,10 @@ async function hydrateState(
   for (const descriptor of state.files) {
     const blob = mediaById.get(`${state.scope}:${descriptor.fileId}`);
     if (!blob) {
-      throw new Error(
-        `${descriptor.name} is missing from browser recovery storage. Select the images again.`
-      );
+      // A Smart Upload session can be resumed on another browser from its R2
+      // manifest. Keep the descriptor even when this browser has no local Blob.
+      hydrated.push({ ...descriptor });
+      continue;
     }
     hydrated.push({
       ...descriptor,

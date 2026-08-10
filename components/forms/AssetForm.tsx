@@ -20,15 +20,18 @@ import {
   SavedInputService,
   type AssetFormData,
   type DraftFileMetadata,
-  type DraftImageData,
-  type DraftResponse,
-  type DraftUploadBatch,
   type SavedInput,
   getDraftFileMetadata,
-  getKnownDraftFileId,
 } from "@/services/savedInputs";
+import {
+  ReportDraftService,
+  buildReportDraftMediaManifest,
+  createReportDraftClientId,
+  getReportDraftDeviceId,
+  serializeReportDraftLots,
+  type ReportDraftRecord,
+} from "@/services/reportDrafts";
 import { useAuthContext } from "@/context/AuthContext";
-import { SERVER_BASE } from "@/lib/config";
 import {
   CURRENT_BROWSER_LOCATION_LABEL,
   isValidBrowserCoordinates,
@@ -56,6 +59,7 @@ import {
   requestDurableDraftStorage,
   saveScopedDraft,
 } from "./drafts/storage";
+import { deleteSmartUploadDraft } from "./smartUpload/storage";
 import {
   ConfirmDialog,
   FormActionBar,
@@ -87,6 +91,9 @@ type Props = {
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
+  resumeDraft?: ReportDraftRecord | null;
+  restoreDraftOnMount?: boolean;
+  resumeLocalDraftScopeId?: string;
 };
 
 export type AssetFormHandle = {
@@ -201,25 +208,10 @@ const describeFile = (file: File): FileDescriptor => ({
   lastModified: file.lastModified || 0,
 });
 
-const draftMediaCacheKey = (
-  lotId: string,
-  type: DraftMediaType,
-  clientFileId: string
-) => JSON.stringify([lotId, type, clientFileId]);
-
 const getLotFileBucket = (lot: MixedLot, type: DraftMediaType) => {
   if (type === "main") return lot.files;
   if (type === "extra") return lot.extraFiles;
   return lot.videoFiles || [];
-};
-
-const getSerializedLotBucket = (
-  lot: SerializedLot,
-  type: DraftMediaType
-) => {
-  if (type === "main") return lot.mainFiles;
-  if (type === "extra") return lot.extraFiles;
-  return lot.videoFiles;
 };
 
 const listDraftMediaLocations = (
@@ -277,26 +269,6 @@ const dataUrlToFile = async (media: LocalDraftMedia) => {
   });
 };
 
-const urlToFile = async (
-  url: string,
-  descriptor: FileDescriptor
-) => {
-  let resolvedUrl = url;
-  if (resolvedUrl.startsWith("/")) resolvedUrl = `${SERVER_BASE}${resolvedUrl}`;
-  if (/localhost:(4000|5000)/.test(resolvedUrl)) {
-    resolvedUrl = resolvedUrl.replace(/http:\/\/localhost:\d+/, SERVER_BASE);
-  }
-  const response = await fetch(resolvedUrl);
-  if (!response.ok) throw new Error(`Unable to restore ${descriptor.name}`);
-  const blob = await response.blob();
-  const file = new File([blob], descriptor.name, {
-    type: descriptor.mimeType || blob.type,
-    lastModified: descriptor.lastModified,
-  });
-  getDraftFileMetadata(file, descriptor);
-  return file;
-};
-
 const storageErrorMessage = (error: unknown) => {
   if (error instanceof DraftPersistenceError) return error.message;
   const name = String((error as { name?: string })?.name || "");
@@ -337,12 +309,29 @@ const valuationOptions: Array<{
 ];
 
 const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
-  { onSuccess, onCancel, onDraftStatusChange, auctioneer },
+  {
+    onSuccess,
+    onCancel,
+    onDraftStatusChange,
+    auctioneer,
+    resumeDraft = null,
+    restoreDraftOnMount = false,
+    resumeLocalDraftScopeId,
+  },
   ref
 ) {
   const { user } = useAuthContext();
   const userId = user?._id || "";
-  const draftScopeId = auctioneerDraftScope(auctioneer);
+  const draftClientIdRef = useRef(
+    resumeDraft?.clientDraftId ||
+      resumeLocalDraftScopeId ||
+      (restoreDraftOnMount ? auctioneerDraftScope(auctioneer) : "") ||
+      auctioneer?.clientSubmissionId ||
+      (auctioneer
+        ? `auctioneer-${auctioneer.workItemId}`
+        : createReportDraftClientId("asset"))
+  );
+  const draftScopeId = draftClientIdRef.current;
   const draftStorageKey =
     getScopedDraftKey(userId, "asset", draftScopeId) || "";
   const importedEventDate =
@@ -422,8 +411,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const currencyPromptedRef = useRef(false);
   const jobIdRef = useRef<string | null>(
-    auctioneer?.clientSubmissionId ||
-      (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null)
+    draftClientIdRef.current
   );
   const forceNewSubmissionRef = useRef(false);
   const createdEventDispatchedRef = useRef(false);
@@ -434,9 +422,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const queuedRevisionRef = useRef(0);
   const saveInFlightRef = useRef<Promise<void> | null>(null);
   const lastFingerprintRef = useRef<string | null>(null);
+  const accountSyncPendingRef = useRef(false);
+  const retryAccountSyncRef = useRef<() => void>(() => undefined);
   const draftStatusCallbackRef = useRef(onDraftStatusChange);
-  const uploadedDraftMediaRef = useRef<Map<string, DraftImageData>>(new Map());
-  const pendingDraftDeletionUrlsRef = useRef<string[]>([]);
+  const mountRestoreStartedRef = useRef(false);
 
   useEffect(() => {
     draftStatusCallbackRef.current = onDraftStatusChange;
@@ -600,243 +589,33 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return null;
   };
 
-  const primeUploadedMediaCache = (
-    draft: DraftResponse,
-    lots: MixedLot[]
-  ) => {
-    const serializedLots = Array.isArray((draft.formData as any)?.lots)
-      ? ((draft.formData as any).lots as SerializedLot[])
-      : [];
-    const nextCache = new Map<string, DraftImageData>();
-
-    for (const lot of lots) {
-      const serializedLot = serializedLots.find((item) => item.id === lot.id);
-      for (const type of ["main", "extra", "video"] as const) {
-        const files = getLotFileBucket(lot, type);
-        const descriptors = serializedLot
-          ? getSerializedLotBucket(serializedLot, type) || []
-          : [];
-        const remote = (draft.draftImages || []).filter(
-          (item) => item.lotId === lot.id && item.type === type
-        );
-        const candidates = remote.map((item, index) => {
-          const descriptor = descriptors[index];
-          return {
-            item,
-            descriptor,
-            clientFileId:
-              item.clientFileId || descriptor?.clientFileId,
-            size:
-              typeof item.size === "number" ? item.size : descriptor?.size,
-            lastModified:
-              typeof item.lastModified === "number"
-                ? item.lastModified
-                : descriptor?.lastModified,
-            name: descriptor?.name || item.name,
-            mimeType: descriptor?.mimeType || item.mimeType,
-          };
-        });
-        const usedCandidates = new Set<number>();
-
-        files.forEach((file) => {
-          const knownClientFileId = getKnownDraftFileId(file);
-          const currentMetadata = getDraftFileMetadata(file);
-          let candidateIndex = candidates.findIndex(
-            (candidate, index) =>
-              !usedCandidates.has(index) &&
-              Boolean(candidate.clientFileId) &&
-              candidate.clientFileId === currentMetadata.clientFileId
-          );
-
-          if (candidateIndex < 0) {
-            candidateIndex = candidates.findIndex((candidate, index) => {
-              if (usedCandidates.has(index)) return false;
-              if (
-                knownClientFileId &&
-                candidate.clientFileId &&
-                knownClientFileId !== candidate.clientFileId
-              ) {
-                return false;
-              }
-              if (candidate.name !== file.name) return false;
-              if (
-                typeof candidate.size === "number" &&
-                candidate.size > 0 &&
-                candidate.size !== file.size
-              ) {
-                return false;
-              }
-              if (
-                typeof candidate.lastModified === "number" &&
-                candidate.lastModified > 0 &&
-                candidate.lastModified !== (file.lastModified || 0)
-              ) {
-                return false;
-              }
-              return (
-                !candidate.mimeType ||
-                !file.type ||
-                candidate.mimeType === file.type
-              );
-            });
-          }
-
-          if (candidateIndex < 0) return;
-          usedCandidates.add(candidateIndex);
-          const candidate = candidates[candidateIndex];
-          const metadata = getDraftFileMetadata(file, {
-            clientFileId:
-              candidate.clientFileId || currentMetadata.clientFileId,
-            size: candidate.size,
-            lastModified: candidate.lastModified,
-          });
-          const normalized = { ...candidate.item, ...metadata };
-          nextCache.set(
-            draftMediaCacheKey(lot.id, type, metadata.clientFileId),
-            normalized
-          );
-        });
-      }
-    }
-
-    uploadedDraftMediaRef.current = nextCache;
-  };
-
   const saveServerTier = async (snapshot: DraftSnapshot) => {
-    if (auctioneer) return;
-    const cached = uploadedDraftMediaRef.current;
-    const currentMedia = snapshot.lots.flatMap((lot) =>
-      (["main", "extra", "video"] as const).flatMap((type) =>
-        getLotFileBucket(lot, type).map((file) => {
-          const metadata = getDraftFileMetadata(file);
-          return {
-            file,
-            lotId: lot.id,
-            type,
-            metadata,
-            cacheKey: draftMediaCacheKey(
-              lot.id,
-              type,
-              metadata.clientFileId
-            ),
-          };
-        })
-      )
-    );
-    const currentKeys = new Set(currentMedia.map((item) => item.cacheKey));
-    const uploadBatches: DraftUploadBatch[] = [];
-
-    for (const lot of snapshot.lots) {
-      for (const type of ["main", "extra", "video"] as const) {
-        const files = getLotFileBucket(lot, type).filter((file) => {
-          const metadata = getDraftFileMetadata(file);
-          return !cached.has(
-            draftMediaCacheKey(lot.id, type, metadata.clientFileId)
-          );
-        });
-        if (files.length) uploadBatches.push({ files, lotId: lot.id, type });
-      }
-    }
-
-    let uploaded: DraftImageData[] = [];
-    try {
-      uploaded = await SavedInputService.uploadDraftImageBatches(
-        uploadBatches,
-        3
-      );
-    } catch {
-      const failedNames = uploadBatches.flatMap((batch) =>
-        batch.files.map((file) => file.name)
-      );
-      throw new Error(
-        `Some media could not be synced (${failedNames
-          .slice(0, 3)
-          .join(", ")}). The previous server draft was preserved.`
-      );
-    }
-
-    const uploadedByKey = new Map(
-      uploaded.flatMap((item) =>
-        item.clientFileId
-          ? [
-              [
-                draftMediaCacheKey(
-                  item.lotId,
-                  item.type,
-                  item.clientFileId
-                ),
-                item,
-              ] as const,
-            ]
-          : []
-      )
-    );
-    const newlyUploadedUrls = uploaded.map((item) => item.url);
-    let activeRemoteMedia: DraftImageData[];
-    try {
-      activeRemoteMedia = currentMedia.map((item) => {
-        const remote =
-          cached.get(item.cacheKey) || uploadedByKey.get(item.cacheKey);
-        if (!remote) {
-          throw new Error(
-            `Unable to match uploaded draft media: ${item.file.name}`
-          );
-        }
-        return {
-          ...remote,
-          ...item.metadata,
-          lotId: item.lotId,
-          type: item.type,
-          name: item.file.name,
-          mimeType: item.file.type || remote.mimeType,
-        };
-      });
-    } catch (matchError) {
-      await SavedInputService.deleteDraftImagesByUrls(
-        newlyUploadedUrls
-      ).catch(() => undefined);
-      throw matchError;
-    }
-
-    try {
-      await SavedInputService.saveDraft({
-        formType: "asset",
-        formData: {
-          ...snapshot.formData,
-          draftVersion: 2,
-          draftUserId: userId,
-          draftRevision: snapshot.revision,
-          lots: snapshot.serializedLots,
-        } as any,
-        draftImages: activeRemoteMedia,
-      });
-    } catch (saveError) {
-      await SavedInputService.deleteDraftImagesByUrls(newlyUploadedUrls).catch(
-        () => undefined
-      );
-      throw saveError;
-    }
-
-    uploadedDraftMediaRef.current = new Map(
-      activeRemoteMedia.map((item) => [
-        draftMediaCacheKey(item.lotId, item.type, item.clientFileId!),
-        item,
-      ])
-    );
-    const removedUrls = [
-      ...pendingDraftDeletionUrlsRef.current,
-      ...[...cached.entries()]
-        .filter(([key]) => !currentKeys.has(key))
-        .map(([, item]) => item.url),
-    ].filter((url, index, urls) => urls.indexOf(url) === index);
-    pendingDraftDeletionUrlsRef.current = [];
-    if (removedUrls.length) {
+    // Mongo is the portable source of truth for text and lot structure. The
+    // original, potentially very large media files stay in IndexedDB.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        await SavedInputService.deleteDraftImagesByUrls(removedUrls);
-      } catch {
-        pendingDraftDeletionUrlsRef.current = removedUrls;
+        await ReportDraftService.upsert({
+          clientDraftId: draftScopeId,
+          kind: "asset",
+          storageMode: "local_media",
+          revision: snapshot.revision,
+          deviceId: getReportDraftDeviceId(),
+          contractNo: snapshot.formData.contractNo,
+          title:
+            snapshot.formData.clientName ||
+            snapshot.formData.contractNo ||
+            "Asset report draft",
+          formData: snapshot.formData,
+          lots: serializeReportDraftLots(snapshot.lots),
+          media: buildReportDraftMediaManifest(snapshot.lots),
+        });
+        return;
+      } catch (error) {
+        lastError = error;
       }
     }
+    throw lastError;
   };
 
   const saveRevision = async (revision: number) => {
@@ -849,6 +628,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     ]);
     const localSaved = localResult.status === "fulfilled";
     const serverSaved = serverResult.status === "fulfilled";
+    accountSyncPendingRef.current = !serverSaved;
     const localWarning =
       localResult.status === "fulfilled" ? localResult.value : null;
     const failures = [localResult, serverResult]
@@ -881,7 +661,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
     if (localSaved && serverSaved && !localWarning) {
       setDraftGuidance(null);
-      publishDraftStatus("saved", "Draft saved");
+      publishDraftStatus(
+        "saved",
+        "Draft saved - manual photos stored on this device"
+      );
       return;
     }
 
@@ -954,6 +737,22 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     publishDraftStatus("dirty", "Unsaved changes");
     await requestDraftSave(revision);
   };
+
+  retryAccountSyncRef.current = () => {
+    if (!accountSyncPendingRef.current || autoSaveBlockedRef.current || !userId) {
+      return;
+    }
+    const revision = Math.max(saveRevisionRef.current + 1, 1);
+    saveRevisionRef.current = revision;
+    publishDraftStatus("saving", "Connection restored - syncing draft...");
+    void requestDraftSave(revision);
+  };
+
+  useEffect(() => {
+    const handleOnline = () => retryAccountSyncRef.current();
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
 
   useEffect(() => {
     if (!draftHydrated || autoSaveBlockedRef.current || !userId) return;
@@ -1115,21 +914,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     setMixedLots(restoredLots);
     saveRevisionRef.current = envelope.revision || 0;
     committedRevisionRef.current = envelope.revision || 0;
-    if (!auctioneer) {
-      try {
-        const remoteDraft = await SavedInputService.getDraft("asset");
-        const remoteFormData = remoteDraft?.formData as any;
-        if (
-          remoteDraft &&
-          remoteFormData?.draftVersion === 2 &&
-          remoteFormData?.draftUserId === userId
-        ) {
-          primeUploadedMediaCache(remoteDraft, restoredLots);
-        }
-      } catch {
-        // The local draft remains fully usable while server sync is offline.
-      }
-    }
     if (missingMediaCount) {
       setDraftGuidance({
         tone: "warning",
@@ -1144,105 +928,158 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return true;
   };
 
-  const restoreServerDraft = async (): Promise<boolean> => {
-    if (auctioneer) return false;
-    const draft = await SavedInputService.getDraft("asset");
-    if (!draft) return false;
-    const formData = draft.formData as any;
-    if (formData?.draftVersion !== 2 || formData?.draftUserId !== userId) {
-      return false;
-    }
-    restoreFormFields(formData);
-    const imageData = draft.draftImages || [];
-    let failedMedia = 0;
-    const restoredLots: MixedLot[] = [];
-    for (const lotMeta of (formData.lots || []) as SerializedLot[]) {
-      const restoreBucket = async (
-        type: "main" | "extra" | "video",
-        descriptors: FileDescriptor[]
-      ) => {
-        const remote = imageData.filter(
-          (item) => item.lotId === lotMeta.id && item.type === type
-        );
-        const files: File[] = [];
-        for (let index = 0; index < remote.length; index += 1) {
-          const remoteItem = remote[index];
-          const descriptor = descriptors[index] || {
-            name: remoteItem.name,
-            size: 0,
-            mimeType: remoteItem.mimeType,
-            lastModified: 0,
-          };
-          try {
-            files.push(
-              await urlToFile(remoteItem.url, {
-                ...descriptor,
-                clientFileId:
-                  remoteItem.clientFileId || descriptor.clientFileId,
-                size:
-                  typeof remoteItem.size === "number"
-                    ? remoteItem.size
-                    : descriptor.size,
-                lastModified:
-                  typeof remoteItem.lastModified === "number"
-                    ? remoteItem.lastModified
-                    : descriptor.lastModified,
-              })
-            );
-          } catch {
-            failedMedia += 1;
-          }
-        }
-        return files;
-      };
-      restoredLots.push({
-        id: lotMeta.id,
-        files: await restoreBucket("main", lotMeta.mainFiles || []),
-        extraFiles: await restoreBucket("extra", lotMeta.extraFiles || []),
-        videoFiles: await restoreBucket("video", lotMeta.videoFiles || []),
-        coverIndex: lotMeta.coverIndex || 0,
-        mode: lotMeta.mode,
-        annotations: lotMeta.annotations || {},
-      });
-    }
-    primeUploadedMediaCache(draft, restoredLots);
+  const restoreAccountDraft = async (): Promise<boolean> => {
+    if (!resumeDraft || !userId) return false;
+
+    // The same browser has the full original files in IndexedDB. Prefer that
+    // exact revision before falling back to portable Mongo metadata.
+    if (await restoreLocalDraft()) return true;
+
+    const formData = resumeDraft.formData || {};
+    const value = (...keys: string[]) => {
+      for (const key of keys) {
+        const candidate = formData[key];
+        if (candidate !== undefined && candidate !== null) return candidate;
+      }
+      return undefined;
+    };
+    const textValue = (...keys: string[]) => {
+      const candidate = value(...keys);
+      return typeof candidate === "string" ? candidate : undefined;
+    };
+    const booleanValue = (...keys: string[]) => {
+      const candidate = value(...keys);
+      return typeof candidate === "boolean" ? candidate : undefined;
+    };
+    const numberValue = (...keys: string[]) => {
+      const candidate = value(...keys);
+      return typeof candidate === "number" && Number.isFinite(candidate)
+        ? candidate
+        : null;
+    };
+    const selectedMethods = value(
+      "selectedValuationMethods",
+      "valuation_methods"
+    );
+    const normalizedMethods = Array.isArray(selectedMethods)
+      ? selectedMethods.filter(
+          (method): method is ValuationMethod =>
+            method === "FML" ||
+            method === "TKV" ||
+            method === "OLV" ||
+            method === "FLV"
+        )
+      : undefined;
+    const languageValue = value("language");
+    const normalizedLanguage =
+      languageValue === "fr" || languageValue === "es"
+        ? languageValue
+        : "en";
+
+    restoreFormFields({
+      clientSubmissionId: resumeDraft.clientDraftId,
+      clientName: textValue("clientName", "client_name"),
+      effectiveDate: textValue("effectiveDate", "effective_date"),
+      appraisalPurpose: textValue(
+        "appraisalPurpose",
+        "appraisal_purpose"
+      ),
+      ownerName: textValue("ownerName", "owner_name"),
+      preparedFor: textValue("preparedFor", "prepared_for"),
+      appraiser: textValue("appraiser"),
+      appraisalCompany: textValue(
+        "appraisalCompany",
+        "appraisal_company"
+      ),
+      industry: textValue("industry"),
+      inspectionDate: textValue("inspectionDate", "inspection_date"),
+      location: textValue("location"),
+      latitude: numberValue("latitude"),
+      longitude: numberValue("longitude"),
+      contractNo:
+        textValue("contractNo", "contract_no") || resumeDraft.contractNo,
+      language: normalizedLanguage,
+      currency: textValue("currency"),
+      includeValuationTable: booleanValue(
+        "includeValuationTable",
+        "include_valuation_table"
+      ),
+      selectedValuationMethods: normalizedMethods,
+      includeDamageAnalysis: booleanValue(
+        "includeDamageAnalysis",
+        "include_damage_analysis"
+      ),
+      bankPhotosEnabled: booleanValue(
+        "bankPhotosEnabled",
+        "bank_photos_enabled"
+      ),
+      factorsAgeCondition: textValue(
+        "factorsAgeCondition",
+        "factors_age_condition"
+      ),
+      factorsQuality: textValue("factorsQuality", "factors_quality"),
+      factorsAnalysis: textValue("factorsAnalysis", "factors_analysis"),
+    });
+
+    const restoredLots: MixedLot[] =
+      resumeDraft.storageMode === "smart_upload"
+        ? []
+        : (resumeDraft.lots || []).map((entry, index) => {
+            const lot = (entry || {}) as Partial<MixedLot>;
+            return {
+              ...lot,
+              id: String(lot.id || `lot-${index + 1}`),
+              files: [],
+              extraFiles: [],
+              videoFiles: [],
+              coverIndex: Number(lot.coverIndex || 0),
+              annotations: lot.annotations || {},
+            } as MixedLot;
+          });
     setMixedLots(restoredLots);
-    saveRevisionRef.current = Number(formData.draftRevision || 0);
-    committedRevisionRef.current = saveRevisionRef.current;
-    if (failedMedia) {
+    jobIdRef.current = resumeDraft.clientDraftId;
+    saveRevisionRef.current = resumeDraft.revision || 0;
+    committedRevisionRef.current = resumeDraft.revision || 0;
+
+    if (resumeDraft.storageMode === "smart_upload") {
+      setDraftGuidance(null);
+      setSmartUploadOpen(true);
+      publishDraftStatus("saved", "Smart Upload restored");
+    } else {
+      const missingCount = Array.isArray(resumeDraft.media)
+        ? resumeDraft.media.length
+        : 0;
       setDraftGuidance({
         tone: "warning",
-        message: `${failedMedia} synced media file${failedMedia === 1 ? "" : "s"} could not be restored. Metadata and available media were loaded.`,
+        message: missingCount
+          ? `${missingCount} original file${missingCount === 1 ? " is" : "s are"} stored on the browser where this draft was created. The report details and lot structure were restored; use that browser to continue with all photos.`
+          : "The report details and lot structure were restored. No local media was found for this browser.",
       });
-      publishDraftStatus("partial", "Draft restored with missing media");
-    } else {
-      publishDraftStatus("saved", "Draft restored from your account");
+      publishDraftStatus("partial", "Text restored - media unavailable here");
     }
     return true;
   };
 
   useEffect(() => {
-    if (!userId || !draftStorageKey) return;
+    if (
+      !userId ||
+      !draftStorageKey ||
+      mountRestoreStartedRef.current ||
+      (!resumeDraft && !restoreDraftOnMount)
+    ) {
+      setDraftHydrated(true);
+      return;
+    }
+    mountRestoreStartedRef.current = true;
     let cancelled = false;
     setDraftHydrated(false);
     lastFingerprintRef.current = null;
-    uploadedDraftMediaRef.current = new Map();
-    pendingDraftDeletionUrlsRef.current = [];
     void (async () => {
       let restored = false;
       try {
-        try {
-          restored = await restoreLocalDraft();
-        } catch (localRestoreError) {
-          if (!cancelled) {
-            setDraftGuidance({
-              tone: "error",
-              message: storageErrorMessage(localRestoreError),
-            });
-            publishDraftStatus("error", "Local draft storage is unavailable");
-          }
-        }
-        if (!restored) restored = await restoreServerDraft();
+        restored = resumeDraft
+          ? await restoreAccountDraft()
+          : await restoreLocalDraft();
         if (restored && !cancelled) toast.info("Your asset draft was restored.");
       } catch (restoreError) {
         if (!cancelled) {
@@ -1265,7 +1102,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return () => {
       cancelled = true;
     };
-  }, [draftStorageKey, userId]);
+  }, [draftStorageKey, restoreDraftOnMount, resumeDraft, userId]);
 
   useEffect(() => {
     if (!appraiser && user?.username) setAppraiser(user.username);
@@ -1410,30 +1247,25 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const clearDraftStorage = async () => {
-    let localDeleteError: unknown;
-    try {
-      await deleteScopedDraft(userId, "asset", draftScopeId);
-    } catch (error) {
-      localDeleteError = error;
-    }
+    let deleteError: unknown;
+    const localResults = await Promise.allSettled([
+      deleteScopedDraft(userId, "asset", draftScopeId),
+      deleteSmartUploadDraft(userId, "asset", draftScopeId),
+    ]);
+    const localFailure = localResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected"
+    );
+    if (localFailure) deleteError = localFailure.reason;
     if (draftStorageKey) localStorage.removeItem(draftStorageKey);
-    const removeServerDraft = async () => {
-      if (auctioneer) return;
-      await SavedInputService.deleteDraftImages();
-      await SavedInputService.deleteDraft("asset");
-    };
     try {
-      await removeServerDraft();
-    } catch {
-      try {
-        await removeServerDraft();
-      } catch {
-        throw new Error("The local draft was removed, but the server copy could not be deleted. Please try again.");
+      await ReportDraftService.deleteByClientId(draftScopeId, "asset");
+      accountSyncPendingRef.current = false;
+    } catch (serverDeleteError: any) {
+      if (serverDeleteError?.response?.status !== 404) {
+        deleteError ||= serverDeleteError;
       }
     }
-    uploadedDraftMediaRef.current = new Map();
-    pendingDraftDeletionUrlsRef.current = [];
-    if (localDeleteError) throw localDeleteError;
+    if (deleteError) throw deleteError;
   };
 
   const discardDraft = async () => {
@@ -2470,10 +2302,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         kind="asset"
         userId={userId}
         scopeId={draftScopeId}
-        clientSubmissionId={
-          auctioneer?.clientSubmissionId ||
-          (auctioneer ? `auctioneer-${auctioneer.workItemId}` : undefined)
-        }
+        clientSubmissionId={draftScopeId}
+        resumeSessionId={resumeDraft?.smartUploadSession}
         details={smartUploadDetails}
         onClose={() => setSmartUploadOpen(false)}
         onSubmitted={() => handleSmartUploadSubmitted()}

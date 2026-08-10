@@ -26,6 +26,10 @@ import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
 import {
+  draftKindForRecord,
+  type ReportDraftRecord,
+} from "@/services/reportDrafts";
+import {
   ReportsService,
   type PdfReport,
   type ReportStats,
@@ -53,6 +57,7 @@ const LotListingForm = dynamic(
 );
 
 type DrawerType = "real-estate" | "salvage" | "asset" | "lot-listing" | null;
+type LocalDraftKind = "asset" | "lot-listing";
 
 type IncomingSummary = {
   availableCount: number;
@@ -247,6 +252,13 @@ export default function DashboardPage() {
   const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
+  const [resumeLocalDraftKind, setResumeLocalDraftKind] =
+    useState<LocalDraftKind | null>(null);
+  const [resumeLocalDraftScopeId, setResumeLocalDraftScopeId] = useState<
+    string | null
+  >(null);
+  const [resumeReportDraft, setResumeReportDraft] =
+    useState<ReportDraftRecord | null>(null);
   const [greetingLabel] = useState(greeting);
   const [draftStatus, setDraftStatus] = useState<{
     status: DraftStatus;
@@ -317,16 +329,53 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const openAsset = (event: Event) => {
-      if ((event as CustomEvent).detail) setDrawerType("asset");
+      if ((event as CustomEvent).detail) {
+        setResumeLocalDraftKind(null);
+        setResumeLocalDraftScopeId(null);
+        setResumeReportDraft(null);
+        setDrawerType("asset");
+      }
     };
     const openRealEstate = (event: Event) => {
-      if ((event as CustomEvent).detail) setDrawerType("real-estate");
+      if ((event as CustomEvent).detail) {
+        setResumeLocalDraftKind(null);
+        setResumeLocalDraftScopeId(null);
+        setResumeReportDraft(null);
+        setDrawerType("real-estate");
+      }
+    };
+    const resumeLocalDraft = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          kind?: LocalDraftKind;
+          scopeId?: string;
+        }>
+      ).detail;
+      const kind = detail?.kind;
+      if (kind !== "asset" && kind !== "lot-listing") return;
+      setResumeLocalDraftKind(kind);
+      setResumeLocalDraftScopeId(detail?.scopeId || null);
+      setResumeReportDraft(null);
+      setDrawerType(kind);
+    };
+    const resumeServerDraft = (event: Event) => {
+      const draft = (event as CustomEvent<ReportDraftRecord>).detail;
+      if (!draft?._id) return;
+      const kind = draftKindForRecord(draft);
+      setResumeLocalDraftKind(null);
+      setResumeLocalDraftScopeId(null);
+      setResumeReportDraft(draft);
+      setDrawerType(kind);
     };
     window.addEventListener("load-saved-input", openAsset);
     window.addEventListener("load-realestate-input", openRealEstate);
+    window.addEventListener("resume-local-draft", resumeLocalDraft);
+    window.addEventListener("resume-report-draft", resumeServerDraft);
     return () => {
       window.removeEventListener("load-saved-input", openAsset);
       window.removeEventListener("load-realestate-input", openRealEstate);
+      window.removeEventListener("resume-local-draft", resumeLocalDraft);
+      window.removeEventListener("resume-report-draft", resumeServerDraft);
     };
   }, []);
 
@@ -334,6 +383,9 @@ export default function DashboardPage() {
 
   const closeDrawer = useCallback(() => {
     setDrawerType(null);
+    setResumeLocalDraftKind(null);
+    setResumeLocalDraftScopeId(null);
+    setResumeReportDraft(null);
     setDraftStatus(null);
     refreshDashboard();
   }, [refreshDashboard]);
@@ -359,7 +411,11 @@ export default function DashboardPage() {
         </div>
         <button
           className={styles.createButton}
-          onClick={() => setDrawerType("asset")}
+          onClick={() => {
+            setResumeLocalDraftKind(null);
+            setResumeReportDraft(null);
+            setDrawerType("asset");
+          }}
         >
           <FilePlus2 size={21} strokeWidth={1.8} aria-hidden />
           Create report
@@ -385,7 +441,11 @@ export default function DashboardPage() {
             <button
               key={action.key}
               className={styles.workflowButton}
-              onClick={() => setDrawerType(action.key)}
+              onClick={() => {
+                setResumeLocalDraftKind(null);
+                setResumeReportDraft(null);
+                setDrawerType(action.key);
+              }}
             >
               <Icon size={25} strokeWidth={1.7} aria-hidden />
               <span>{action.title}</span>
@@ -607,6 +667,9 @@ export default function DashboardPage() {
           <AssetForm
             onSuccess={closeDrawer}
             onCancel={closeDrawer}
+            resumeDraft={resumeReportDraft?.type === "asset" ? resumeReportDraft : null}
+            restoreDraftOnMount={resumeLocalDraftKind === "asset"}
+            resumeLocalDraftScopeId={resumeLocalDraftScopeId || undefined}
             onDraftStatusChange={(status, label) =>
               setDraftStatus({ status, label })
             }
@@ -615,6 +678,11 @@ export default function DashboardPage() {
           <LotListingForm
             onSuccess={closeDrawer}
             onCancel={closeDrawer}
+            restoreDraftOnMount={resumeLocalDraftKind === "lot-listing"}
+            resumeLocalDraftScopeId={resumeLocalDraftScopeId || undefined}
+            resumeDraft={
+              resumeReportDraft?.type === "lotListing" ? resumeReportDraft : null
+            }
             onDraftStatusChange={(status, label) =>
               setDraftStatus({ status, label })
             }
