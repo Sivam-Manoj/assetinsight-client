@@ -34,10 +34,8 @@ import {
 } from "@/services/directUpload";
 import {
   ReportDraftService,
-  buildReportDraftMediaManifest,
   createReportDraftClientId,
   getReportDraftDeviceId,
-  serializeReportDraftLots,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
@@ -452,31 +450,27 @@ export default function LotListingForm({
 
         reportDraftStatus("saving", "Saving draft...");
         try {
-          const envelope = await buildDraftEnvelope(snapshot, revision);
           if (autosaveBlockedRef.current) break;
 
-          // Originals are committed locally first. Mongo receives only the
-          // small, portable form structure and media descriptors.
-          await saveScopedDraft(envelope, draftScopeId);
-
-          let accountSyncError: unknown;
           const { lots: _lots, ...formData } = snapshot;
+          let accountSyncError: unknown;
           for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-              await ReportDraftService.upsert({
-                clientDraftId: draftScopeId,
-                kind: "lot-listing",
-                storageMode: "local_media",
-                revision,
-                deviceId: getReportDraftDeviceId(),
-                contractNo: snapshot.contractNo,
-                title: snapshot.contractNo
-                  ? `Lot Listing - ${snapshot.contractNo}`
-                  : "Lot Listing draft",
-                formData,
-                lots: serializeReportDraftLots(snapshot.lots),
-                media: buildReportDraftMediaManifest(snapshot.lots),
-              });
+              await ReportDraftService.upsertWithMedia(
+                {
+                  clientDraftId: draftScopeId,
+                  kind: "lot-listing",
+                  revision,
+                  deviceId: getReportDraftDeviceId(),
+                  contractNo: snapshot.contractNo,
+                  title: snapshot.contractNo
+                    ? `Lot Listing - ${snapshot.contractNo}`
+                    : "Lot Listing draft",
+                  formData,
+                },
+                snapshot.lots,
+                (_progress, message) => reportDraftStatus("saving", message)
+              );
               accountSyncPendingRef.current = false;
               accountSyncError = undefined;
               break;
@@ -486,31 +480,23 @@ export default function LotListingForm({
             }
           }
 
+          if (accountSyncError) throw accountSyncError;
+
           committedRevisionRef.current = revision;
           committed = true;
           setHasDraft(true);
           setShowDraftBanner(false);
-          if (accountSyncError) {
-            setDraftIssue({
-              tone: "warning",
-              title: "Draft saved on this browser",
-              message:
-                "The original photos are safe here, but the account draft list could not be updated. Keep this browser available and save again when the connection is stable.",
-            });
-            reportDraftStatus("partial", "Saved locally - sync pending");
-            break;
-          }
+
+          // Browser draft data is legacy migration state only. Remove it once
+          // the complete R2-backed account revision has been verified.
+          await deleteScopedDraft(userId, "lot-listing", draftScopeId).catch(
+            () => undefined
+          );
+          if (draftKey) localStorage.removeItem(draftKey);
           setDraftIssue(null);
 
           if (revision === requestedRevisionRef.current) {
-            reportDraftStatus(
-              "saved",
-              "Saved " +
-                new Intl.DateTimeFormat(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                }).format(new Date())
-            );
+            reportDraftStatus("saved", "Draft and photos saved to your account");
           }
         } catch (saveError) {
           const issue = draftFailureGuidance(saveError);
@@ -533,7 +519,6 @@ export default function LotListingForm({
       if (saveFlightRef.current === task) saveFlightRef.current = null;
     }
   }, [
-    buildDraftEnvelope,
     draftKey,
     draftScopeId,
     reportDraftStatus,
@@ -776,36 +761,11 @@ export default function LotListingForm({
   const restoreAccountDraft = useCallback(async () => {
     if (!resumeDraft || !userId) return false;
 
-    const local = await loadScopedDraft<LotListingDraftEnvelope>(
-      userId,
-      "lot-listing",
-      draftScopeId
-    );
-    if (local) {
-      applyRestoredDraft(
-        local.envelope.data,
-        Number(local.envelope.revision) || resumeDraft.revision || 0,
-        local.missingMediaCount
-      );
-      return true;
-    }
-
     const formData = resumeDraft.formData as Record<string, unknown>;
     const restoredLots: MixedLot[] =
       resumeDraft.storageMode === "smart_upload"
         ? []
-        : (resumeDraft.lots || []).map((value, index) => {
-            const lot = (value || {}) as Partial<MixedLot>;
-            return {
-              ...lot,
-              id: String(lot.id || `lot-${index + 1}`),
-              files: [],
-              extraFiles: [],
-              videoFiles: [],
-              coverIndex: Number(lot.coverIndex || 0),
-              annotations: lot.annotations || {},
-            } as MixedLot;
-          });
+        : await ReportDraftService.restoreLots<MixedLot>(resumeDraft);
     const serverSnapshot: DraftSnapshot = {
       contractNo: String(
         formData.contractNo || formData.contract_no || resumeDraft.contractNo || ""
@@ -838,15 +798,8 @@ export default function LotListingForm({
       setSmartUploadOpen(true);
       reportDraftStatus("saved", "Smart Upload restored");
     } else {
-      const missingCount = resumeDraft.media.length;
-      setDraftIssue({
-        tone: "warning",
-        title: "Original media is on another browser",
-        message: missingCount
-          ? `${missingCount} original file${missingCount === 1 ? " is" : "s are"} stored on the browser where this draft was created. The report details and lot structure were restored; use that browser to continue with all photos.`
-          : "The report details and lot structure were restored. No local media was found for this browser.",
-      });
-      reportDraftStatus("partial", "Text restored - media unavailable here");
+      setDraftIssue(null);
+      reportDraftStatus("saved", "Draft and photos restored");
     }
     return true;
   }, [
@@ -990,7 +943,7 @@ export default function LotListingForm({
     requestedRevisionRef.current += 1;
     const committed = await flushDraft();
     if (committed) {
-      toast.success("Draft saved. Manual photos stay on this device.");
+      toast.success("Draft and photos saved to your account.");
     }
   }, [flushDraft]);
 

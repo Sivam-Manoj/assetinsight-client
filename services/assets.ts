@@ -178,8 +178,8 @@ export const getPreviewData = async (reportId: string): Promise<PreviewDataRespo
 export const updatePreviewData = async (
   reportId: string,
   previewData: any
-): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> => {
-  const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
+): Promise<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }> => {
+  const { data } = await API.put<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }>(
     `/asset/${reportId}/preview`,
     { preview_data: previewData }
   );
@@ -230,11 +230,25 @@ export const refreshAssetSpecPdf = async (
   reportId: string
 ): Promise<{
   message: string;
-  data: { spec_pdf: string; cr_docx?: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+  data: {
+    spec_pdf: string;
+    cr_docx?: string;
+    preview_files?: AssetReport["preview_files"];
+    preview_data?: any;
+    imageUrls?: string[];
+    image_count?: number;
+  };
 }> => {
   const { data } = await API.post<{
     message: string;
-    data: { spec_pdf: string; cr_docx?: string; preview_files?: AssetReport["preview_files"]; preview_data?: any };
+    data: {
+      spec_pdf: string;
+      cr_docx?: string;
+      preview_files?: AssetReport["preview_files"];
+      preview_data?: any;
+      imageUrls?: string[];
+      image_count?: number;
+    };
   }>(`/asset/${reportId}/preview/spec-pdf`, {});
   return data;
 };

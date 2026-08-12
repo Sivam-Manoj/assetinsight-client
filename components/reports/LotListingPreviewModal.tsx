@@ -34,6 +34,7 @@ import {
   applyPrimarySerialEdit,
   isPrimarySerialField,
 } from "@/lib/previewSerialNumber";
+import { getPreviewLotPhotoEntries } from "@/lib/previewLotPhotos";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -320,7 +321,7 @@ export default function LotListingPreviewModal({
 
     const nextPreviewFiles = data.preview_files || data.files;
     if (nextPreviewFiles) setPreviewFiles(nextPreviewFiles);
-    setImageUrls(Array.isArray(data.imageUrls) ? data.imageUrls : []);
+    if (Array.isArray(data.imageUrls)) setImageUrls(data.imageUrls);
   };
 
   const loadPreviewData = async () => {
@@ -364,6 +365,12 @@ export default function LotListingPreviewModal({
             : (saved as any).data
         );
       }
+      const savedImageUrls = Array.isArray((saved as any)?.imageUrls)
+        ? (saved as any).imageUrls
+        : Array.isArray((saved as any)?.data?.imageUrls)
+          ? (saved as any).data.imageUrls
+          : null;
+      if (savedImageUrls) setImageUrls(savedImageUrls);
       if ((saved as any)?.files_regeneration_queued) {
         setHasChanges(false);
         applyLotListingState((saved as any).data, {
@@ -388,6 +395,9 @@ export default function LotListingPreviewModal({
         }));
         if (pdf.data?.preview_data) {
           setPreviewData(applyDamageAnalysisLotPolicy(pdf.data.preview_data));
+        }
+        if (Array.isArray(pdf.data?.imageUrls)) {
+          setImageUrls(pdf.data.imageUrls);
         }
         pdfRefreshed = true;
       } catch (pdfError: any) {
@@ -674,29 +684,8 @@ export default function LotListingPreviewModal({
   const getLotUploadKey = (lot: any, index: number) =>
     String(lot?.lot_id || lot?.id || lot?.lot_number || index);
 
-  const getLotPhotoEntries = (lot: any) => {
-    const indexes = [
-      ...(Array.isArray(lot?.image_indexes) ? lot.image_indexes : []),
-      ...(Array.isArray(lot?.extra_image_indexes) ? lot.extra_image_indexes : []),
-    ]
-      .map((value) => Number(value))
-      .filter((value, index, arr) => Number.isInteger(value) && value >= 0 && arr.indexOf(value) === index);
-    const entries: Array<{ globalIndex: number | null; url: string }> = indexes.flatMap((globalIndex) => {
-      const url = imageUrls[globalIndex];
-      return url ? [{ globalIndex, url }] : [];
-    });
-    const fallbackUrls = [
-      ...(Array.isArray(lot?.image_urls) ? lot.image_urls : []),
-      ...(Array.isArray(lot?.extra_image_urls) ? lot.extra_image_urls : []),
-      lot?.image_url,
-    ].filter((url): url is string => typeof url === "string" && Boolean(url));
-    fallbackUrls.forEach((url) => {
-      if (entries.some((entry) => entry.url === url)) return;
-      const rootIndex = imageUrls.indexOf(url);
-      entries.push({ globalIndex: rootIndex >= 0 ? rootIndex : null, url });
-    });
-    return entries;
-  };
+  const getLotPhotoEntries = (lot: any) =>
+    getPreviewLotPhotoEntries(lot, imageUrls);
 
   const handleUploadLotImages = async (lot: any, index: number, fileList: FileList | null) => {
     const files = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));

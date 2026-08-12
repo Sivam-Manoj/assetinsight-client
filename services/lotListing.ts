@@ -180,8 +180,20 @@ export async function updateLotListingPreview(
     details?: LotListing["details"];
     regenerate_files_on_lot_number_change?: boolean;
   }
-): Promise<{ message: string; data: LotListing; files_regeneration_queued?: boolean }> {
-  const response = await API.put<{ message: string; data: LotListing; files_regeneration_queued?: boolean }>(
+): Promise<{
+  message: string;
+  data: LotListing;
+  imageUrls?: string[];
+  image_count?: number;
+  files_regeneration_queued?: boolean;
+}> {
+  const response = await API.put<{
+    message: string;
+    data: LotListing;
+    imageUrls?: string[];
+    image_count?: number;
+    files_regeneration_queued?: boolean;
+  }>(
     `/lot-listing/${id}/preview`,
     data
   );
@@ -233,11 +245,27 @@ export async function refreshLotListingSpecPdf(
   id: string
 ): Promise<{
   message: string;
-  data: { spec_pdf: string; cr_docx?: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+  data: {
+    spec_pdf: string;
+    cr_docx?: string;
+    preview_files?: LotListingPreviewFiles;
+    files?: LotListingPreviewFiles;
+    preview_data?: LotListing["preview_data"];
+    imageUrls?: string[];
+    image_count?: number;
+  };
 }> {
   const response = await API.post<{
     message: string;
-    data: { spec_pdf: string; cr_docx?: string; preview_files?: LotListingPreviewFiles; files?: LotListingPreviewFiles; preview_data?: LotListing["preview_data"] };
+    data: {
+      spec_pdf: string;
+      cr_docx?: string;
+      preview_files?: LotListingPreviewFiles;
+      files?: LotListingPreviewFiles;
+      preview_data?: LotListing["preview_data"];
+      imageUrls?: string[];
+      image_count?: number;
+    };
   }>(`/lot-listing/${id}/preview/spec-pdf`, {});
   return response.data;
 }

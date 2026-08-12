@@ -162,8 +162,8 @@ export const ReportsService = {
   async updateAssignedAssetPreview(
     id: string,
     previewData: any
-  ): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> {
-    const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
+  ): Promise<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }> {
+    const { data } = await API.put<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }>(
       `/reports/assigned-approvals/${id}/preview`,
       { preview_data: previewData }
     );
@@ -173,8 +173,8 @@ export const ReportsService = {
   async updateAssignedPreview(
     id: string,
     previewData: any
-  ): Promise<{ message: string; data: any; files_regeneration_queued?: boolean }> {
-    const { data } = await API.put<{ message: string; data: any; files_regeneration_queued?: boolean }>(
+  ): Promise<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }> {
+    const { data } = await API.put<{ message: string; data: any; imageUrls?: string[]; image_count?: number; files_regeneration_queued?: boolean }>(
       `/reports/assigned-approvals/${id}/preview`,
       { preview_data: previewData }
     );
@@ -250,6 +250,8 @@ export const ReportsService = {
       cr_docx?: string;
       preview_files?: Record<string, string>;
       preview_data?: any;
+      imageUrls?: string[];
+      image_count?: number;
     };
   }> {
     const { data } = await API.post<{
@@ -259,6 +261,8 @@ export const ReportsService = {
         cr_docx?: string;
         preview_files?: Record<string, string>;
         preview_data?: any;
+        imageUrls?: string[];
+        image_count?: number;
       };
     }>(`/reports/assigned-approvals/${id}/preview/spec-pdf`, {});
     return data;

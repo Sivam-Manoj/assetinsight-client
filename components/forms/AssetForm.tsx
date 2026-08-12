@@ -25,10 +25,8 @@ import {
 } from "@/services/savedInputs";
 import {
   ReportDraftService,
-  buildReportDraftMediaManifest,
   createReportDraftClientId,
   getReportDraftDeviceId,
-  serializeReportDraftLots,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
 import { useAuthContext } from "@/context/AuthContext";
@@ -50,7 +48,6 @@ import {
 } from "./mixed/types";
 import { buildMixedFocusBoxes } from "./mixed/focusBoxes";
 import {
-  DraftPersistenceError,
   FORM_DRAFT_VERSION,
   deleteScopedDraft,
   getScopedDraftKey,
@@ -267,18 +264,6 @@ const dataUrlToFile = async (media: LocalDraftMedia) => {
     type: media.mimeType || blob.type,
     lastModified: media.lastModified,
   });
-};
-
-const storageErrorMessage = (error: unknown) => {
-  if (error instanceof DraftPersistenceError) return error.message;
-  const name = String((error as { name?: string })?.name || "");
-  if (name === "QuotaExceededError") {
-    return "Browser storage is full. The previous local draft was preserved; remove large media or free browser storage.";
-  }
-  if (name === "SecurityError") {
-    return "This browser blocked local draft storage. Keep this tab open or allow site storage before continuing.";
-  }
-  return "The draft could not be stored in this browser. Your previous valid draft was preserved.";
 };
 
 const valuationOptions: Array<{
@@ -566,50 +551,32 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     };
   };
 
-  const saveLocalTier = async (snapshot: DraftSnapshot) => {
-    if (!draftStorageKey) throw new Error("Authenticated user is unavailable");
-    const envelope: AssetDraftEnvelope = {
-      version: FORM_DRAFT_VERSION,
-      kind: "asset",
-      userId,
-      revision: snapshot.revision,
-      savedAt: new Date().toISOString(),
-      deviceId: getDeviceId(),
-      formData: snapshot.formData,
-      lots: snapshot.lots.map((lot) => ({
-        ...lot,
-        files: [...lot.files],
-        extraFiles: [...lot.extraFiles],
-        videoFiles: [...(lot.videoFiles || [])],
-        annotations: lot.annotations ? { ...lot.annotations } : undefined,
-      })),
-      mediaMetadata: listDraftMediaLocations(snapshot.lots),
-    };
-    await saveScopedDraft(envelope, draftScopeId);
-    return null;
-  };
-
   const saveServerTier = async (snapshot: DraftSnapshot) => {
-    // Mongo is the portable source of truth for text and lot structure. The
-    // original, potentially very large media files stay in IndexedDB.
+    // Saved means Mongo has the lot structure and every media object is
+    // confirmed in R2. Stable file IDs avoid re-uploading unchanged photos.
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        await ReportDraftService.upsert({
-          clientDraftId: draftScopeId,
-          kind: "asset",
-          storageMode: "local_media",
-          revision: snapshot.revision,
-          deviceId: getReportDraftDeviceId(),
-          contractNo: snapshot.formData.contractNo,
-          title:
-            snapshot.formData.clientName ||
-            snapshot.formData.contractNo ||
-            "Asset report draft",
-          formData: snapshot.formData,
-          lots: serializeReportDraftLots(snapshot.lots),
-          media: buildReportDraftMediaManifest(snapshot.lots),
-        });
+        await ReportDraftService.upsertWithMedia(
+          {
+            clientDraftId: draftScopeId,
+            kind: "asset",
+            revision: snapshot.revision,
+            deviceId: getReportDraftDeviceId(),
+            contractNo: snapshot.formData.contractNo,
+            title:
+              snapshot.formData.clientName ||
+              snapshot.formData.contractNo ||
+              "Asset report draft",
+            formData: snapshot.formData,
+          },
+          snapshot.lots,
+          (_progress, message) => {
+            if (snapshot.revision === saveRevisionRef.current) {
+              publishDraftStatus("saving", message);
+            }
+          }
+        );
         return;
       } catch (error) {
         lastError = error;
@@ -622,69 +589,39 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (autoSaveBlockedRef.current || !userId) return;
     const snapshot = makeSnapshot(revision);
     publishDraftStatus("saving", "Saving draft…");
-    const [localResult, serverResult] = await Promise.allSettled([
-      saveLocalTier(snapshot),
-      saveServerTier(snapshot),
-    ]);
-    const localSaved = localResult.status === "fulfilled";
-    const serverSaved = serverResult.status === "fulfilled";
-    accountSyncPendingRef.current = !serverSaved;
-    const localWarning =
-      localResult.status === "fulfilled" ? localResult.value : null;
-    const failures = [localResult, serverResult]
-      .filter((result) => result.status === "rejected")
-      .map((result) =>
-        result.status === "rejected"
-          ? result.reason instanceof Error
-            ? result.reason.message
-            : String(result.reason)
-          : ""
-      );
-
-    if (!localSaved && localResult.status === "rejected") {
-      const storageFailure = storageErrorMessage(localResult.reason);
-      if (!failures.some((message) => message === storageFailure)) {
-        failures.unshift(storageFailure);
-      }
-    }
-
-    if (localSaved || serverSaved) {
+    try {
+      await saveServerTier(snapshot);
+      accountSyncPendingRef.current = false;
       committedRevisionRef.current = Math.max(
         committedRevisionRef.current,
         revision
       );
-    }
 
-    if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
-      return;
-    }
-
-    if (localSaved && serverSaved && !localWarning) {
-      setDraftGuidance(null);
-      publishDraftStatus(
-        "saved",
-        "Draft saved - manual photos stored on this device"
+      // Remove obsolete browser media only after the portable R2 revision is
+      // complete. Cleanup failure cannot invalidate the verified cloud draft.
+      await deleteScopedDraft(userId, "asset", draftScopeId).catch(
+        () => undefined
       );
-      return;
-    }
+      if (draftStorageKey) localStorage.removeItem(draftStorageKey);
 
-    if (localSaved || serverSaved) {
+      if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
+        return;
+      }
+
+      setDraftGuidance(null);
+      publishDraftStatus("saved", "Draft and photos saved to your account");
+    } catch (error) {
+      accountSyncPendingRef.current = true;
+      if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
+        return;
+      }
       const message =
-        localWarning ||
-        failures.join(" ") ||
-        (localSaved
-          ? "Saved on this device, but cross-device sync is unavailable."
-          : "Synced to your account, but browser storage is unavailable.");
-      setDraftGuidance({ tone: "warning", message });
-      publishDraftStatus("partial", "Draft partially saved");
-      return;
+        error instanceof Error
+          ? error.message
+          : "The draft could not be saved to your account. Keep this form open and try again.";
+      setDraftGuidance({ tone: "error", message });
+      publishDraftStatus("error", "Draft not saved");
     }
-
-    const message =
-      failures.join(" ") ||
-      "The draft could not be saved. Keep this tab open and try Save Draft again.";
-    setDraftGuidance({ tone: "error", message });
-    publishDraftStatus("error", "Draft not saved");
   };
 
   const requestDraftSave = (revision: number) => {
@@ -931,10 +868,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const restoreAccountDraft = async (): Promise<boolean> => {
     if (!resumeDraft || !userId) return false;
 
-    // The same browser has the full original files in IndexedDB. Prefer that
-    // exact revision before falling back to portable Mongo metadata.
-    if (await restoreLocalDraft()) return true;
-
     const formData = resumeDraft.formData || {};
     const value = (...keys: string[]) => {
       for (const key of keys) {
@@ -1024,18 +957,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const restoredLots: MixedLot[] =
       resumeDraft.storageMode === "smart_upload"
         ? []
-        : (resumeDraft.lots || []).map((entry, index) => {
-            const lot = (entry || {}) as Partial<MixedLot>;
-            return {
-              ...lot,
-              id: String(lot.id || `lot-${index + 1}`),
-              files: [],
-              extraFiles: [],
-              videoFiles: [],
-              coverIndex: Number(lot.coverIndex || 0),
-              annotations: lot.annotations || {},
-            } as MixedLot;
-          });
+        : await ReportDraftService.restoreLots<MixedLot>(resumeDraft);
     setMixedLots(restoredLots);
     jobIdRef.current = resumeDraft.clientDraftId;
     saveRevisionRef.current = resumeDraft.revision || 0;
@@ -1046,16 +968,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setSmartUploadOpen(true);
       publishDraftStatus("saved", "Smart Upload restored");
     } else {
-      const missingCount = Array.isArray(resumeDraft.media)
-        ? resumeDraft.media.length
-        : 0;
-      setDraftGuidance({
-        tone: "warning",
-        message: missingCount
-          ? `${missingCount} original file${missingCount === 1 ? " is" : "s are"} stored on the browser where this draft was created. The report details and lot structure were restored; use that browser to continue with all photos.`
-          : "The report details and lot structure were restored. No local media was found for this browser.",
-      });
-      publishDraftStatus("partial", "Text restored - media unavailable here");
+      setDraftGuidance(null);
+      publishDraftStatus("saved", "Draft and photos restored");
     }
     return true;
   };
