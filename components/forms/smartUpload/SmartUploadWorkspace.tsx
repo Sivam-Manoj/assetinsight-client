@@ -223,7 +223,7 @@ function attachGroupingUrls(
 ) {
   const serverFiles = [
     ...(grouping.files || []),
-    ...grouping.groups.flatMap((group) => group.files || []),
+    ...(grouping.groups || []).flatMap((group) => group.files || []),
   ];
   const serverFileById = new Map(
     serverFiles.map((file) => [file.fileId, file])
@@ -278,7 +278,9 @@ export default function SmartUploadWorkspace({
           serverGrouping = await getSmartUploadGrouping(kind, resumeSessionId);
           const serverFiles = [
             ...(serverGrouping.files || []),
-            ...serverGrouping.groups.flatMap((group) => group.files || []),
+            ...(serverGrouping.groups || []).flatMap(
+              (group) => group.files || []
+            ),
           ];
           const uniqueFiles = Array.from(
             new Map(serverFiles.map((file) => [file.fileId, file])).values()
@@ -476,7 +478,7 @@ export default function SmartUploadWorkspace({
   const serverFileById = useMemo(() => {
     const files = [
       ...(grouping?.files || []),
-      ...(grouping?.groups.flatMap((group) => group.files || []) || []),
+      ...(grouping?.groups || []).flatMap((group) => group.files || []),
     ];
     return new Map(files.map((file) => [file.fileId, file]));
   }, [grouping]);
@@ -964,7 +966,10 @@ export default function SmartUploadWorkspace({
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {visibleGroups.map((group) => {
-                      const coverFileId = group.fileIds[0];
+                      const coverFileId =
+                        group.coverFileId ||
+                        group.fileIds?.[0] ||
+                        group.files?.[0]?.fileId;
                       const item = coverFileId ? fileById.get(coverFileId) : undefined;
                       const serverFile = coverFileId
                         ? serverFileById.get(coverFileId)
@@ -979,10 +984,10 @@ export default function SmartUploadWorkspace({
                           }`}
                         >
                           <div className="h-28 bg-[var(--app-panel-alt)]">
-                            {item ? (
+                            {item || serverFile ? (
                               <ImagePreview
-                                file={item.file}
-                                url={item.url || serverFile?.url}
+                                file={item?.file}
+                                url={item?.url || serverFile?.url}
                                 alt=""
                                 className="h-full w-full object-cover"
                               />
@@ -1156,7 +1161,7 @@ export default function SmartUploadWorkspace({
             }`}
           >
             {hasInvalidGroups
-              ? grouping.warnings[0] || "Keep at least one report image."
+              ? grouping.warnings?.[0] || "Keep at least one report image."
               : `${grouping.groups.length} Bundle lots are ready for preview.`}
           </p>
           <button

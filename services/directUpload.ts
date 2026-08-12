@@ -31,6 +31,7 @@ export const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
 const SERVER_FALLBACK_RETRIES = 2;
 const DIRECT_UPLOAD_CIRCUIT_TTL_MS = 10 * 60 * 1000;
+const CLOUDFLARE_R2_HOST_SUFFIX = ".r2.cloudflarestorage.com";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let serverFallbackQueue: Promise<void> = Promise.resolve();
@@ -41,6 +42,24 @@ function directUploadHost(url: string) {
     return new URL(url).origin;
   } catch {
     return url;
+  }
+}
+
+function shouldAttemptDirectBrowserUpload(url: string) {
+  const configured = process.env.NEXT_PUBLIC_DIRECT_R2_UPLOAD;
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+
+  try {
+    // Cloudflare's standard R2 endpoint rejects browser PUT preflights unless
+    // the bucket has an explicit CORS policy. Keep uploads working through the
+    // authenticated API by default; direct R2 can be opted back in after that
+    // policy is configured.
+    return !new URL(url).hostname
+      .toLowerCase()
+      .endsWith(CLOUDFLARE_R2_HOST_SUFFIX);
+  } catch {
+    return false;
   }
 }
 
@@ -181,7 +200,10 @@ export async function uploadFileToReportSession(args: {
   contentType: string;
   onDelta?: (delta: number) => void;
 }) {
-  if (directUploadIsUnavailable(args.uploadUrl)) {
+  if (
+    !shouldAttemptDirectBrowserUpload(args.uploadUrl) ||
+    directUploadIsUnavailable(args.uploadUrl)
+  ) {
     await uploadFileThroughServerFallback(
       args.endpoint,
       args.sessionId,

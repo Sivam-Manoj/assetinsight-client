@@ -24,6 +24,7 @@ export type SmartUploadGroup = {
   groupIndex: number;
   imageCount: number;
   fileIds: string[];
+  coverFileId?: string;
   overLimit: boolean;
   files?: SmartUploadServerFile[];
 };
@@ -89,6 +90,141 @@ type TargetPage = {
 };
 
 const GROUPING_POLL_INTERVAL_MS = 1_250;
+const SMART_UPLOAD_GROUPING_STATUSES = new Set<
+  SmartUploadGrouping["groupingStatus"]
+>(["uploading", "classifying", "review_ready", "confirmed", "failed"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeServerFiles(value: unknown): SmartUploadServerFile[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate, fallbackOrder) => {
+    if (!isRecord(candidate)) return [];
+    const fileId = String(candidate.fileId || "").trim();
+    if (!fileId) return [];
+    const size = Number(candidate.size);
+    const originalOrder = Number(candidate.originalOrder);
+    return [
+      {
+        fileId,
+        name: String(candidate.name || "image"),
+        mimeType: String(candidate.mimeType || "image/jpeg"),
+        size: Number.isFinite(size) ? Math.max(0, size) : 0,
+        url: String(candidate.url || ""),
+        originalOrder: Number.isFinite(originalOrder)
+          ? originalOrder
+          : fallbackOrder,
+      },
+    ];
+  });
+}
+
+function normalizeMetrics(value: unknown): SmartUploadMetric[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+    const fileId = String(candidate.fileId || "").trim();
+    if (!fileId) return [];
+    const meanLuminance = Number(candidate.meanLuminance);
+    const darkPixelRatio = Number(candidate.darkPixelRatio);
+    const variance = Number(candidate.variance);
+    return [
+      {
+        fileId,
+        meanLuminance: Number.isFinite(meanLuminance) ? meanLuminance : 0,
+        darkPixelRatio: Number.isFinite(darkPixelRatio) ? darkPixelRatio : 0,
+        variance: Number.isFinite(variance) ? variance : 0,
+        isDivider: candidate.isDivider === true,
+        error: typeof candidate.error === "string" ? candidate.error : undefined,
+      },
+    ];
+  });
+}
+
+function normalizeSmartUploadGrouping(
+  value: unknown,
+  fallbackSessionId: string
+): SmartUploadGrouping {
+  if (!isRecord(value)) {
+    throw new Error("Smart Upload returned an invalid grouping response.");
+  }
+
+  const files = normalizeServerFiles(value.files);
+  const rawGroups = Array.isArray(value.groups) ? value.groups : [];
+  const groups = rawGroups.flatMap((candidate, fallbackIndex) => {
+    if (!isRecord(candidate)) return [];
+    const groupFiles = normalizeServerFiles(candidate.files);
+    const explicitFileIds = Array.isArray(candidate.fileIds)
+      ? candidate.fileIds.map(String).map((fileId) => fileId.trim()).filter(Boolean)
+      : [];
+    const explicitCoverFileId = String(candidate.coverFileId || "").trim();
+    const fileIds = Array.from(
+      new Set([
+        ...explicitFileIds,
+        ...groupFiles.map((file) => file.fileId),
+        ...(explicitCoverFileId ? [explicitCoverFileId] : []),
+      ])
+    );
+    const groupIndex = Number(candidate.groupIndex);
+    const imageCount = Number(candidate.imageCount);
+    return [
+      {
+        groupIndex: Number.isFinite(groupIndex) ? groupIndex : fallbackIndex,
+        imageCount: Number.isFinite(imageCount)
+          ? Math.max(0, imageCount)
+          : fileIds.length,
+        fileIds,
+        coverFileId: explicitCoverFileId || fileIds[0],
+        overLimit: candidate.overLimit === true,
+        files: groupFiles,
+      },
+    ];
+  });
+  const rawStatus = String(value.groupingStatus || "uploading");
+  const groupingStatus = SMART_UPLOAD_GROUPING_STATUSES.has(
+    rawStatus as SmartUploadGrouping["groupingStatus"]
+  )
+    ? (rawStatus as SmartUploadGrouping["groupingStatus"])
+    : "uploading";
+  const progressPercent = Number(value.progressPercent);
+  const expectedFileCount = Number(value.expectedFileCount);
+  const confirmedFileCount = Number(value.confirmedFileCount);
+
+  return {
+    sessionId: String(value.sessionId || fallbackSessionId),
+    smartUpload: true,
+    groupingStatus,
+    progressPercent: Number.isFinite(progressPercent)
+      ? Math.max(0, Math.min(100, progressPercent))
+      : 0,
+    algorithmVersion:
+      typeof value.algorithmVersion === "string"
+        ? value.algorithmVersion
+        : undefined,
+    classificationJobId:
+      typeof value.classificationJobId === "string"
+        ? value.classificationJobId
+        : undefined,
+    groups,
+    dividerFileIds: Array.isArray(value.dividerFileIds)
+      ? value.dividerFileIds.map(String)
+      : [],
+    metrics: normalizeMetrics(value.metrics),
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.map(String).filter(Boolean)
+      : [],
+    error: typeof value.error === "string" ? value.error : undefined,
+    expectedFileCount: Number.isFinite(expectedFileCount)
+      ? Math.max(0, expectedFileCount)
+      : files.length,
+    confirmedFileCount: Number.isFinite(confirmedFileCount)
+      ? Math.max(0, confirmedFileCount)
+      : 0,
+    files,
+  };
+}
 
 function endpointFor(kind: SmartUploadKind): SmartUploadEndpoint {
   return kind === "asset" ? "/asset" : "/lot-listing";
@@ -301,7 +437,7 @@ export async function startSmartUploadDetection(
     `${endpointFor(kind)}/upload-session/${sessionId}/detect-dividers`,
     {}
   );
-  return envelope.data;
+  return normalizeSmartUploadGrouping(envelope.data, sessionId);
 }
 
 export async function getSmartUploadGrouping(
@@ -311,7 +447,7 @@ export async function getSmartUploadGrouping(
   const { data: envelope } = await API.get<{ data: SmartUploadGrouping }>(
     `${endpointFor(kind)}/upload-session/${sessionId}/smart-grouping`
   );
-  return envelope.data;
+  return normalizeSmartUploadGrouping(envelope.data, sessionId);
 }
 
 export async function waitForSmartUploadGrouping(args: {
@@ -362,7 +498,7 @@ export async function updateSmartUploadDividers(args: {
       confirm: args.confirm === true,
     }
   );
-  return envelope.data;
+  return normalizeSmartUploadGrouping(envelope.data, args.sessionId);
 }
 
 export async function completeSmartUpload(
