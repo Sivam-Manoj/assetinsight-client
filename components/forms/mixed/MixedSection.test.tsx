@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ function Harness({
       <output data-testid="main-count">
         {lots.reduce((sum, lot) => sum + lot.files.length, 0)}
       </output>
+      <output data-testid="lot-count">{lots.length}</output>
       <MixedSection
         value={lots}
         onChange={setLots}
@@ -156,5 +158,40 @@ describe("MixedSection workflow", () => {
     await waitFor(() =>
       expect(screen.getByText("Create your first lot")).toBeInTheDocument()
     );
+  });
+
+  it("removes the selected lot after confirmation", async () => {
+    render(
+      <Harness
+        initial={[
+          {
+            id: "lot-1",
+            files: [photo("first.jpg", 1)],
+            extraFiles: [],
+            coverIndex: 0,
+            mode: "single_lot",
+          },
+          {
+            id: "lot-2",
+            files: [photo("second.jpg", 2)],
+            extraFiles: [],
+            coverIndex: 0,
+            mode: "single_lot",
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for lot 2" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove lot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Remove this lot?" });
+    expect(dialog.parentElement).toHaveStyle({ zIndex: "120" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove lot" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("lot-count")).toHaveTextContent("1")
+    );
+    expect(screen.queryByText("second.jpg")).not.toBeInTheDocument();
   });
 });

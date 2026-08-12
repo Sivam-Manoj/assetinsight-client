@@ -116,7 +116,7 @@ export default function MixedSection({
     value?.length ? value.length - 1 : -1
   );
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
-  const [removeLotPending, setRemoveLotPending] = useState<number | null>(null);
+  const [removeLotPendingId, setRemoveLotPendingId] = useState<string | null>(null);
   const [removedMedia, setRemovedMedia] = useState<RemovedMedia | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -355,7 +355,12 @@ export default function MixedSection({
     setActiveIdx(next.length - 1);
   }
 
-  function removeLot(idx: number) {
+  function removeLot(lotId: string) {
+    const idx = lotsRef.current.findIndex((lot) => lot.id === lotId);
+    if (idx < 0) {
+      setRemoveLotPendingId(null);
+      return;
+    }
     if (lockLotStructure || lotsRef.current[idx]?.source?.locked) return;
     const next = lotsRef.current.filter((_, i) => i !== idx);
     commitLots(next);
@@ -365,7 +370,7 @@ export default function MixedSection({
       if (current === idx) return Math.min(idx, next.length - 1);
       return current;
     });
-    setRemoveLotPending(null);
+    setRemoveLotPendingId(null);
   }
 
   function setLotMode(idx: number, mode: MixedMode) {
@@ -2090,7 +2095,7 @@ export default function MixedSection({
           disabled={lockLotStructure || Boolean(activeLot?.source?.locked)}
           onClick={() => {
             setMoreAnchor(null);
-            setRemoveLotPending(activeIdx);
+            if (activeLot) setRemoveLotPendingId(activeLot.id);
           }}
           sx={{ minHeight: 44, color: "error.main" }}
         >
@@ -2100,10 +2105,17 @@ export default function MixedSection({
       </Menu>
 
       <Dialog
-        open={removeLotPending !== null}
-        onClose={() => setRemoveLotPending(null)}
+        open={removeLotPendingId !== null}
+        onClose={() => setRemoveLotPendingId(null)}
         aria-labelledby="remove-lot-title"
         slotProps={{
+          // This confirmation is launched from inside BottomDrawer (z-index 90).
+          // Keep it above the drawer so the destructive action remains visible.
+          backdrop: {
+            sx: {
+              zIndex: 120,
+            },
+          },
           paper: {
             sx: {
               border: "1px solid var(--app-border)",
@@ -2121,12 +2133,12 @@ export default function MixedSection({
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setRemoveLotPending(null)} sx={{ color: "var(--app-text)" }}>Keep lot</Button>
+          <Button onClick={() => setRemoveLotPendingId(null)} sx={{ color: "var(--app-text)" }}>Keep lot</Button>
           <Button
             color="error"
             variant="contained"
             onClick={() => {
-              if (removeLotPending !== null) removeLot(removeLotPending);
+              if (removeLotPendingId) removeLot(removeLotPendingId);
             }}
           >
             Remove lot

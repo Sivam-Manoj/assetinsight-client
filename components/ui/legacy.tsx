@@ -48,6 +48,7 @@ function sxStyle(sx: Sx): React.CSSProperties {
     "marginBottom",
     "marginLeft",
     "width",
+    "zIndex",
   ]);
   const style: React.CSSProperties = {};
   Object.entries(sx).forEach(([key, value]) => {
