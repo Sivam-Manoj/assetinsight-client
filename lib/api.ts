@@ -40,6 +40,7 @@ interface FailedRequest {
 
 let isRefreshing = false;
 let failedQueue: FailedRequest[] = [];
+let sessionInvalidationEmitted = false;
 
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach((prom) => {
@@ -86,13 +87,17 @@ function normalizeRestrictedAccess(
 
 function invalidateSession() {
   clearTokens();
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !sessionInvalidationEmitted) {
+    sessionInvalidationEmitted = true;
     window.dispatchEvent(new Event("auth-session-invalidated"));
   }
 }
 
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (getAccessToken()) sessionInvalidationEmitted = false;
+    return response;
+  },
   async (error: any) => {
     const originalRequest: RetriableAxiosConfig = error.config || {};
     const status = error?.response?.status;
@@ -109,7 +114,10 @@ API.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if ((status === 401 || status === 403) && !originalRequest._retry) {
+    // A 403 is normally an authorization decision, not an expired access
+    // token. Refreshing on every 403 caused request storms and masked genuine
+    // permissions errors.
+    if (status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -132,7 +140,7 @@ API.interceptors.response.use(
         const currentRefreshToken = getRefreshToken();
         if (!currentRefreshToken) {
           processQueue(error, null);
-          clearTokens();
+          invalidateSession();
           return Promise.reject(error);
         }
 
@@ -148,6 +156,7 @@ API.interceptors.response.use(
         }
 
         setAccessToken(newAccessToken);
+        sessionInvalidationEmitted = false;
         API.defaults.headers.common[
           "Authorization"
         ] = `Bearer ${newAccessToken}`;
@@ -161,14 +170,19 @@ API.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         const refreshData = (refreshError as any)?.response?.data as RestrictedDeviceAccess | undefined;
+        const refreshStatus = Number((refreshError as any)?.response?.status || 0);
         const refreshCode = String((refreshData as any)?.code || "");
         const restricted = normalizeRestrictedAccess(refreshData, refreshCode);
         if (restricted?.authState === "registration_required" && !restricted.challengeToken) {
           invalidateSession();
-        } else {
+        } else if (restricted?.authState) {
           emitRestrictedAccess(restricted);
+          clearTokens();
+        } else if (refreshStatus >= 400 && refreshStatus < 500) {
+          // Invalid/revoked refresh tokens are terminal. Notify AuthContext
+          // once so protected polling stops and the sign-in screen is shown.
+          invalidateSession();
         }
-        clearTokens();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

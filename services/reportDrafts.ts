@@ -22,6 +22,7 @@ export type ReportDraftMediaDescriptor = {
   r2Key?: string;
   uploadedAt?: string;
   url?: string;
+  contentPath?: string;
 };
 
 export type SmartUploadServerFile = {
@@ -342,17 +343,25 @@ function restoredFileName(item: ReportDraftMediaDescriptor) {
   return item.name || `${item.slot || "media"}-${(item.index || 0) + 1}`;
 }
 
-async function downloadDraftFile(item: ReportDraftMediaDescriptor) {
-  if (!item.url) {
+async function downloadDraftFile(
+  draftId: string,
+  item: ReportDraftMediaDescriptor
+) {
+  const contentPath =
+    item.contentPath ||
+    `/report-drafts/${encodeURIComponent(draftId)}/media/${encodeURIComponent(
+      item.clientFileId
+    )}/content`;
+  if (!draftId || !item.clientFileId) {
     throw new Error(`Draft photo ${restoredFileName(item)} is not available in R2.`);
   }
-  const response = await fetch(item.url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(
-      `Draft photo ${restoredFileName(item)} could not be restored (${response.status}).`
-    );
-  }
-  const blob = await response.blob();
+  // Restore through the authenticated API. Public R2/custom-domain CORS is an
+  // optimization for uploads, not a requirement for recovering user drafts.
+  const response = await API.get<Blob>(contentPath, {
+    responseType: "blob",
+    timeout: 10 * 60 * 1000,
+  });
+  const blob = response.data;
   const file = new File([blob], restoredFileName(item), {
     type: item.mimeType || blob.type || "application/octet-stream",
     lastModified: item.lastModified || Date.now(),
@@ -421,6 +430,10 @@ export const ReportDraftService = {
     if (!pendingEntries.length) return record;
 
     let completed = entries.length - pendingEntries.length;
+    // A missing bucket CORS rule causes every presigned browser PUT to fail.
+    // After the first failure, use the bounded backend multipart path for the
+    // remainder of this save instead of producing hundreds of failed requests.
+    let directUploadsAvailable = true;
     const reportProgress = () => {
       completed += 1;
       onProgress?.(
@@ -455,6 +468,10 @@ export const ReportDraftService = {
             fallback.push(entry);
             return;
           }
+          if (!directUploadsAvailable) {
+            fallback.push(entry);
+            return;
+          }
           try {
             await putFileWithRetry(
               target.uploadUrl,
@@ -464,6 +481,7 @@ export const ReportDraftService = {
             directIds.push(entry.descriptor.clientFileId);
             reportProgress();
           } catch {
+            directUploadsAvailable = false;
             fallback.push(entry);
           }
         },
@@ -499,6 +517,8 @@ export const ReportDraftService = {
   },
 
   async restoreLots<T extends DraftMediaLot>(record: ReportDraftRecord): Promise<T[]> {
+    const draftId = record.id || record._id;
+    if (!draftId) throw new Error("This draft has no server identifier and cannot be restored.");
     const lots = (Array.isArray(record.lots) ? record.lots : []).map(
       (value, index) => {
         const lot = { ...(value as T) };
@@ -534,7 +554,7 @@ export const ReportDraftService = {
     await mapWithConcurrency(
       media,
       async (item) => {
-        restored.set(item.clientFileId, await downloadDraftFile(item));
+        restored.set(item.clientFileId, await downloadDraftFile(draftId, item));
       },
       4
     );
