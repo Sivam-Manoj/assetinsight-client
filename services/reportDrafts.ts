@@ -117,6 +117,22 @@ type DraftUploadTarget = {
   alreadyUploaded: boolean;
 };
 
+export type ReportDraftSaveProgress = {
+  phase: "preparing" | "uploading" | "verifying" | "complete";
+  percent: number;
+  message: string;
+  totalFiles: number;
+  uploadedFiles: number;
+  totalBytes: number;
+  uploadedBytes: number;
+};
+
+type ReportDraftProgressCallback = (
+  percent: number,
+  message: string,
+  details: ReportDraftSaveProgress
+) => void;
+
 const fileIds = new WeakMap<Blob, string>();
 const TARGET_BATCH_SIZE = 200;
 const FALLBACK_BATCH_SIZE = 10;
@@ -313,9 +329,18 @@ function chunks<T>(items: T[], size: number) {
 
 async function uploadMultipartFallback(
   draftId: string,
-  entries: DraftMediaEntry[]
+  entries: DraftMediaEntry[],
+  onBatchProgress?: (
+    batch: DraftMediaEntry[],
+    uploadedBytes: number,
+    totalBytes: number
+  ) => void
 ) {
   for (const batch of chunks(entries, FALLBACK_BATCH_SIZE)) {
+    const totalBytes = batch.reduce(
+      (sum, item) => sum + Math.max(0, item.file.size),
+      0
+    );
     const body = new FormData();
     body.append("replace", "false");
     body.append(
@@ -327,7 +352,15 @@ async function uploadMultipartFallback(
     // would produce the same "Unexpected end of form" failure as APK uploads.
     await API.post(`/report-drafts/${draftId}/media`, body, {
       timeout: 30 * 60 * 1000,
+      onUploadProgress: (event) => {
+        onBatchProgress?.(
+          batch,
+          Math.min(totalBytes, Math.max(0, event.loaded || 0)),
+          totalBytes
+        );
+      },
     });
+    onBatchProgress?.(batch, totalBytes, totalBytes);
   }
 }
 
@@ -407,9 +440,88 @@ export const ReportDraftService = {
   async upsertWithMedia(
     input: Omit<UpsertReportDraftInput, "lots" | "media" | "storageMode">,
     lots: DraftMediaLot[],
-    onProgress?: (progress: number, message: string) => void
+    onProgress?: ReportDraftProgressCallback
   ) {
     const entries = buildReportDraftMediaEntries(lots);
+    const totalFiles = entries.length;
+    const totalBytes = entries.reduce(
+      (sum, item) => sum + Math.max(0, item.file.size),
+      0
+    );
+    const uploadedBytesById = new Map<string, number>();
+    const uploadedIds = new Set<string>();
+
+    const emitProgress = (
+      phase: ReportDraftSaveProgress["phase"],
+      message: string,
+      percentOverride?: number
+    ) => {
+      const uploadedBytes = Math.min(
+        totalBytes,
+        entries.reduce(
+          (sum, entry) =>
+            sum +
+            Math.min(
+              entry.file.size,
+              uploadedBytesById.get(entry.descriptor.clientFileId) || 0
+            ),
+          0
+        )
+      );
+      const uploadedFiles = uploadedIds.size;
+      const byteFraction = totalBytes > 0 ? uploadedBytes / totalBytes : 1;
+      const fileFraction = totalFiles > 0 ? uploadedFiles / totalFiles : 1;
+      const calculated = Math.round(byteFraction * 85 + fileFraction * 10);
+      const percent = Math.max(
+        0,
+        Math.min(
+          100,
+          percentOverride ??
+            (phase === "preparing"
+              ? 2
+              : phase === "verifying"
+                ? Math.max(96, calculated)
+                : phase === "complete"
+                  ? 100
+                  : Math.min(95, calculated))
+        )
+      );
+      onProgress?.(percent, message, {
+        phase,
+        percent,
+        message,
+        totalFiles,
+        uploadedFiles,
+        totalBytes,
+        uploadedBytes,
+      });
+    };
+
+    const updateEntryBytes = (entry: DraftMediaEntry, bytes: number) => {
+      uploadedBytesById.set(
+        entry.descriptor.clientFileId,
+        Math.max(
+          uploadedBytesById.get(entry.descriptor.clientFileId) || 0,
+          Math.min(entry.file.size, Math.max(0, bytes))
+        )
+      );
+    };
+
+    const markEntryUploaded = (entry: DraftMediaEntry) => {
+      updateEntryBytes(entry, entry.file.size);
+      uploadedIds.add(entry.descriptor.clientFileId);
+      emitProgress(
+        "uploading",
+        `Saving draft media ${uploadedIds.size} of ${totalFiles}`
+      );
+    };
+
+    emitProgress(
+      "preparing",
+      totalFiles
+        ? `Preparing ${totalFiles} draft media file${totalFiles === 1 ? "" : "s"}`
+        : "Saving draft details"
+    );
     const record = await this.upsert({
       ...input,
       storageMode: "r2_media",
@@ -417,30 +529,37 @@ export const ReportDraftService = {
       media: entries.map((item) => item.descriptor),
     });
     const draftId = record.id || record._id;
-    if (!draftId || entries.length === 0) return record;
+    if (!draftId || entries.length === 0) {
+      emitProgress("complete", "Draft saved", 100);
+      return record;
+    }
 
-    const uploadedIds = new Set(
+    const existingUploadedIds = new Set(
       (record.media || [])
         .filter((item) => item.uploadedAt && item.url)
         .map((item) => item.clientFileId)
     );
+    entries.forEach((entry) => {
+      if (!existingUploadedIds.has(entry.descriptor.clientFileId)) return;
+      uploadedIds.add(entry.descriptor.clientFileId);
+      updateEntryBytes(entry, entry.file.size);
+    });
     const pendingEntries = entries.filter(
-      (item) => !uploadedIds.has(item.descriptor.clientFileId)
+      (item) => !existingUploadedIds.has(item.descriptor.clientFileId)
     );
-    if (!pendingEntries.length) return record;
+    if (!pendingEntries.length) {
+      emitProgress("complete", "Draft and photos saved", 100);
+      return record;
+    }
 
-    let completed = entries.length - pendingEntries.length;
     // A missing bucket CORS rule causes every presigned browser PUT to fail.
     // After the first failure, use the bounded backend multipart path for the
     // remainder of this save instead of producing hundreds of failed requests.
     let directUploadsAvailable = true;
-    const reportProgress = () => {
-      completed += 1;
-      onProgress?.(
-        Math.round((completed / entries.length) * 100),
-        `Saving draft media ${completed} of ${entries.length}`
-      );
-    };
+    emitProgress(
+      "uploading",
+      `Saving draft media ${uploadedIds.size} of ${totalFiles}`
+    );
 
     for (const batch of chunks(pendingEntries, TARGET_BATCH_SIZE)) {
       const targets = unwrap(
@@ -461,7 +580,7 @@ export const ReportDraftService = {
           const target = targetById.get(entry.descriptor.clientFileId);
           if (!target) throw new Error(`No R2 target was returned for ${entry.file.name}.`);
           if (target.alreadyUploaded) {
-            reportProgress();
+            markEntryUploaded(entry);
             return;
           }
           if (!target.uploadUrl) {
@@ -476,10 +595,19 @@ export const ReportDraftService = {
             await putFileWithRetry(
               target.uploadUrl,
               entry.file,
-              entry.descriptor.mimeType
+              entry.descriptor.mimeType,
+              (delta) => {
+                const current =
+                  uploadedBytesById.get(entry.descriptor.clientFileId) || 0;
+                updateEntryBytes(entry, current + delta);
+                emitProgress(
+                  "uploading",
+                  `Uploading ${entry.file.name}`
+                );
+              }
             );
             directIds.push(entry.descriptor.clientFileId);
-            reportProgress();
+            markEntryUploaded(entry);
           } catch {
             directUploadsAvailable = false;
             fallback.push(entry);
@@ -495,11 +623,28 @@ export const ReportDraftService = {
         });
       }
       if (fallback.length) {
-        await uploadMultipartFallback(draftId, fallback);
-        fallback.forEach(reportProgress);
+        await uploadMultipartFallback(
+          draftId,
+          fallback,
+          (batchEntries, uploadedBytes, batchTotalBytes) => {
+            const ratio =
+              batchTotalBytes > 0
+                ? Math.min(1, uploadedBytes / batchTotalBytes)
+                : 1;
+            batchEntries.forEach((entry) => {
+              updateEntryBytes(entry, Math.round(entry.file.size * ratio));
+            });
+            emitProgress(
+              "uploading",
+              `Uploading draft photos through the secure server`
+            );
+          }
+        );
+        fallback.forEach(markEntryUploaded);
       }
     }
 
+    emitProgress("verifying", "Verifying saved draft media", 98);
     const saved = await this.get(draftId);
     const savedById = new Map(
       (saved.media || []).map((item) => [item.clientFileId, item])
@@ -513,6 +658,7 @@ export const ReportDraftService = {
         `${missing.length} draft photo${missing.length === 1 ? "" : "s"} could not be verified in storage. Keep this form open and save again.`
       );
     }
+    emitProgress("complete", "Draft and photos saved", 100);
     return saved;
   },
 

@@ -37,6 +37,7 @@ import {
   createReportDraftClientId,
   getReportDraftDeviceId,
   type ReportDraftRecord,
+  type ReportDraftSaveProgress,
 } from "@/services/reportDrafts";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import {
@@ -62,6 +63,7 @@ import {
 import { deleteSmartUploadDraft } from "./smartUpload/storage";
 import {
   ConfirmDialog,
+  DraftSaveProgressPanel,
   FormActionBar,
   FormAlert,
   FormField,
@@ -319,6 +321,8 @@ export default function LotListingForm({
   const [hasDraft, setHasDraft] = useState(false);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
   const [draftIssue, setDraftIssue] = useState<DraftIssue | null>(null);
+  const [draftSaveProgress, setDraftSaveProgress] =
+    useState<ReportDraftSaveProgress | null>(null);
   const [restoringDraft, setRestoringDraft] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     "clear" | "discard" | null
@@ -332,6 +336,8 @@ export default function LotListingForm({
   const submitLockRef = useRef(false);
   const reportEventSentRef = useRef(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftProgressClearTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveBlockedRef = useRef(false);
   const requestedRevisionRef = useRef(0);
   const committedRevisionRef = useRef(0);
@@ -349,6 +355,23 @@ export default function LotListingForm({
   const reportDraftStatus = useCallback(
     (status: DraftStatus, label?: string) => {
       statusCallbackRef.current?.(status, label);
+    },
+    []
+  );
+
+  const trackDraftSaveProgress = useCallback(
+    (progress: ReportDraftSaveProgress) => {
+      if (draftProgressClearTimerRef.current) {
+        clearTimeout(draftProgressClearTimerRef.current);
+        draftProgressClearTimerRef.current = null;
+      }
+      setDraftSaveProgress(progress);
+      if (progress.phase === "complete") {
+        draftProgressClearTimerRef.current = setTimeout(() => {
+          setDraftSaveProgress(null);
+          draftProgressClearTimerRef.current = null;
+        }, 2500);
+      }
     },
     []
   );
@@ -469,7 +492,10 @@ export default function LotListingForm({
                   formData,
                 },
                 snapshot.lots,
-                (_progress, message) => reportDraftStatus("saving", message)
+                (_progress, message, details) => {
+                  trackDraftSaveProgress(details);
+                  reportDraftStatus("saving", message);
+                }
               );
               accountSyncPendingRef.current = false;
               accountSyncError = undefined;
@@ -500,6 +526,7 @@ export default function LotListingForm({
           }
         } catch (saveError) {
           const issue = draftFailureGuidance(saveError);
+          setDraftSaveProgress(null);
           setDraftIssue(issue);
           reportDraftStatus(
             issue.tone === "warning" ? "partial" : "error",
@@ -522,6 +549,7 @@ export default function LotListingForm({
     draftKey,
     draftScopeId,
     reportDraftStatus,
+    trackDraftSaveProgress,
     userId,
   ]);
 
@@ -559,6 +587,9 @@ export default function LotListingForm({
   useEffect(
     () => () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (draftProgressClearTimerRef.current) {
+        clearTimeout(draftProgressClearTimerRef.current);
+      }
     },
     []
   );
@@ -1337,12 +1368,14 @@ export default function LotListingForm({
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
+  const draftSaving =
+    draftSaveProgress !== null && draftSaveProgress.phase !== "complete";
 
   return (
     <form
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--app-panel-alt)]"
       onSubmit={onSubmit}
-      aria-busy={submitting}
+      aria-busy={submitting || draftSaving}
       noValidate
     >
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
@@ -1351,6 +1384,10 @@ export default function LotListingForm({
             <FormAlert tone="error" title="The listing needs attention">
               {error}
             </FormAlert>
+          ) : null}
+
+          {draftSaveProgress ? (
+            <DraftSaveProgressPanel progress={draftSaveProgress} />
           ) : null}
 
           {submitting && uploadStats ? (
@@ -1625,11 +1662,11 @@ export default function LotListingForm({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={submitting || restoringDraft}
+            disabled={submitting || restoringDraft || draftSaving}
             className={secondaryButtonClass}
           >
             <Save className="h-4 w-4" aria-hidden="true" />
-            Save Draft
+            {draftSaving ? "Saving..." : "Save Draft"}
           </button>
           <button
             type="button"
@@ -1645,11 +1682,13 @@ export default function LotListingForm({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={submitting || restoringDraft}
+            disabled={submitting || restoringDraft || draftSaving}
             className={formClassNames(secondaryButtonClass, "min-w-0 px-2")}
           >
             <Save className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Save Draft</span>
+            <span className="truncate">
+              {draftSaving ? "Saving..." : "Save Draft"}
+            </span>
           </button>
           <button
             type="button"
@@ -1657,14 +1696,14 @@ export default function LotListingForm({
             aria-haspopup="menu"
             aria-expanded={Boolean(moreAnchor)}
             onClick={(event) => setMoreAnchor(event.currentTarget)}
-            disabled={submitting}
+            disabled={submitting || draftSaving}
             className={iconButtonClass}
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || draftSaving}
             className={formClassNames(primaryButtonClass, "min-w-0 px-2")}
           >
             <span className="truncate">
@@ -1676,7 +1715,7 @@ export default function LotListingForm({
         <span className="hidden sm:inline">
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || draftSaving}
             className={primaryButtonClass}
           >
             {submitting ? "Uploading..." : "Create Lot Listing"}

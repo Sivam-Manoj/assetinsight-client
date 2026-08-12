@@ -28,6 +28,7 @@ import {
   createReportDraftClientId,
   getReportDraftDeviceId,
   type ReportDraftRecord,
+  type ReportDraftSaveProgress,
 } from "@/services/reportDrafts";
 import { useAuthContext } from "@/context/AuthContext";
 import {
@@ -61,6 +62,7 @@ import {
   ConfirmDialog,
   FormActionBar,
   FormAlert,
+  DraftSaveProgressPanel,
   FormField,
   FormSection,
   FormSwitch,
@@ -378,6 +380,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     tone: "warning" | "error";
     message: string;
   } | null>(null);
+  const [draftSaveProgress, setDraftSaveProgress] =
+    useState<ReportDraftSaveProgress | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
@@ -402,6 +406,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const createdEventDispatchedRef = useRef(false);
   const autoSaveBlockedRef = useRef(false);
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftProgressClearTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveRevisionRef = useRef(0);
   const committedRevisionRef = useRef(0);
   const queuedRevisionRef = useRef(0);
@@ -419,6 +425,29 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const publishDraftStatus = (status: DraftStatus, label?: string) => {
     draftStatusCallbackRef.current?.(status, label);
   };
+
+  const trackDraftSaveProgress = (progress: ReportDraftSaveProgress) => {
+    if (draftProgressClearTimerRef.current) {
+      clearTimeout(draftProgressClearTimerRef.current);
+      draftProgressClearTimerRef.current = null;
+    }
+    setDraftSaveProgress(progress);
+    if (progress.phase === "complete") {
+      draftProgressClearTimerRef.current = setTimeout(() => {
+        setDraftSaveProgress(null);
+        draftProgressClearTimerRef.current = null;
+      }, 2500);
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (draftProgressClearTimerRef.current) {
+        clearTimeout(draftProgressClearTimerRef.current);
+      }
+    },
+    []
+  );
 
   const clearFieldError = (key: string) => {
     setErrors((current) => {
@@ -571,7 +600,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             formData: snapshot.formData,
           },
           snapshot.lots,
-          (_progress, message) => {
+          (_progress, message, details) => {
+            trackDraftSaveProgress(details);
             if (snapshot.revision === saveRevisionRef.current) {
               publishDraftStatus("saving", message);
             }
@@ -619,6 +649,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         error instanceof Error
           ? error.message
           : "The draft could not be saved to your account. Keep this form open and try again.";
+      setDraftSaveProgress(null);
       setDraftGuidance({ tone: "error", message });
       publishDraftStatus("error", "Draft not saved");
     }
@@ -1693,11 +1724,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     }),
     { photos: 0, videos: 0 }
   );
+  const draftSaving =
+    draftSaveProgress !== null && draftSaveProgress.phase !== "complete";
 
   return (
     <form
       className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--app-text)]"
       onSubmit={onSubmit}
+      aria-busy={submitting || draftSaving}
       noValidate
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
@@ -1716,6 +1750,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             >
               {draftGuidance.message}
             </FormAlert>
+          ) : null}
+
+          {draftSaveProgress ? (
+            <DraftSaveProgressPanel progress={draftSaveProgress} />
           ) : null}
 
           {acceptedMessage ? (
@@ -2121,10 +2159,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             type="button"
             className={secondaryButtonClass}
             onClick={() => void saveDraftNow()}
-            disabled={submitting || !userId}
+            disabled={submitting || draftSaving || !userId}
           >
             <Save className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden min-[360px]:inline">Save draft</span>
+            <span className="hidden min-[360px]:inline">
+              {draftSaving ? "Saving..." : "Save draft"}
+            </span>
             <span className="min-[360px]:hidden">Save</span>
           </button>
           <button
@@ -2134,18 +2174,18 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             aria-haspopup="menu"
             aria-expanded={Boolean(moreAnchor)}
             onClick={(event) => setMoreAnchor(event.currentTarget)}
-            disabled={submitting}
+            disabled={submitting || draftSaving}
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
         <div className="flex min-w-0 items-center gap-2">
           <span className="hidden sm:inline">
-            <button type="button" className={quietButtonClass} onClick={onCancel} disabled={submitting}>
+            <button type="button" className={quietButtonClass} onClick={onCancel} disabled={submitting || draftSaving}>
               Cancel
             </button>
           </span>
-          <button type="submit" className={primaryButtonClass} disabled={submitting}>
+          <button type="submit" className={primaryButtonClass} disabled={submitting || draftSaving}>
             {submitting ? "Uploading…" : "Create report"}
           </button>
         </div>

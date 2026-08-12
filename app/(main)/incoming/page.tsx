@@ -724,6 +724,7 @@ export default function IncomingPage() {
           ) : undefined
         }
         contentScrollable={false}
+        closeDisabled={draftStatus?.status === "saving"}
       >
         {setup?.reportType === "asset" ? (
           <AssetForm

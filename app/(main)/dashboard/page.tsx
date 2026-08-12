@@ -658,6 +658,7 @@ export default function DashboardPage() {
           ) : undefined
         }
         contentScrollable={false}
+        closeDisabled={draftStatus?.status === "saving"}
       >
         {drawerType === "real-estate" ? (
           <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} />

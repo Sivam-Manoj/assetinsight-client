@@ -15,6 +15,7 @@ export default function BottomDrawer({
   fullscreen = false,
   contentScrollable = true,
   dismissOnBackdrop = true,
+  closeDisabled = false,
 }: {
   open: boolean;
   title?: React.ReactNode;
@@ -25,16 +26,19 @@ export default function BottomDrawer({
   fullscreen?: boolean;
   contentScrollable?: boolean;
   dismissOnBackdrop?: boolean;
+  closeDisabled?: boolean;
 }) {
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
   const titleId = title ? `drawer-title-${id}` : undefined;
   const descriptionId = description ? `drawer-description-${id}` : undefined;
 
   // Parent polling can recreate callback props while a drawer is open. Keep the
   // latest callback in a ref so the focus lock is installed once per open cycle.
   onCloseRef.current = onClose;
+  closeDisabledRef.current = closeDisabled;
 
   useEffect(() => {
     if (!open) return;
@@ -47,7 +51,9 @@ export default function BottomDrawer({
       }
     });
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseRef.current();
+      if (event.key === "Escape" && !closeDisabledRef.current) {
+        onCloseRef.current();
+      }
       if (event.key !== "Tab" || !panelRef.current) return;
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
         'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -78,7 +84,13 @@ export default function BottomDrawer({
     <div
       className={styles.backdrop}
       onMouseDown={(event) => {
-        if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
+        if (
+          dismissOnBackdrop &&
+          !closeDisabled &&
+          event.target === event.currentTarget
+        ) {
+          onClose();
+        }
       }}
     >
       <div
@@ -110,7 +122,9 @@ export default function BottomDrawer({
             <button
               className="app-button app-button--secondary app-button--icon"
               onClick={onClose}
+              disabled={closeDisabled}
               aria-label="Close panel"
+              title={closeDisabled ? "Wait for the draft to finish saving" : undefined}
             >
               <X size={18} aria-hidden />
             </button>

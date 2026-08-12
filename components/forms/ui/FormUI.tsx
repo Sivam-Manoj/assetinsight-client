@@ -571,6 +571,106 @@ export function FormAlert({
   );
 }
 
+export type DraftSaveProgressView = {
+  phase: "preparing" | "uploading" | "verifying" | "complete";
+  percent: number;
+  message: string;
+  totalFiles: number;
+  uploadedFiles: number;
+  totalBytes: number;
+  uploadedBytes: number;
+};
+
+function formatDraftBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function DraftSaveProgressPanel({
+  progress,
+}: {
+  progress: DraftSaveProgressView;
+}) {
+  const complete = progress.phase === "complete";
+  const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className={formClassNames(
+        "rounded-lg border px-4 py-3 text-sm shadow-sm",
+        complete
+          ? "border-[var(--app-success-border)] bg-[var(--app-success-soft)]"
+          : "border-[var(--app-info-border)] bg-[var(--app-info-soft)]"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        {complete ? (
+          <CheckCircle2
+            className="mt-0.5 h-5 w-5 shrink-0 text-[var(--app-success)]"
+            aria-hidden="true"
+          />
+        ) : (
+          <LoaderCircle
+            className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[var(--app-info)]"
+            aria-hidden="true"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-semibold text-[var(--app-text)]">
+              {complete ? "Draft saved to server" : "Saving draft to server"}
+            </p>
+            <span className="tabular-nums font-semibold text-[var(--app-text)]">
+              {percent}%
+            </span>
+          </div>
+          <div
+            className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--app-control-border)]"
+            role="progressbar"
+            aria-label="Draft save progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <div
+              className={formClassNames(
+                "h-full rounded-full transition-[width] duration-200",
+                complete
+                  ? "bg-[var(--app-success)]"
+                  : "bg-[var(--app-accent)]"
+              )}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-[var(--app-text-muted)]">
+            <span>{progress.message}</span>
+            {progress.totalFiles > 0 ? (
+              <span className="tabular-nums">
+                {progress.uploadedFiles} of {progress.totalFiles} files -{" "}
+                {formatDraftBytes(progress.uploadedBytes)} of{" "}
+                {formatDraftBytes(progress.totalBytes)}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs font-medium text-[var(--app-text)]">
+            {complete
+              ? "All draft details and photos are stored on the server."
+              : "Keep this form open until saving finishes. Large drafts can take several minutes."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FormActionBar({
   children,
   className,

@@ -48,4 +48,20 @@ describe("BottomDrawer focus stability", () => {
     await waitFor(() => expect(editor).toHaveFocus());
     expect(editor).toHaveValue("Front panel damage");
   });
+
+  it("cannot be dismissed while a server draft save is active", () => {
+    const onClose = vi.fn();
+
+    render(
+      <BottomDrawer open title="Create report" onClose={onClose} closeDisabled>
+        <p>Saving draft</p>
+      </BottomDrawer>
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Close panel" }));
+
+    expect(screen.getByRole("button", { name: "Close panel" })).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

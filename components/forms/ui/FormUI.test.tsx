@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DraftSaveProgressPanel,
   DraftStatusIndicator,
   FormField,
   FormSection,
@@ -157,5 +158,26 @@ describe("shared form semantics", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Saved on this device only"
     );
+  });
+
+  it("shows server draft media progress and tells the user to wait", () => {
+    render(
+      <DraftSaveProgressPanel
+        progress={{
+          phase: "uploading",
+          percent: 42,
+          message: "Saving draft media 4 of 10",
+          totalFiles: 10,
+          uploadedFiles: 4,
+          totalBytes: 10 * 1024 * 1024,
+          uploadedBytes: 4 * 1024 * 1024,
+        }}
+      />
+    );
+
+    expect(screen.getByRole("progressbar", { name: /draft save progress/i }))
+      .toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByText(/4 of 10 files/i)).toBeInTheDocument();
+    expect(screen.getByText(/keep this form open/i)).toBeInTheDocument();
   });
 });
