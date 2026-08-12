@@ -111,7 +111,7 @@ export async function createSmartUploadDraft(args: {
   clientSubmissionId: string;
   details: Record<string, unknown>;
   files: File[];
-}) {
+}): Promise<SmartUploadDraft> {
   await requestPersistentStorage();
   const database = await getDatabase();
   const scope = getSmartUploadScope(args.userId, args.kind, args.scopeId);
@@ -126,19 +126,9 @@ export async function createSmartUploadDraft(args: {
   }));
   const transaction = database.transaction(["sessions", "media"], "readwrite");
   const existingIds = await transaction.objectStore("media").index("by-scope").getAllKeys(scope);
-  await Promise.all(
-    existingIds.map((id) => transaction.objectStore("media").delete(id))
-  );
-  await Promise.all(
-    args.files.map((file, index) => {
-      const record = records[index];
-      return transaction.objectStore("media").put({
-        id: `${scope}:${record.fileId}`,
-        scope,
-        blob: file,
-      });
-    })
-  );
+  for (const id of existingIds) {
+    await transaction.objectStore("media").delete(id);
+  }
   const state: SmartUploadDraftState = {
     version: 1,
     scope,
@@ -150,9 +140,31 @@ export async function createSmartUploadDraft(args: {
     files: records,
     savedAt: new Date().toISOString(),
   };
+  // Queue each Blob write one at a time. Large Smart Upload selections can
+  // contain hundreds of camera originals; scheduling every structured clone
+  // concurrently creates a short-lived memory spike large enough to terminate
+  // a mobile browser tab.
+  for (let index = 0; index < args.files.length; index += 1) {
+    const file = args.files[index];
+    const record = records[index];
+    await transaction.objectStore("media").put({
+      id: `${scope}:${record.fileId}`,
+      scope,
+      blob: file,
+    });
+  }
   await transaction.objectStore("sessions").put(state);
   await transaction.done;
-  return hydrateState(state, database);
+  // The picker already supplied these File objects. Returning the same
+  // references avoids immediately reading and cloning every Blob back out of
+  // IndexedDB after it was persisted.
+  return {
+    ...state,
+    files: records.map((record, index) => ({
+      ...record,
+      file: args.files[index],
+    })),
+  };
 }
 
 export async function saveServerSmartUploadDraft(args: {
@@ -164,7 +176,7 @@ export async function saveServerSmartUploadDraft(args: {
   details: Record<string, unknown>;
   stage: SmartUploadStage;
   files: SmartUploadStoredFile[];
-}) {
+}): Promise<SmartUploadDraft> {
   const database = await getDatabase();
   const scope = getSmartUploadScope(args.userId, args.kind, args.scopeId);
   const state: SmartUploadDraftState = {
@@ -180,7 +192,7 @@ export async function saveServerSmartUploadDraft(args: {
     savedAt: new Date().toISOString(),
   };
   await database.put("sessions", state);
-  return hydrateState(state, database);
+  return { ...state, files: state.files.map((file) => ({ ...file })) };
 }
 
 export async function updateSmartUploadDraft(
@@ -210,47 +222,53 @@ export async function updateSmartUploadDraft(
   return next;
 }
 
-async function hydrateState(
-  state: SmartUploadDraftState,
-  database: IDBPDatabase<SmartUploadDatabase>
-): Promise<SmartUploadDraft> {
-  const media = await database.getAllFromIndex(
-    "media",
-    "by-scope",
-    state.scope
-  );
-  const mediaById = new Map(media.map((item) => [item.id, item.blob]));
-  const hydrated: SmartUploadDraft["files"] = [];
-  for (const descriptor of state.files) {
-    const blob = mediaById.get(`${state.scope}:${descriptor.fileId}`);
-    if (!blob) {
-      // A Smart Upload session can be resumed on another browser from its R2
-      // manifest. Keep the descriptor even when this browser has no local Blob.
-      hydrated.push({ ...descriptor });
-      continue;
-    }
-    hydrated.push({
-      ...descriptor,
-      file: new File([blob], descriptor.name, {
-        type: descriptor.type || blob.type,
-        lastModified: descriptor.lastModified,
-      }),
-    });
-  }
-  return { ...state, files: hydrated };
-}
-
 export async function loadSmartUploadDraft(
   userId: string,
   kind: SmartUploadKind,
   scopeId?: string
-) {
+): Promise<SmartUploadDraft | null> {
   const database = await getDatabase();
   const state = await database.get(
     "sessions",
     getSmartUploadScope(userId, kind, scopeId)
   );
-  return state ? hydrateState(state, database) : null;
+  // Keep resume lightweight. Upload workers load at most their concurrency
+  // window of original Blobs below instead of cloning the entire selection
+  // into page memory during workspace startup.
+  return state
+    ? { ...state, files: state.files.map((file) => ({ ...file })) }
+    : null;
+}
+
+export async function loadSmartUploadFile(
+  draft: Pick<SmartUploadDraftState, "scope">,
+  descriptor: SmartUploadStoredFile
+) {
+  const database = await getDatabase();
+  const media = await database.get(
+    "media",
+    `${draft.scope}:${descriptor.fileId}`
+  );
+  if (!media?.blob) return undefined;
+  return new File([media.blob], descriptor.name, {
+    type: descriptor.type || media.blob.type,
+    lastModified: descriptor.lastModified,
+  });
+}
+
+export async function releaseSmartUploadMedia(
+  userId: string,
+  kind: SmartUploadKind,
+  scopeId?: string
+) {
+  const database = await getDatabase();
+  const scope = getSmartUploadScope(userId, kind, scopeId);
+  const transaction = database.transaction("media", "readwrite");
+  const mediaKeys = await transaction.store.index("by-scope").getAllKeys(scope);
+  for (const key of mediaKeys) {
+    await transaction.store.delete(key);
+  }
+  await transaction.done;
 }
 
 export async function deleteSmartUploadDraft(
@@ -266,8 +284,8 @@ export async function deleteSmartUploadDraft(
     .index("by-scope")
     .getAllKeys(scope);
   await transaction.objectStore("sessions").delete(scope);
-  await Promise.all(
-    mediaKeys.map((key) => transaction.objectStore("media").delete(key))
-  );
+  for (const key of mediaKeys) {
+    await transaction.objectStore("media").delete(key);
+  }
   await transaction.done;
 }

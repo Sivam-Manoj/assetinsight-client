@@ -216,6 +216,119 @@ async function mockAuthenticatedApi(
   });
 }
 
+async function mockSmartUploadApi(page: Page, onComplete: () => void) {
+  type ManifestFile = {
+    fileId: string;
+    name: string;
+    type: string;
+    size: number;
+    originalOrder: number;
+  };
+
+  let manifest: ManifestFile[] = [];
+  const grouping = () => {
+    const files = manifest.map((file) => ({
+      fileId: file.fileId,
+      name: file.name,
+      mimeType: file.type,
+      size: file.size,
+      originalOrder: file.originalOrder,
+      url: reportThumbnailUrl,
+    }));
+    return {
+      sessionId: "smart-e2e-session",
+      smartUpload: true,
+      groupingStatus: "review_ready",
+      progressPercent: 100,
+      groups: Array.from(
+        { length: Math.ceil(files.length / 3) },
+        (_, groupIndex) => {
+          const groupFiles = files.slice(groupIndex * 3, groupIndex * 3 + 3);
+          return {
+            groupIndex,
+            imageCount: groupFiles.length,
+            fileIds: groupFiles.map((file) => file.fileId),
+            files: groupFiles,
+            overLimit: false,
+          };
+        }
+      ),
+      dividerFileIds: [],
+      metrics: [],
+      warnings: [],
+      expectedFileCount: files.length,
+      confirmedFileCount: files.length,
+      files,
+    };
+  };
+
+  await page.route("https://r2.e2e.test/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "access-control-allow-headers": "content-type",
+        "access-control-allow-methods": "PUT, OPTIONS",
+        "access-control-allow-origin": "*",
+      },
+      body: "",
+    });
+  });
+
+  await page.route("**/api/asset/upload-session**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+    let body: unknown;
+
+    if (path.endsWith("/api/asset/upload-session") && method === "POST") {
+      const requestBody = request.postDataJSON() as { files?: ManifestFile[] };
+      manifest = requestBody.files || [];
+      body = {
+        data: {
+          sessionId: "smart-e2e-session",
+          jobId: "smart-e2e-job",
+          files: manifest.map((file) => ({
+            fileId: file.fileId,
+            uploadUrl: `https://r2.e2e.test/${file.fileId}`,
+            method: "PUT",
+            contentType: file.type,
+          })),
+          nextCursor: null,
+        },
+      };
+    } else if (path.endsWith("/confirm-files") && method === "POST") {
+      body = { data: { confirmed: true } };
+    } else if (path.endsWith("/detect-dividers") && method === "POST") {
+      body = { data: grouping() };
+    } else if (path.endsWith("/smart-grouping") && method === "GET") {
+      body = { data: grouping() };
+    } else if (path.endsWith("/smart-grouping") && method === "PATCH") {
+      body = { data: { ...grouping(), groupingStatus: "confirmed" } };
+    } else if (path.endsWith("/complete") && method === "POST") {
+      onComplete();
+      body = {
+        message: "Smart Upload accepted",
+        reportId: "smart-e2e-report",
+        jobId: "smart-e2e-job",
+        status: "processing",
+        phase: "processing",
+      };
+    } else {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "access-control-allow-origin": "*",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  });
+}
+
 async function expectTheme(page: Page, theme: ThemeMode) {
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   await expect
@@ -419,6 +532,68 @@ test("Incoming remains visible for a standard authenticated user", async ({
   await expect(page.getByRole("link", { name: /Incoming/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Approvals" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Releases" })).toHaveCount(0);
+});
+
+test("Smart Upload keeps a large review bounded and completes without navigation", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  let completedReports = 0;
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+  await mockSmartUploadApi(page, () => {
+    completedReports += 1;
+  });
+  await page.goto("/dashboard");
+
+  await page.getByRole("button", { name: "Create report", exact: true }).click();
+  await page.getByLabel("Client name").fill("Smart Upload QA");
+  await page.getByLabel("Appraisal purpose").fill("Insurance valuation");
+  await page.getByLabel("Currency").fill("CAD");
+  await page.getByRole("button", { name: "Smart Upload", exact: true }).click();
+
+  const workspace = page.getByRole("dialog", { name: "Smart Upload" });
+  await expect(workspace).toBeVisible();
+  const fileInput = workspace.locator('input[type="file"][multiple]');
+  await fileInput.setInputFiles(
+    Array.from({ length: 24 }, (_, index) => ({
+      name: `photo-${String(index + 1).padStart(2, "0")}.jpg`,
+      mimeType: "image/jpeg",
+      buffer: Buffer.from(`e2e-photo-${index + 1}`),
+    }))
+  );
+
+  await expect(workspace.getByText("24 images -", { exact: false })).toBeVisible();
+  await workspace
+    .getByRole("button", { name: "Upload & detect lots" })
+    .click();
+
+  await expect(workspace.getByText("Images 1-12 of 24")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(workspace.getByText("Lots 1-6 of 8")).toBeVisible();
+  await expect(workspace.locator("img")).toHaveCount(18);
+  await expect(workspace.locator('img[loading="lazy"][decoding="async"]')).toHaveCount(
+    18
+  );
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await workspace.getByRole("button", { name: "Next images" }).click();
+  await expect(workspace.getByText("Images 13-24 of 24")).toBeVisible();
+  await expect(workspace.locator("img")).toHaveCount(18);
+
+  await workspace.getByRole("button", { name: "Create preview" }).click();
+  await expect(workspace).toHaveCount(0);
+  await expect
+    .poll(() => completedReports)
+    .toBe(1);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(
+    page.getByText(
+      "Smart Upload accepted - preview processing continues in My Reports.",
+      { exact: true }
+    )
+  ).toBeVisible();
 });
 
 test("Incoming keeps user assignment server-side and explains an empty queue", async ({

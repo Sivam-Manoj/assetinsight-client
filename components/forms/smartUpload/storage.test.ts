@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createSmartUploadDraft,
   deleteSmartUploadDraft,
+  loadSmartUploadFile,
   loadSmartUploadDraft,
+  releaseSmartUploadMedia,
   updateSmartUploadDraft,
 } from "./storage";
 
@@ -55,6 +57,7 @@ describe("Smart Upload IndexedDB recovery", () => {
       details: { contract_no: "CTR-1" },
       files,
     });
+    expect(created.files.map((file) => file.file)).toEqual(files);
 
     await updateSmartUploadDraft(USER_ID, "asset", {
       sessionId: "session-1",
@@ -80,7 +83,12 @@ describe("Smart Upload IndexedDB recovery", () => {
       true,
       false,
     ]);
-    await expect(restored!.files[2]!.file!.text()).resolves.toBe("third");
+    expect(restored?.files.every((file) => file.file === undefined)).toBe(true);
+    const restoredThird = await loadSmartUploadFile(
+      restored!,
+      restored!.files[2]!
+    );
+    await expect(restoredThird!.text()).resolves.toBe("third");
   });
 
   it("keeps Asset and Lot Listing recovery sessions isolated", async () => {
@@ -133,5 +141,24 @@ describe("Smart Upload IndexedDB recovery", () => {
     ]);
     expect(ordinary?.clientSubmissionId).toBe("ordinary");
     expect(auctioneer?.clientSubmissionId).toBe("auctioneer");
+  });
+
+  it("can release original media without deleting the recovery manifest", async () => {
+    await createSmartUploadDraft({
+      userId: USER_ID,
+      kind: "asset",
+      clientSubmissionId: "release-media",
+      details: { contract_no: "RELEASE-1" },
+      files: [new File(["photo"], "photo.jpg", { type: "image/jpeg" })],
+    });
+
+    const before = await loadSmartUploadDraft(USER_ID, "asset");
+    expect(await loadSmartUploadFile(before!, before!.files[0]!)).toBeDefined();
+
+    await releaseSmartUploadMedia(USER_ID, "asset");
+
+    const after = await loadSmartUploadDraft(USER_ID, "asset");
+    expect(after?.clientSubmissionId).toBe("release-media");
+    expect(await loadSmartUploadFile(after!, after!.files[0]!)).toBeUndefined();
   });
 });

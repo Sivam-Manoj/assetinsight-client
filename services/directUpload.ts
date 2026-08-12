@@ -30,9 +30,38 @@ type UploadSession = {
 export const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
 const SERVER_FALLBACK_RETRIES = 2;
+const DIRECT_UPLOAD_CIRCUIT_TTL_MS = 10 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 let serverFallbackQueue: Promise<void> = Promise.resolve();
+const directUploadUnavailableUntil = new Map<string, number>();
+
+function directUploadHost(url: string) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
+function directUploadIsUnavailable(url: string) {
+  const host = directUploadHost(url);
+  const unavailableUntil = directUploadUnavailableUntil.get(host) || 0;
+  if (unavailableUntil > Date.now()) return true;
+  directUploadUnavailableUntil.delete(host);
+  return false;
+}
+
+function markDirectUploadUnavailable(url: string) {
+  directUploadUnavailableUntil.set(
+    directUploadHost(url),
+    Date.now() + DIRECT_UPLOAD_CIRCUIT_TTL_MS
+  );
+}
+
+export function resetDirectUploadCircuitBreakerForTests() {
+  directUploadUnavailableUntil.clear();
+}
 
 async function withServerFallbackSlot<T>(task: () => Promise<T>): Promise<T> {
   const previous = serverFallbackQueue;
@@ -152,6 +181,16 @@ export async function uploadFileToReportSession(args: {
   contentType: string;
   onDelta?: (delta: number) => void;
 }) {
+  if (directUploadIsUnavailable(args.uploadUrl)) {
+    await uploadFileThroughServerFallback(
+      args.endpoint,
+      args.sessionId,
+      args.fileId,
+      args.file
+    );
+    return { transport: "server" as const };
+  }
+
   try {
     await putFileWithRetry(
       args.uploadUrl,
@@ -175,6 +214,12 @@ export async function uploadFileToReportSession(args: {
       // A missing object or an older API without the verification endpoint
       // should continue to the compatible server upload path.
     }
+
+    // A failed PUT followed by a failed object verification normally means the
+    // storage host is unavailable to this browser (most often a missing R2
+    // CORS rule). Remember that briefly so a large report does not repeat the
+    // same doomed retries for every remaining photo.
+    markDirectUploadUnavailable(args.uploadUrl);
 
     try {
       // Preserve the original session and R2 object key. This is a transport

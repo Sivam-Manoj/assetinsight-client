@@ -37,6 +37,7 @@ import {
   createSmartUploadDraft,
   deleteSmartUploadDraft,
   loadSmartUploadDraft,
+  releaseSmartUploadMedia,
   saveServerSmartUploadDraft,
   updateSmartUploadDraft,
   type SmartUploadDraft,
@@ -67,7 +68,62 @@ type UploadProgress = {
 };
 
 const ACCEPTED_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif)$/i;
-const VISIBLE_IMAGE_BATCH = 120;
+const SEQUENCE_PAGE_SIZE = 12;
+const GROUP_PAGE_SIZE = 6;
+const THUMBNAIL_SIZE = 256;
+
+let thumbnailQueue: Promise<void> = Promise.resolve();
+
+function withThumbnailSlot<T>(task: () => Promise<T>) {
+  const result = thumbnailQueue.then(task, task);
+  thumbnailQueue = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
+
+async function canvasBlob(canvas: HTMLCanvasElement) {
+  const convert = (type: string) =>
+    new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.72));
+  return (await convert("image/webp")) || (await convert("image/jpeg"));
+}
+
+async function createThumbnailUrl(args: {
+  file?: File;
+  url?: string;
+  signal: AbortSignal;
+}) {
+  if (typeof createImageBitmap !== "function") return null;
+  if (args.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+  let source: Blob | undefined = args.file;
+  if (!source && args.url) {
+    const response = await fetch(args.url, { signal: args.signal });
+    if (!response.ok) throw new Error("Unable to load preview image");
+    source = await response.blob();
+  }
+  if (!source) return null;
+
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(source, {
+      resizeWidth: THUMBNAIL_SIZE,
+      resizeHeight: THUMBNAIL_SIZE,
+      resizeQuality: "low",
+    });
+    if (args.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+    const canvas = document.createElement("canvas");
+    canvas.width = THUMBNAIL_SIZE;
+    canvas.height = THUMBNAIL_SIZE;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) return null;
+    context.drawImage(bitmap, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+    const thumbnail = await canvasBlob(canvas);
+    return thumbnail ? URL.createObjectURL(thumbnail) : null;
+  } finally {
+    bitmap?.close();
+  }
+}
 
 function newSubmissionId(kind: SmartUploadKind) {
   return globalThis.crypto?.randomUUID?.() ||
@@ -92,22 +148,61 @@ function ImagePreview({
 }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
-    if (url) {
-      setSrc(url);
-      return;
-    }
-    if (!file) {
+    if (!file && !url) {
       setSrc("");
       return;
     }
-    const next = URL.createObjectURL(file);
-    setSrc(next);
-    return () => URL.revokeObjectURL(next);
+    let disposed = false;
+    let ownedUrl: string | null = null;
+    const controller = new AbortController();
+    setSrc("");
+    void withThumbnailSlot(() =>
+      createThumbnailUrl({ file, url, signal: controller.signal })
+    )
+      .then((next) => {
+        if (disposed) {
+          if (next) URL.revokeObjectURL(next);
+          return;
+        }
+        if (next) {
+          ownedUrl = next;
+          setSrc(next);
+          return;
+        }
+        if (url) setSrc(url);
+        else if (file) {
+          ownedUrl = URL.createObjectURL(file);
+          setSrc(ownedUrl);
+        }
+      })
+      .catch((thumbnailError) => {
+        if (disposed || (thumbnailError as { name?: string })?.name === "AbortError") {
+          return;
+        }
+        if (url) setSrc(url);
+        else if (file) {
+          ownedUrl = URL.createObjectURL(file);
+          setSrc(ownedUrl);
+        }
+      });
+    return () => {
+      disposed = true;
+      controller.abort();
+      if (ownedUrl) URL.revokeObjectURL(ownedUrl);
+    };
   }, [file, url]);
   return src ? (
     // A local object URL has no useful Next Image optimization path.
 
-    <img src={src} alt={alt} className={className} draggable={false} />
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      draggable={false}
+      loading="lazy"
+      decoding="async"
+      fetchPriority="low"
+    />
   ) : (
     <div className={className} aria-hidden="true" />
   );
@@ -120,6 +215,23 @@ function progressLabel(stage: SmartUploadDraft["stage"]) {
   if (stage === "review") return "Review detected lots";
   if (stage === "failed") return "Smart Upload needs attention";
   return "Images ready to upload";
+}
+
+function attachGroupingUrls(
+  files: SmartUploadDraft["files"],
+  grouping: SmartUploadGrouping
+) {
+  const serverFiles = [
+    ...(grouping.files || []),
+    ...grouping.groups.flatMap((group) => group.files || []),
+  ];
+  const serverFileById = new Map(
+    serverFiles.map((file) => [file.fileId, file])
+  );
+  return files.map(({ file: _file, ...descriptor }) => ({
+    ...descriptor,
+    url: descriptor.url || serverFileById.get(descriptor.fileId)?.url,
+  }));
 }
 
 export default function SmartUploadWorkspace({
@@ -140,7 +252,8 @@ export default function SmartUploadWorkspace({
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [busyFileId, setBusyFileId] = useState<string | null>(null);
-  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_IMAGE_BATCH);
+  const [sequencePage, setSequencePage] = useState(0);
+  const [groupPage, setGroupPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -214,7 +327,8 @@ export default function SmartUploadWorkspace({
               : restored.stage,
         };
         setDraft(resumed);
-        setVisibleLimit(VISIBLE_IMAGE_BATCH);
+        setSequencePage(0);
+        setGroupPage(0);
         if (resumed.sessionId) {
           try {
             const result =
@@ -226,13 +340,16 @@ export default function SmartUploadWorkspace({
                 result.groupingStatus === "review_ready" ||
                 result.groupingStatus === "confirmed"
               ) {
+                const reviewFiles = attachGroupingUrls(resumed.files, result);
                 setDraft((current) =>
-                    current ? { ...current, stage: "review" } : current
-                  );
+                  current
+                    ? { ...current, stage: "review", files: reviewFiles }
+                    : current
+                );
                 await updateSmartUploadDraft(
                   userId,
                   kind,
-                  { stage: "review" },
+                  { stage: "review", files: reviewFiles },
                   scopeId
                 );
               } else if (result.groupingStatus === "classifying") {
@@ -251,14 +368,17 @@ export default function SmartUploadWorkspace({
                   },
                 });
                 if (!cancelled) {
+                  const reviewFiles = attachGroupingUrls(resumed.files, detected);
                   setGrouping(detected);
                   setDraft((current) =>
-                    current ? { ...current, stage: "review" } : current
+                    current
+                      ? { ...current, stage: "review", files: reviewFiles }
+                      : current
                   );
                   await updateSmartUploadDraft(
                     userId,
                     kind,
-                    { stage: "review" },
+                    { stage: "review", files: reviewFiles },
                     scopeId
                   );
                 }
@@ -267,9 +387,7 @@ export default function SmartUploadWorkspace({
                   current ? { ...current, stage: "failed" } : current
                 );
                 setError(
-                  resumed.files.some((file) => !file.file)
-                    ? "This upload is incomplete and its remaining originals are stored on another browser. Resume it from that browser."
-                    : "The previous upload was interrupted. Resume to upload only the remaining images."
+                  "The previous upload was interrupted. Resume to upload only the remaining images."
                 );
                 await updateSmartUploadDraft(
                   userId,
@@ -355,9 +473,28 @@ export default function SmartUploadWorkspace({
     () => new Set(grouping?.dividerFileIds || []),
     [grouping?.dividerFileIds]
   );
+  const serverFileById = useMemo(() => {
+    const files = [
+      ...(grouping?.files || []),
+      ...(grouping?.groups.flatMap((group) => group.files || []) || []),
+    ];
+    return new Map(files.map((file) => [file.fileId, file]));
+  }, [grouping]);
   const visibleFiles = useMemo(
-    () => (draft?.files || []).slice(0, visibleLimit),
-    [draft?.files, visibleLimit]
+    () =>
+      (draft?.files || []).slice(
+        sequencePage * SEQUENCE_PAGE_SIZE,
+        (sequencePage + 1) * SEQUENCE_PAGE_SIZE
+      ),
+    [draft?.files, sequencePage]
+  );
+  const visibleGroups = useMemo(
+    () =>
+      (grouping?.groups || []).slice(
+        groupPage * GROUP_PAGE_SIZE,
+        (groupPage + 1) * GROUP_PAGE_SIZE
+      ),
+    [groupPage, grouping?.groups]
   );
   const selectFiles = useCallback(
     async (selected: File[]) => {
@@ -375,7 +512,8 @@ export default function SmartUploadWorkspace({
       try {
         setError(null);
         setGrouping(null);
-        setVisibleLimit(VISIBLE_IMAGE_BATCH);
+        setSequencePage(0);
+        setGroupPage(0);
         const next = await createSmartUploadDraft({
           userId,
           kind,
@@ -430,11 +568,15 @@ export default function SmartUploadWorkspace({
         scopeId
       );
 
+      let confirmedFiles = sessionDraft.files.map(
+        ({ file: _file, ...descriptor }) => descriptor
+      );
       await uploadSmartUploadFiles({
         draft: sessionDraft,
         session,
         onProgress: setProgress,
         onFilesConfirmed: async (files) => {
+          confirmedFiles = files;
           await updateSmartUploadDraft(userId, kind, { files }, scopeId);
           setDraft((current) =>
             current
@@ -452,14 +594,22 @@ export default function SmartUploadWorkspace({
         },
       });
 
+      // Once R2 has confirmed every object, the browser no longer needs its
+      // high-resolution local copies. Release them before classification and
+      // review so they cannot accumulate with decoded thumbnails.
       setDraft((current) =>
-        current ? { ...current, stage: "classifying" } : current
+        current
+          ? { ...current, stage: "classifying", files: confirmedFiles }
+          : current
       );
       await updateSmartUploadDraft(
         userId,
         kind,
-        { stage: "classifying" },
+        { stage: "classifying", files: confirmedFiles },
         scopeId
+      );
+      await releaseSmartUploadMedia(userId, kind, scopeId).catch(
+        () => undefined
       );
       const started = await startSmartUploadDetection(kind, session.sessionId);
       setGrouping(started);
@@ -472,11 +622,19 @@ export default function SmartUploadWorkspace({
         signal: controller.signal,
         onProgress: setGrouping,
       });
+      const reviewFiles = attachGroupingUrls(confirmedFiles, detected);
       setGrouping(detected);
       setDraft((current) =>
-        current ? { ...current, stage: "review" } : current
+        current
+          ? { ...current, stage: "review", files: reviewFiles }
+          : current
       );
-      await updateSmartUploadDraft(userId, kind, { stage: "review" }, scopeId);
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { stage: "review", files: reviewFiles },
+        scopeId
+      );
     } catch (uploadError) {
       if ((uploadError as { name?: string })?.name === "AbortError") return;
       const message = getSmartUploadError(uploadError);
@@ -805,47 +963,82 @@ export default function SmartUploadWorkspace({
                     </span>
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {grouping.groups.map((group) => (
-                      <article
-                        key={group.groupIndex}
-                        className={`overflow-hidden rounded-md border bg-[var(--app-panel)] ${
-                          group.overLimit
-                            ? "border-[var(--app-danger)]"
-                            : "border-[var(--app-border)]"
-                        }`}
-                      >
-                        <div className="grid h-28 grid-cols-4 bg-[var(--app-panel-alt)]">
-                          {group.fileIds.slice(0, 4).map((fileId) => {
-                            const item = fileById.get(fileId);
-                            return item ? (
+                    {visibleGroups.map((group) => {
+                      const coverFileId = group.fileIds[0];
+                      const item = coverFileId ? fileById.get(coverFileId) : undefined;
+                      const serverFile = coverFileId
+                        ? serverFileById.get(coverFileId)
+                        : undefined;
+                      return (
+                        <article
+                          key={group.groupIndex}
+                          className={`overflow-hidden rounded-md border bg-[var(--app-panel)] ${
+                            group.overLimit
+                              ? "border-[var(--app-danger)]"
+                              : "border-[var(--app-border)]"
+                          }`}
+                        >
+                          <div className="h-28 bg-[var(--app-panel-alt)]">
+                            {item ? (
                               <ImagePreview
-                                key={fileId}
                                 file={item.file}
-                                url={item.url}
+                                url={item.url || serverFile?.url}
                                 alt=""
-                                className="h-full w-full border-r border-[var(--app-border)] object-cover last:border-r-0"
+                                className="h-full w-full object-cover"
                               />
-                            ) : null;
-                          })}
-                        </div>
-                        <div className="flex items-center justify-between gap-3 px-3 py-3">
-                          <div>
-                            <p className="font-bold">Lot {group.groupIndex + 1}</p>
-                            <p className="text-xs text-[var(--app-text-muted)]">
-                              {group.imageCount} photos - Bundle
-                            </p>
+                            ) : null}
                           </div>
-                          {group.overLimit ? (
-                            <span className="rounded bg-[var(--app-danger-soft)] px-2 py-1 text-xs font-bold text-[var(--app-danger)]">
-                              Add divider
-                            </span>
-                          ) : (
-                            <Check className="h-5 w-5 text-emerald-600" />
-                          )}
-                        </div>
-                      </article>
-                    ))}
+                          <div className="flex items-center justify-between gap-3 px-3 py-3">
+                            <div>
+                              <p className="font-bold">Lot {group.groupIndex + 1}</p>
+                              <p className="text-xs text-[var(--app-text-muted)]">
+                                {group.imageCount} photos - Bundle
+                              </p>
+                            </div>
+                            {group.overLimit ? (
+                              <span className="rounded bg-[var(--app-danger-soft)] px-2 py-1 text-xs font-bold text-[var(--app-danger)]">
+                                Add divider
+                              </span>
+                            ) : (
+                              <Check className="h-5 w-5 text-emerald-600" />
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
+                  {grouping.groups.length > GROUP_PAGE_SIZE ? (
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setGroupPage((current) => Math.max(0, current - 1))}
+                        disabled={groupPage === 0}
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Previous lots
+                      </button>
+                      <span className="text-[var(--app-text-muted)]">
+                        Lots {groupPage * GROUP_PAGE_SIZE + 1}-
+                        {Math.min((groupPage + 1) * GROUP_PAGE_SIZE, grouping.groups.length)} of{" "}
+                        {grouping.groups.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGroupPage((current) =>
+                            Math.min(
+                              Math.ceil(grouping.groups.length / GROUP_PAGE_SIZE) - 1,
+                              current + 1
+                            )
+                          )
+                        }
+                        disabled={(groupPage + 1) * GROUP_PAGE_SIZE >= grouping.groups.length}
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Next lots
+                      </button>
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
 
@@ -885,7 +1078,7 @@ export default function SmartUploadWorkspace({
                         >
                           <ImagePreview
                             file={item.file}
-                            url={item.url}
+                            url={item.url || serverFileById.get(item.fileId)?.url}
                             alt=""
                             className={`h-full w-full object-cover transition ${
                               isDivider ? "opacity-35" : ""
@@ -908,23 +1101,43 @@ export default function SmartUploadWorkspace({
                       );
                     })}
                   </div>
-                  {visibleLimit < draft.files.length ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setVisibleLimit((current) =>
-                          Math.min(draft.files.length, current + VISIBLE_IMAGE_BATCH)
-                        )
-                      }
-                      className="mt-4 min-h-10 rounded-md border border-[var(--app-control-border)] px-4 text-sm font-semibold"
-                    >
-                      Show next{" "}
-                      {Math.min(
-                        VISIBLE_IMAGE_BATCH,
-                        draft.files.length - visibleLimit
-                      )}{" "}
-                      images
-                    </button>
+                  {draft.files.length > SEQUENCE_PAGE_SIZE ? (
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSequencePage((current) => Math.max(0, current - 1))
+                        }
+                        disabled={sequencePage === 0}
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Previous images
+                      </button>
+                      <span className="text-[var(--app-text-muted)]">
+                        Images {sequencePage * SEQUENCE_PAGE_SIZE + 1}-
+                        {Math.min(
+                          (sequencePage + 1) * SEQUENCE_PAGE_SIZE,
+                          draft.files.length
+                        )} of {draft.files.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSequencePage((current) =>
+                            Math.min(
+                              Math.ceil(draft.files.length / SEQUENCE_PAGE_SIZE) - 1,
+                              current + 1
+                            )
+                          )
+                        }
+                        disabled={
+                          (sequencePage + 1) * SEQUENCE_PAGE_SIZE >= draft.files.length
+                        }
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Next images
+                      </button>
+                    </div>
                   ) : null}
                 </section>
               ) : null}

@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import API from "@/lib/api";
-import { uploadFileToReportSession } from "./directUpload";
+import {
+  resetDirectUploadCircuitBreakerForTests,
+  uploadFileToReportSession,
+} from "./directUpload";
 
 const originalXmlHttpRequest = globalThis.XMLHttpRequest;
 
 class FailingDirectUploadRequest {
+  static sendCount = 0;
   upload: { onprogress?: (event: ProgressEvent) => void } = {};
   status = 0;
   responseText = "";
@@ -15,6 +19,7 @@ class FailingDirectUploadRequest {
   setRequestHeader() {}
 
   send() {
+    FailingDirectUploadRequest.sendCount += 1;
     this.onerror?.();
   }
 }
@@ -22,6 +27,8 @@ class FailingDirectUploadRequest {
 afterEach(() => {
   vi.useRealTimers();
   globalThis.XMLHttpRequest = originalXmlHttpRequest;
+  FailingDirectUploadRequest.sendCount = 0;
+  resetDirectUploadCircuitBreakerForTests();
 });
 
 describe("report-session upload transport", () => {
@@ -110,5 +117,51 @@ describe("report-session upload transport", () => {
 
     await expect(upload).resolves.toEqual({ transport: "server" });
     expect(apiPost).toHaveBeenCalledTimes(3);
+  });
+
+  it("bypasses repeated direct retries after a storage host fails", async () => {
+    vi.useFakeTimers();
+    globalThis.XMLHttpRequest =
+      FailingDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const apiPost = vi
+      .spyOn(API, "post")
+      .mockRejectedValueOnce({ response: { status: 409 } })
+      .mockResolvedValue({ data: {} });
+    const firstFile = new File(["first"], "first.jpg", {
+      type: "image/jpeg",
+    });
+    const secondFile = new File(["second"], "second.jpg", {
+      type: "image/jpeg",
+    });
+
+    const firstUpload = uploadFileToReportSession({
+      endpoint: "/asset",
+      sessionId: "session-circuit",
+      fileId: "images-0",
+      uploadUrl: "https://r2-cors-missing.example.test/first",
+      file: firstFile,
+      contentType: "image/jpeg",
+    });
+    await vi.runAllTimersAsync();
+    await expect(firstUpload).resolves.toEqual({ transport: "server" });
+    expect(FailingDirectUploadRequest.sendCount).toBe(3);
+
+    await expect(
+      uploadFileToReportSession({
+        endpoint: "/asset",
+        sessionId: "session-circuit",
+        fileId: "images-1",
+        uploadUrl: "https://r2-cors-missing.example.test/second",
+        file: secondFile,
+        contentType: "image/jpeg",
+      })
+    ).resolves.toEqual({ transport: "server" });
+
+    expect(FailingDirectUploadRequest.sendCount).toBe(3);
+    expect(apiPost).toHaveBeenLastCalledWith(
+      "/asset/upload-session/session-circuit/files/images-1",
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 300000 })
+    );
   });
 });

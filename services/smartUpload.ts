@@ -4,6 +4,7 @@ import {
   mapWithConcurrency,
   uploadFileToReportSession,
 } from "@/services/directUpload";
+import { loadSmartUploadFile } from "@/components/forms/smartUpload/storage";
 import type {
   SmartUploadDraft,
   SmartUploadKind,
@@ -192,6 +193,7 @@ export async function uploadSmartUploadFiles(args: {
         lastModified: item.lastModified,
         originalOrder: item.originalOrder,
         uploaded: item.uploaded,
+        url: item.url,
       } satisfies SmartUploadStoredFile,
     ])
   );
@@ -228,7 +230,8 @@ export async function uploadSmartUploadFiles(args: {
           throw new Error(`Upload file ${target.fileId} is missing locally.`);
         }
         if (stateById.get(target.fileId)?.uploaded) return;
-        if (!item.file) {
+        const file = item.file || (await loadSmartUploadFile(args.draft, item));
+        if (!file) {
           throw new Error(
             `${item.name} is not stored on this browser. Resume this unfinished upload on the browser where the images were selected.`
           );
@@ -239,7 +242,7 @@ export async function uploadSmartUploadFiles(args: {
           sessionId: args.session.sessionId,
           fileId: target.fileId,
           uploadUrl: target.uploadUrl,
-          file: item.file,
+          file,
           contentType: target.contentType,
           onDelta: (delta) => {
             // Retries restart XHR progress at zero, so cap the accumulated
