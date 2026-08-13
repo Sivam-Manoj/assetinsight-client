@@ -101,9 +101,9 @@ const SEQUENCE_PAGE_SIZE = 12;
 const GROUP_PAGE_SIZE = 6;
 const LOT_PHOTO_PAGE_SIZE = 12;
 const THUMBNAIL_SIZE = 256;
-const SMART_UPLOAD_MAX_FILES = 500;
+const SMART_UPLOAD_MAX_FILES = 2_000;
 const SMART_UPLOAD_MAX_FILE_BYTES = 50 * 1024 * 1024;
-const SMART_UPLOAD_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+const SMART_UPLOAD_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024;
 
 function isSupportedSmartUploadImage(file: File) {
   const mimeType = String(file.type || "").trim().toLowerCase();
@@ -346,6 +346,9 @@ function newSubmissionId(kind: SmartUploadKind) {
 }
 
 function formatBytes(value: number) {
+  if (value >= 1024 * 1024 * 1024) {
+    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
   if (value < 1024 * 1024) return `${Math.max(0, value / 1024).toFixed(0)} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
@@ -1062,7 +1065,7 @@ export default function SmartUploadWorkspace({
       if (!selected.length || !userId) return;
       if (selected.length > SMART_UPLOAD_MAX_FILES) {
         setError(
-          `Select no more than ${SMART_UPLOAD_MAX_FILES} images in one Smart Upload.`
+          `Select no more than ${SMART_UPLOAD_MAX_FILES.toLocaleString("en-US")} images in one Smart Upload.`
         );
         return;
       }
@@ -1089,7 +1092,9 @@ export default function SmartUploadWorkspace({
       }
       const totalSize = selected.reduce((sum, file) => sum + file.size, 0);
       if (totalSize > SMART_UPLOAD_MAX_TOTAL_BYTES) {
-        setError("This selection is larger than the 2 GB Smart Upload limit.");
+        setError(
+          `This selection is larger than the ${formatBytes(SMART_UPLOAD_MAX_TOTAL_BYTES)} Smart Upload limit.`
+        );
         return;
       }
       try {
@@ -2102,8 +2107,8 @@ export default function SmartUploadWorkspace({
                   Select images
                 </button>
                 <p className="mt-4 text-xs text-[var(--app-text-muted)]">
-                  JPEG, PNG, WebP, HEIC, and HEIF. Up to 500 images, 50 MB each,
-                  2 GB total, and 200 report photos per detected lot.
+                  JPEG, PNG, WebP, HEIC, and HEIF. Up to 2,000 images, 50 MB
+                  each, 20 GB total, and 200 report photos per detected lot.
                 </p>
               </div>
             </section>

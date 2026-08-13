@@ -210,8 +210,10 @@ describe("SmartUploadWorkspace preview memory bounds", () => {
       })),
     }));
 
-    const { container } = render(workspace());
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    render(workspace());
+    await screen.findByRole("button", { name: "Select images" });
+    // The full-screen workspace is rendered through a portal into document.body.
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files } });
 
     const upload = await screen.findByRole("button", { name: "Upload & detect lots" });
