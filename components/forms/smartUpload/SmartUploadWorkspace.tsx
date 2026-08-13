@@ -10,7 +10,9 @@ import {
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
+  Clock,
   CloudUpload,
   Image as ImageIcon,
   Loader2,
@@ -18,6 +20,7 @@ import {
   Split,
   Trash2,
   UploadCloud,
+  Undo2,
   X,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -25,6 +28,7 @@ import {
   cancelSmartUpload,
   completeSmartUpload,
   createOrResumeSmartUploadSession,
+  getSmartUploadErrorCode,
   getSmartUploadError,
   getSmartUploadGrouping,
   startSmartUploadDetection,
@@ -36,6 +40,7 @@ import {
 import {
   createSmartUploadDraft,
   deleteSmartUploadDraft,
+  loadSmartUploadFile,
   loadSmartUploadDraft,
   releaseSmartUploadMedia,
   saveServerSmartUploadDraft,
@@ -43,6 +48,12 @@ import {
   type SmartUploadDraft,
   type SmartUploadKind,
 } from "./storage";
+import {
+  isLikelySmartUploadDividerName,
+  resolveSmartUploadFileOrder,
+  type SmartUploadOrderingDiagnostic,
+  type SmartUploadOrderingStrategy,
+} from "./ordering";
 
 type Props = {
   open: boolean;
@@ -67,10 +78,214 @@ type UploadProgress = {
   totalFiles: number;
 };
 
+type OrderingReview = {
+  strategy: SmartUploadOrderingStrategy;
+  diagnostic: SmartUploadOrderingDiagnostic;
+  changed: boolean;
+  ambiguous: boolean;
+  message: string;
+};
+
 const ACCEPTED_EXTENSIONS = /\.(jpe?g|png|webp|heic|heif)$/i;
+const ACCEPTED_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
 const SEQUENCE_PAGE_SIZE = 12;
 const GROUP_PAGE_SIZE = 6;
+const LOT_PHOTO_PAGE_SIZE = 12;
 const THUMBNAIL_SIZE = 256;
+const SMART_UPLOAD_MAX_FILES = 500;
+const SMART_UPLOAD_MAX_FILE_BYTES = 50 * 1024 * 1024;
+const SMART_UPLOAD_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+
+function isSupportedSmartUploadImage(file: File) {
+  const mimeType = String(file.type || "").trim().toLowerCase();
+  const hasSupportedExtension = ACCEPTED_EXTENSIONS.test(file.name);
+  return (
+    hasSupportedExtension &&
+    (!mimeType ||
+      mimeType === "application/octet-stream" ||
+      ACCEPTED_MIME_TYPES.has(mimeType))
+  );
+}
+
+function storedStringArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(value.filter((item): item is string => typeof item === "string"))
+  );
+}
+
+function withPersistedOrderReview(
+  details: Record<string, unknown>,
+  unplacedDividerIds: string[],
+  ambiguous: boolean
+) {
+  return {
+    ...details,
+    smart_upload_unplaced_divider_ids: [...unplacedDividerIds],
+    smart_upload_order_ambiguous: ambiguous,
+  };
+}
+
+function serverOrderReview(): OrderingReview {
+  return {
+    strategy: "preserved-selection",
+    diagnostic: "filesystem-order-needs-review",
+    changed: false,
+    ambiguous: true,
+    message:
+      "This upload's original computer could not prove the image order. Check each detected lot before creating the preview.",
+  };
+}
+
+function unresolvedDividerIdsFor(
+  draft: SmartUploadDraft,
+  grouping: SmartUploadGrouping
+) {
+  const availableFileIds = new Set(draft.files.map((file) => file.fileId));
+  const detectedDividerIds = new Set(grouping.dividerFileIds);
+  const persisted = storedStringArray(
+    draft.details.smart_upload_unplaced_divider_ids
+  );
+  const serverUnresolved = grouping.unresolvedDividerIds || [];
+  // Current servers persist the exact unresolved set. Only infer named
+  // dividers for a legacy session that has no local or server-side set at all;
+  // otherwise a refresh would re-add boundaries the user already resolved.
+  const inferred =
+    !grouping.hasOrderReviewState &&
+    grouping.orderReviewRequired &&
+    persisted.length === 0 &&
+    serverUnresolved.length === 0
+    ? draft.files
+        .filter(
+          (file) =>
+            detectedDividerIds.has(file.fileId) &&
+            isLikelySmartUploadDividerName(file.name)
+        )
+        .map((file) => file.fileId)
+    : [];
+  return Array.from(
+    new Set([
+      ...(grouping.hasOrderReviewState ? [] : persisted),
+      ...serverUnresolved,
+      ...inferred,
+    ])
+  ).filter(
+    (fileId) => availableFileIds.has(fileId) && detectedDividerIds.has(fileId)
+  );
+}
+
+function groupingReviewState(
+  draft: SmartUploadDraft,
+  grouping: SmartUploadGrouping
+) {
+  const unplacedDividerIds = unresolvedDividerIdsFor(draft, grouping);
+  const ambiguous =
+    unplacedDividerIds.length > 0 ||
+    grouping.orderReviewRequired ||
+    (!grouping.hasOrderReviewState &&
+      grouping.orderSource !== "groups" &&
+      draft.details.smart_upload_order_ambiguous === true);
+  return {
+    unplacedDividerIds,
+    ambiguous,
+    details: withPersistedOrderReview(
+      draft.details,
+      unplacedDividerIds,
+      ambiguous
+    ),
+  };
+}
+
+function editGroupsForDivider(args: {
+  draft: SmartUploadDraft;
+  grouping: SmartUploadGrouping;
+  fileId: string;
+  adding: boolean;
+}) {
+  const groups = args.grouping.groups.map((group) => [...group.fileIds]);
+  if (args.adding) {
+    const groupIndex = groups.findIndex((group) => group.includes(args.fileId));
+    const fileIndex = groups[groupIndex]?.indexOf(args.fileId) ?? -1;
+    if (groupIndex < 0 || fileIndex < 0) return null;
+    const before = groups[groupIndex].slice(0, fileIndex);
+    const after = groups[groupIndex].slice(fileIndex + 1);
+    // A divider is meaningful only when it separates report photos on both
+    // sides. Never let a one-tap edge toggle silently delete a real photo.
+    if (!before.length || !after.length) return null;
+    groups.splice(groupIndex, 1, before, after);
+    return {
+      groups,
+      focusLotIndex: Math.min(groupIndex, groups.length - 1),
+    };
+  }
+
+  const sequence = args.draft.files.map((file) => file.fileId);
+  const sequenceIndex = sequence.indexOf(args.fileId);
+  if (sequenceIndex < 0) return null;
+  const assigned = new Set(groups.flat());
+  const previousId = sequence
+    .slice(0, sequenceIndex)
+    .reverse()
+    .find((candidate) => assigned.has(candidate));
+  const nextId = sequence
+    .slice(sequenceIndex + 1)
+    .find((candidate) => assigned.has(candidate));
+  const previousGroupIndex = previousId
+    ? groups.findIndex((group) => group.includes(previousId))
+    : -1;
+  const nextGroupIndex = nextId
+    ? groups.findIndex((group) => group.includes(nextId))
+    : -1;
+
+  if (
+    previousGroupIndex >= 0 &&
+    nextGroupIndex >= 0 &&
+    previousGroupIndex !== nextGroupIndex &&
+    Math.abs(previousGroupIndex - nextGroupIndex) === 1
+  ) {
+    const firstIndex = Math.min(previousGroupIndex, nextGroupIndex);
+    const secondIndex = Math.max(previousGroupIndex, nextGroupIndex);
+    const merged =
+      previousGroupIndex < nextGroupIndex
+        ? [...groups[previousGroupIndex], args.fileId, ...groups[nextGroupIndex]]
+        : [...groups[nextGroupIndex], args.fileId, ...groups[previousGroupIndex]];
+    groups.splice(firstIndex, secondIndex - firstIndex + 1, merged);
+    return { groups, focusLotIndex: firstIndex };
+  }
+
+  if (
+    previousGroupIndex >= 0 &&
+    previousGroupIndex === nextGroupIndex
+  ) {
+    const target = groups[previousGroupIndex];
+    const previousPosition = previousId ? target.indexOf(previousId) : -1;
+    const nextPosition = nextId ? target.indexOf(nextId) : -1;
+    const insertAt =
+      previousPosition >= 0
+        ? previousPosition + 1
+        : nextPosition >= 0
+          ? nextPosition
+          : target.length;
+    target.splice(insertAt, 0, args.fileId);
+    return { groups, focusLotIndex: previousGroupIndex };
+  }
+
+  const targetIndex =
+    previousGroupIndex >= 0 ? previousGroupIndex : nextGroupIndex;
+  if (targetIndex < 0) return { groups: [[args.fileId]], focusLotIndex: 0 };
+  if (targetIndex === previousGroupIndex) groups[targetIndex].push(args.fileId);
+  else groups[targetIndex].unshift(args.fileId);
+  return { groups, focusLotIndex: targetIndex };
+}
 
 let thumbnailQueue: Promise<void> = Promise.resolve();
 
@@ -138,27 +353,45 @@ function formatBytes(value: number) {
 function ImagePreview({
   file,
   url,
+  recoveryDraft,
+  recoveryFile,
   alt,
   className,
 }: {
   file?: File;
   url?: string;
+  recoveryDraft?: Pick<SmartUploadDraft, "scope">;
+  recoveryFile?: SmartUploadDraft["files"][number];
   alt: string;
   className?: string;
 }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
-    if (!file && !url) {
+    if (!file && !url && (!recoveryDraft || !recoveryFile)) {
       setSrc("");
       return;
     }
     let disposed = false;
     let ownedUrl: string | null = null;
     const controller = new AbortController();
+    let fallbackFile = file;
     setSrc("");
-    void withThumbnailSlot(() =>
-      createThumbnailUrl({ file, url, signal: controller.signal })
-    )
+    void withThumbnailSlot(async () => {
+      if (controller.signal.aborted) {
+        throw new DOMException("Cancelled", "AbortError");
+      }
+      if (!fallbackFile && recoveryDraft && recoveryFile) {
+        fallbackFile = await loadSmartUploadFile(recoveryDraft, recoveryFile);
+      }
+      if (controller.signal.aborted) {
+        throw new DOMException("Cancelled", "AbortError");
+      }
+      return createThumbnailUrl({
+        file: fallbackFile,
+        url,
+        signal: controller.signal,
+      });
+    })
       .then((next) => {
         if (disposed) {
           if (next) URL.revokeObjectURL(next);
@@ -170,8 +403,8 @@ function ImagePreview({
           return;
         }
         if (url) setSrc(url);
-        else if (file) {
-          ownedUrl = URL.createObjectURL(file);
+        else if (fallbackFile) {
+          ownedUrl = URL.createObjectURL(fallbackFile);
           setSrc(ownedUrl);
         }
       })
@@ -180,8 +413,8 @@ function ImagePreview({
           return;
         }
         if (url) setSrc(url);
-        else if (file) {
-          ownedUrl = URL.createObjectURL(file);
+        else if (fallbackFile) {
+          ownedUrl = URL.createObjectURL(fallbackFile);
           setSrc(ownedUrl);
         }
       });
@@ -190,7 +423,7 @@ function ImagePreview({
       controller.abort();
       if (ownedUrl) URL.revokeObjectURL(ownedUrl);
     };
-  }, [file, url]);
+  }, [file, recoveryDraft, recoveryFile, url]);
   return src ? (
     // A local object URL has no useful Next Image optimization path.
 
@@ -228,10 +461,24 @@ function attachGroupingUrls(
   const serverFileById = new Map(
     serverFiles.map((file) => [file.fileId, file])
   );
-  return files.map(({ file: _file, ...descriptor }) => ({
-    ...descriptor,
-    url: descriptor.url || serverFileById.get(descriptor.fileId)?.url,
-  }));
+  const canonicalOrderById = new Map(
+    serverFiles.map((file, index) => [
+      file.fileId,
+      Number.isFinite(file.originalOrder) ? file.originalOrder : index,
+    ])
+  );
+  return files
+    .map(({ file: _file, ...descriptor }) => ({
+      ...descriptor,
+      originalOrder:
+        canonicalOrderById.get(descriptor.fileId) ?? descriptor.originalOrder,
+      url: descriptor.url || serverFileById.get(descriptor.fileId)?.url,
+    }))
+    .sort(
+      (left, right) =>
+        left.originalOrder - right.originalOrder ||
+        left.fileId.localeCompare(right.fileId)
+    );
 }
 
 export default function SmartUploadWorkspace({
@@ -254,10 +501,30 @@ export default function SmartUploadWorkspace({
   const [busyFileId, setBusyFileId] = useState<string | null>(null);
   const [sequencePage, setSequencePage] = useState(0);
   const [groupPage, setGroupPage] = useState(0);
+  const [selectedLotIndex, setSelectedLotIndex] = useState(0);
+  const [selectedLotPhotoPage, setSelectedLotPhotoPage] = useState(0);
+  const [orderingReview, setOrderingReview] = useState<OrderingReview | null>(
+    null
+  );
+  const [unplacedDividerIds, setUnplacedDividerIds] = useState<string[]>([]);
+  const [selectedOrderAcknowledged, setSelectedOrderAcknowledged] =
+    useState(false);
+  const [dividerBeingPlaced, setDividerBeingPlaced] = useState<string | null>(
+    null
+  );
+  const [groupingNotice, setGroupingNotice] = useState<string | null>(null);
+  const [previousGrouping, setPreviousGrouping] = useState<{
+    groups: SmartUploadGrouping["groups"];
+    dividerFileIds: string[];
+    unplacedDividerIds: string[];
+    orderingAmbiguous: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const uploadLockRef = useRef(false);
+  const completionLockRef = useRef(false);
   const detailsRef = useRef(details);
   detailsRef.current = details;
 
@@ -270,6 +537,12 @@ export default function SmartUploadWorkspace({
     setError(null);
     setDraft(null);
     setGrouping(null);
+    setOrderingReview(null);
+    setUnplacedDividerIds([]);
+    setSelectedOrderAcknowledged(false);
+    setDividerBeingPlaced(null);
+    setGroupingNotice(null);
+    setPreviousGrouping(null);
     void loadSmartUploadDraft(userId, kind, scopeId)
       .then(async (saved) => {
         let restored = saved;
@@ -310,7 +583,14 @@ export default function SmartUploadWorkspace({
               size: file.size,
               lastModified: 0,
               originalOrder: file.originalOrder,
-              uploaded: true,
+              // A server-only recovery of an interrupted upload has no local
+              // source Blobs and the grouping payload does not identify which
+              // individual objects were confirmed. Do not falsely mark every
+              // file uploaded; the retry will explain that it must continue in
+              // the original browser instead of trying to confirm missing R2
+              // objects. Classification/review states have already verified all
+              // source files server-side.
+              uploaded: stage !== "uploading",
               url: file.url,
             })),
           });
@@ -329,8 +609,38 @@ export default function SmartUploadWorkspace({
               : restored.stage,
         };
         setDraft(resumed);
+        setSelectedOrderAcknowledged(
+          resumed.details.smart_upload_order_acknowledged === true ||
+            resumed.stage !== "selected"
+        );
+        const restoredDiagnostic = resumed.details
+          ?.smart_upload_order_diagnostic;
+        const restoredStrategy = resumed.details?.smart_upload_order_strategy;
+        if (
+          typeof restoredDiagnostic === "string" &&
+          typeof restoredStrategy === "string"
+        ) {
+          setOrderingReview({
+            strategy: restoredStrategy as SmartUploadOrderingStrategy,
+            diagnostic: restoredDiagnostic as SmartUploadOrderingDiagnostic,
+            changed: resumed.details?.smart_upload_order_changed === true,
+            ambiguous: resumed.details?.smart_upload_order_ambiguous === true,
+            message:
+              String(resumed.details?.smart_upload_order_message || "") ||
+              "Review the image sequence before creating the report.",
+          });
+        }
+        setUnplacedDividerIds(
+          storedStringArray(
+            resumed.details.smart_upload_unplaced_divider_ids
+          ).filter((fileId) =>
+            resumed.files.some((file) => file.fileId === fileId)
+          )
+        );
         setSequencePage(0);
         setGroupPage(0);
+        setSelectedLotIndex(0);
+        setSelectedLotPhotoPage(0);
         if (resumed.sessionId) {
           try {
             const result =
@@ -343,15 +653,40 @@ export default function SmartUploadWorkspace({
                 result.groupingStatus === "confirmed"
               ) {
                 const reviewFiles = attachGroupingUrls(resumed.files, result);
+                const reviewDraft = {
+                  ...resumed,
+                  stage: "review" as const,
+                  files: reviewFiles,
+                };
+                const reviewState = groupingReviewState(reviewDraft, result);
+                setUnplacedDividerIds(reviewState.unplacedDividerIds);
+                setOrderingReview((current) =>
+                  reviewState.ambiguous
+                    ? current
+                      ? { ...current, ambiguous: true }
+                      : serverOrderReview()
+                    : current
+                      ? { ...current, ambiguous: false }
+                      : current
+                );
                 setDraft((current) =>
                   current
-                    ? { ...current, stage: "review", files: reviewFiles }
+                    ? {
+                        ...current,
+                        stage: "review",
+                        files: reviewFiles,
+                        details: reviewState.details,
+                      }
                     : current
                 );
                 await updateSmartUploadDraft(
                   userId,
                   kind,
-                  { stage: "review", files: reviewFiles },
+                  {
+                    stage: "review",
+                    files: reviewFiles,
+                    details: reviewState.details,
+                  },
                   scopeId
                 );
               } else if (result.groupingStatus === "classifying") {
@@ -371,16 +706,41 @@ export default function SmartUploadWorkspace({
                 });
                 if (!cancelled) {
                   const reviewFiles = attachGroupingUrls(resumed.files, detected);
+                  const reviewDraft = {
+                    ...resumed,
+                    stage: "review" as const,
+                    files: reviewFiles,
+                  };
+                  const reviewState = groupingReviewState(reviewDraft, detected);
                   setGrouping(detected);
+                  setUnplacedDividerIds(reviewState.unplacedDividerIds);
+                  setOrderingReview((current) =>
+                    reviewState.ambiguous
+                      ? current
+                        ? { ...current, ambiguous: true }
+                        : serverOrderReview()
+                      : current
+                        ? { ...current, ambiguous: false }
+                        : current
+                  );
                   setDraft((current) =>
                     current
-                      ? { ...current, stage: "review", files: reviewFiles }
+                      ? {
+                          ...current,
+                          stage: "review",
+                          files: reviewFiles,
+                          details: reviewState.details,
+                        }
                       : current
                   );
                   await updateSmartUploadDraft(
                     userId,
                     kind,
-                    { stage: "review", files: reviewFiles },
+                    {
+                      stage: "review",
+                      files: reviewFiles,
+                      details: reviewState.details,
+                    },
                     scopeId
                   );
                 }
@@ -441,17 +801,36 @@ export default function SmartUploadWorkspace({
   const active =
     draft?.stage === "uploading" ||
     draft?.stage === "classifying" ||
-    draft?.stage === "submitting";
+    draft?.stage === "submitting" ||
+    Boolean(busyFileId);
+  const hasUnrecoverableLiveFiles = Boolean(
+    draft?.files.some((file) => !file.uploaded && Boolean(file.file))
+  );
+  const localRecoveryUnavailable =
+    draft?.details.smart_upload_local_recovery_available === false &&
+    (draft.stage === "selected" ||
+      draft.stage === "uploading" ||
+      (draft.stage === "failed" && hasUnrecoverableLiveFiles));
+  const selectionMustStayOpen =
+    draft?.details.smart_upload_local_recovery_available === false &&
+    (draft.stage === "selected" ||
+      (draft.stage === "failed" && hasUnrecoverableLiveFiles));
+  const selectionReviewRequired =
+    draft?.stage === "selected" &&
+    orderingReview?.ambiguous === true &&
+    !selectedOrderAcknowledged;
 
   const requestClose = useCallback(() => {
-    if (active) {
+    if (active || selectionMustStayOpen) {
       setError(
-        "Smart Upload is still working. Wait for this step to finish before closing."
+        selectionMustStayOpen
+          ? "This browser could not store a recovery copy. Upload or discard these selected files before closing Smart Upload."
+          : "Smart Upload is still working. Wait for this step to finish before closing."
       );
       return;
     }
     onClose();
-  }, [active, onClose]);
+  }, [active, onClose, selectionMustStayOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -466,6 +845,18 @@ export default function SmartUploadWorkspace({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, requestClose]);
+
+  useEffect(() => {
+    if (!open || (!active && !selectionMustStayOpen)) return;
+    const preventAccidentalNavigation = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventAccidentalNavigation);
+    return () => {
+      window.removeEventListener("beforeunload", preventAccidentalNavigation);
+    };
+  }, [active, open, selectionMustStayOpen]);
 
   const fileById = useMemo(
     () => new Map((draft?.files || []).map((item) => [item.fileId, item])),
@@ -498,12 +889,185 @@ export default function SmartUploadWorkspace({
       ),
     [groupPage, grouping?.groups]
   );
+  const selectedGroup = grouping?.groups[selectedLotIndex];
+  const selectedGroupFiles = useMemo(
+    () =>
+      (selectedGroup?.fileIds || [])
+        .map((fileId) => fileById.get(fileId))
+        .filter((file): file is NonNullable<typeof file> => Boolean(file)),
+    [fileById, selectedGroup?.fileIds]
+  );
+  const visibleSelectedGroupFiles = useMemo(
+    () =>
+      selectedGroupFiles.slice(
+        selectedLotPhotoPage * LOT_PHOTO_PAGE_SIZE,
+        (selectedLotPhotoPage + 1) * LOT_PHOTO_PAGE_SIZE
+      ),
+    [selectedGroupFiles, selectedLotPhotoPage]
+  );
+  const hasIneffectiveDivider = Boolean(
+    grouping?.warnings.some((warning) =>
+      /(first image|last image|consecutive|non-empty lots|cannot separate)/i.test(
+        warning
+      )
+    )
+  );
+  const unreadableImages = useMemo(
+    () =>
+      (grouping?.metrics || []).filter(
+        (metric) => Boolean(metric.error) && !dividerSet.has(metric.fileId)
+      ),
+    [dividerSet, grouping?.metrics]
+  );
+
+  useEffect(() => {
+    const groupCount = grouping?.groups.length || 0;
+    setSelectedLotIndex((current) =>
+      groupCount ? Math.min(current, groupCount - 1) : 0
+    );
+    setGroupPage((current) =>
+      groupCount
+        ? Math.min(current, Math.ceil(groupCount / GROUP_PAGE_SIZE) - 1)
+        : 0
+    );
+  }, [grouping?.groups.length]);
+
+  const confirmSelectedOrder = useCallback(async () => {
+    if (!draft || draft.stage !== "selected" || busyFileId) return;
+    const nextDetails = withPersistedOrderReview(
+      { ...draft.details, smart_upload_order_acknowledged: true },
+      unplacedDividerIds,
+      unplacedDividerIds.length > 0
+    );
+    setBusyFileId("order-confirmation");
+    setError(null);
+    try {
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        { details: nextDetails },
+        scopeId
+      );
+      setSelectedOrderAcknowledged(true);
+      setDraft((current) =>
+        current ? { ...current, details: nextDetails } : current
+      );
+      setOrderingReview((current) =>
+        current
+          ? { ...current, ambiguous: unplacedDividerIds.length > 0 }
+          : current
+      );
+      setGroupingNotice(
+        orderingReview?.strategy === "manual"
+          ? "Manual image order confirmed for divider detection."
+          : "Suggested image order accepted for divider detection."
+      );
+    } catch (orderError) {
+      setError(getSmartUploadError(orderError));
+    } finally {
+      setBusyFileId(null);
+    }
+  }, [
+    busyFileId,
+    draft,
+    kind,
+    orderingReview?.strategy,
+    scopeId,
+    unplacedDividerIds,
+    userId,
+  ]);
+
+  useEffect(() => {
+    setSelectedLotPhotoPage(0);
+  }, [selectedLotIndex]);
+
+  useEffect(() => {
+    const lastPage = Math.max(
+      0,
+      Math.ceil(selectedGroupFiles.length / LOT_PHOTO_PAGE_SIZE) - 1
+    );
+    setSelectedLotPhotoPage((current) => Math.min(current, lastPage));
+  }, [selectedGroupFiles.length]);
+
+  const moveSelectedFile = useCallback(
+    async (fileId: string, direction: -1 | 1) => {
+      if (!draft || draft.stage !== "selected" || busyFileId) return;
+      const sourceIndex = draft.files.findIndex((file) => file.fileId === fileId);
+      const targetIndex = sourceIndex + direction;
+      if (
+        sourceIndex < 0 ||
+        targetIndex < 0 ||
+        targetIndex >= draft.files.length
+      ) {
+        return;
+      }
+
+      const reordered = [...draft.files];
+      const [moved] = reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, moved);
+      const normalized = reordered.map((file, originalOrder) => ({
+        ...file,
+        originalOrder,
+      }));
+      const nextMessage =
+        "You changed the sequence manually. Check the numbered thumbnails, then confirm this order before upload.";
+      const nextDetails = {
+        ...draft.details,
+        smart_upload_order_strategy: "manual",
+        smart_upload_order_diagnostic: "manual-order-needs-confirmation",
+        smart_upload_order_changed: true,
+        smart_upload_order_ambiguous: true,
+        smart_upload_order_acknowledged: false,
+        smart_upload_order_message: nextMessage,
+      };
+      const storedFiles = normalized.map(({ file: _file, ...descriptor }) =>
+        descriptor
+      );
+
+      setBusyFileId(fileId);
+      setError(null);
+      setGroupingNotice(null);
+      try {
+        await updateSmartUploadDraft(
+          userId,
+          kind,
+          { files: storedFiles, details: nextDetails },
+          scopeId
+        );
+        setDraft((current) =>
+          current?.stage === "selected"
+            ? { ...current, files: normalized, details: nextDetails }
+            : current
+        );
+        setOrderingReview({
+          strategy: "manual",
+          diagnostic: "manual-order-needs-confirmation",
+          changed: true,
+          ambiguous: true,
+          message: nextMessage,
+        });
+        setSelectedOrderAcknowledged(false);
+        setSequencePage(Math.floor(targetIndex / SEQUENCE_PAGE_SIZE));
+      } catch (orderError) {
+        setError(getSmartUploadError(orderError));
+      } finally {
+        setBusyFileId(null);
+      }
+    },
+    [busyFileId, draft, kind, scopeId, userId]
+  );
+
   const selectFiles = useCallback(
     async (selected: File[]) => {
       if (!selected.length || !userId) return;
+      if (selected.length > SMART_UPLOAD_MAX_FILES) {
+        setError(
+          `Select no more than ${SMART_UPLOAD_MAX_FILES} images in one Smart Upload.`
+        );
+        return;
+      }
       const invalid = selected.find(
-        (file) =>
-          !(file.type.startsWith("image/") || ACCEPTED_EXTENSIONS.test(file.name))
+        (file) => !isSupportedSmartUploadImage(file)
       );
       if (invalid) {
         setError(
@@ -511,23 +1075,65 @@ export default function SmartUploadWorkspace({
         );
         return;
       }
+      const empty = selected.find((file) => file.size <= 0);
+      if (empty) {
+        setError(`${empty.name} is empty. Re-select the original image.`);
+        return;
+      }
+      const oversized = selected.find(
+        (file) => file.size > SMART_UPLOAD_MAX_FILE_BYTES
+      );
+      if (oversized) {
+        setError(`${oversized.name} is larger than the 50 MB per-image limit.`);
+        return;
+      }
+      const totalSize = selected.reduce((sum, file) => sum + file.size, 0);
+      if (totalSize > SMART_UPLOAD_MAX_TOTAL_BYTES) {
+        setError("This selection is larger than the 2 GB Smart Upload limit.");
+        return;
+      }
       try {
         setError(null);
         setGrouping(null);
+        setSelectedOrderAcknowledged(false);
         setSequencePage(0);
         setGroupPage(0);
+        const resolvedOrder = resolveSmartUploadFileOrder(selected);
+        const unresolvedDividerIds = resolvedOrder.ambiguous
+          ? resolvedOrder.files.flatMap((file, index) =>
+              isLikelySmartUploadDividerName(file.name) ? [`images-${index}`] : []
+            )
+          : [];
+        const orderDetails = {
+          ...detailsRef.current,
+          smart_upload_order_strategy: resolvedOrder.strategy,
+          smart_upload_order_diagnostic: resolvedOrder.diagnostic,
+          smart_upload_order_changed: resolvedOrder.changed,
+          smart_upload_order_ambiguous: resolvedOrder.ambiguous,
+          smart_upload_order_message: resolvedOrder.message,
+          smart_upload_unplaced_divider_ids: unresolvedDividerIds,
+        };
         const next = await createSmartUploadDraft({
           userId,
           kind,
           scopeId,
           clientSubmissionId: clientSubmissionId || newSubmissionId(kind),
-          details: detailsRef.current,
-          files: selected,
+          details: orderDetails,
+          files: resolvedOrder.files,
         });
+        setOrderingReview({
+          strategy: resolvedOrder.strategy,
+          diagnostic: resolvedOrder.diagnostic,
+          changed: resolvedOrder.changed,
+          ambiguous: resolvedOrder.ambiguous,
+          message: resolvedOrder.message,
+        });
+        setUnplacedDividerIds(unresolvedDividerIds);
+        setSelectedOrderAcknowledged(!resolvedOrder.ambiguous);
         setDraft(next);
         setProgress({
           uploadedBytes: 0,
-          totalBytes: selected.reduce((sum, file) => sum + file.size, 0),
+          totalBytes: totalSize,
           uploadedFiles: 0,
           totalFiles: selected.length,
         });
@@ -539,17 +1145,59 @@ export default function SmartUploadWorkspace({
   );
 
   const runUploadAndDetection = useCallback(async () => {
-    if (!draft) return;
+    if (
+      !draft ||
+      (draft.stage !== "selected" && draft.stage !== "failed") ||
+      uploadLockRef.current
+    ) {
+      return;
+    }
+    if (selectionReviewRequired || busyFileId) {
+      setError("Review and confirm the numbered image sequence before uploading.");
+      return;
+    }
+    uploadLockRef.current = true;
     try {
       setError(null);
       const session = await createOrResumeSmartUploadSession(draft);
       if (session.alreadyQueued && session.reportId) {
-        await deleteSmartUploadDraft(userId, kind, scopeId);
-        await onSubmitted({
-          message: "This Smart Upload was already accepted.",
-          reportId: session.reportId,
-          jobId: session.jobId,
-        });
+        // Server acceptance is authoritative. A browser storage cleanup error
+        // must not strand this workspace or hide a report that is already in
+        // the processing queue.
+        await deleteSmartUploadDraft(userId, kind, scopeId).catch(
+          () => undefined
+        );
+        setDraft(null);
+        setGrouping(null);
+        try {
+          await onSubmitted({
+            message: "This Smart Upload was already accepted.",
+            reportId: session.reportId,
+            jobId: session.jobId,
+          });
+        } catch {
+          toast.warning(
+            "The report was already accepted, but the dashboard did not refresh. Reload the dashboard to see it."
+          );
+          onClose();
+        }
+        return;
+      }
+      if (session.readyToComplete) {
+        const completed = await completeSmartUpload(kind, session.sessionId);
+        await deleteSmartUploadDraft(userId, kind, scopeId).catch(
+          () => undefined
+        );
+        setDraft(null);
+        setGrouping(null);
+        try {
+          await onSubmitted(completed);
+        } catch {
+          toast.warning(
+            "The report was accepted, but the dashboard did not refresh. Reload the dashboard to see it."
+          );
+          onClose();
+        }
         return;
       }
 
@@ -565,7 +1213,7 @@ export default function SmartUploadWorkspace({
         {
           sessionId: session.sessionId,
           stage: "uploading",
-          details: detailsRef.current,
+          details: { ...draft.details, ...detailsRef.current },
         },
         scopeId
       );
@@ -625,16 +1273,41 @@ export default function SmartUploadWorkspace({
         onProgress: setGrouping,
       });
       const reviewFiles = attachGroupingUrls(confirmedFiles, detected);
+      const reviewDraft = {
+        ...sessionDraft,
+        stage: "review" as const,
+        files: reviewFiles,
+      };
+      const reviewState = groupingReviewState(reviewDraft, detected);
       setGrouping(detected);
+      setUnplacedDividerIds(reviewState.unplacedDividerIds);
+      setOrderingReview((current) =>
+        reviewState.ambiguous
+          ? current
+            ? { ...current, ambiguous: true }
+            : serverOrderReview()
+          : current
+            ? { ...current, ambiguous: false }
+            : current
+      );
       setDraft((current) =>
         current
-          ? { ...current, stage: "review", files: reviewFiles }
+          ? {
+              ...current,
+              stage: "review",
+              files: reviewFiles,
+              details: reviewState.details,
+            }
           : current
       );
       await updateSmartUploadDraft(
         userId,
         kind,
-        { stage: "review", files: reviewFiles },
+        {
+          stage: "review",
+          files: reviewFiles,
+          details: reviewState.details,
+        },
         scopeId
       );
     } catch (uploadError) {
@@ -650,35 +1323,488 @@ export default function SmartUploadWorkspace({
         { stage: "failed" },
         scopeId
       ).catch(() => undefined);
+    } finally {
+      uploadLockRef.current = false;
     }
-  }, [draft, kind, onSubmitted, scopeId, userId]);
+  }, [
+    busyFileId,
+    draft,
+    kind,
+    onClose,
+    onSubmitted,
+    scopeId,
+    selectionReviewRequired,
+    userId,
+  ]);
+
+  const refreshLatestGrouping = useCallback(
+    async (notice: string) => {
+      if (!draft?.sessionId) return false;
+      const latest = await getSmartUploadGrouping(kind, draft.sessionId);
+      const reviewFiles = attachGroupingUrls(draft.files, latest);
+      const reviewDraft = {
+        ...draft,
+        stage: "review" as const,
+        files: reviewFiles,
+      };
+      const reviewState = groupingReviewState(reviewDraft, latest);
+      setGrouping(latest);
+      setUnplacedDividerIds(reviewState.unplacedDividerIds);
+      setOrderingReview((current) =>
+        reviewState.ambiguous
+          ? current
+            ? { ...current, ambiguous: true }
+            : serverOrderReview()
+          : current
+            ? { ...current, ambiguous: false }
+            : current
+      );
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              stage: "review",
+              files: reviewFiles,
+              details: reviewState.details,
+            }
+          : current
+      );
+      await updateSmartUploadDraft(
+        userId,
+        kind,
+        {
+          stage: "review",
+          files: reviewFiles,
+          details: reviewState.details,
+        },
+        scopeId
+      );
+      setPreviousGrouping(null);
+      setGroupingNotice(notice);
+      return true;
+    },
+    [draft, kind, scopeId, userId]
+  );
+
+  const recoverStaleGrouping = useCallback(
+    async (updateError: unknown) => {
+      if (getSmartUploadErrorCode(updateError) !== "SMART_UPLOAD_GROUPING_STALE") {
+        return false;
+      }
+      try {
+        await refreshLatestGrouping(
+          "Another Smart Upload window changed these lots. The latest saved arrangement is now shown."
+        );
+        setError(null);
+      } catch (refreshError) {
+        setError(
+          `The lot arrangement changed elsewhere, and it could not be refreshed: ${getSmartUploadError(
+            refreshError
+          )}`
+        );
+      }
+      return true;
+    },
+    [refreshLatestGrouping]
+  );
 
   const toggleDivider = useCallback(
     async (fileId: string) => {
       if (!draft?.sessionId || !grouping || busyFileId) return;
       const next = new Set(grouping.dividerFileIds);
-      if (next.has(fileId)) next.delete(fileId);
-      else next.add(fileId);
+      const adding = !next.has(fileId);
+      if (adding) next.add(fileId);
+      else next.delete(fileId);
+      const edited = editGroupsForDivider({
+        draft,
+        grouping,
+        fileId,
+        adding,
+      });
+      if (!edited) {
+        setError(
+          adding
+            ? "A divider needs report photos on both sides. Select an image between two groups instead."
+            : "That divider could not be restored without losing the reviewed lot arrangement."
+        );
+        return;
+      }
+      const remaining = unplacedDividerIds.filter(
+        (candidate) => candidate !== fileId
+      );
+      const ambiguous =
+        remaining.length > 0 ||
+        (orderingReview?.ambiguous === true &&
+          !unplacedDividerIds.includes(fileId));
       setBusyFileId(fileId);
       setError(null);
+      setPreviousGrouping({
+        groups: grouping.groups.map((group) => ({
+          ...group,
+          fileIds: [...group.fileIds],
+        })),
+        dividerFileIds: [...grouping.dividerFileIds],
+        unplacedDividerIds: [...unplacedDividerIds],
+        orderingAmbiguous: orderingReview?.ambiguous === true,
+      });
       try {
         const updated = await updateSmartUploadDividers({
           kind,
           sessionId: draft.sessionId,
           dividerFileIds: [...next],
+          revision: grouping.revision,
+          groups: edited.groups,
+          orderReviewRequired: ambiguous,
+          unresolvedDividerIds: remaining,
         });
         setGrouping(updated);
+        const reviewFiles = attachGroupingUrls(draft.files, updated);
+        const provisionalDetails = withPersistedOrderReview(
+          draft.details,
+          remaining,
+          ambiguous
+        );
+        const reviewState = groupingReviewState(
+          { ...draft, files: reviewFiles, details: provisionalDetails },
+          updated
+        );
+        setDraft((current) =>
+          current
+            ? { ...current, files: reviewFiles, details: reviewState.details }
+            : current
+        );
+        setUnplacedDividerIds(reviewState.unplacedDividerIds);
+        setDividerBeingPlaced((current) =>
+          current && reviewState.unplacedDividerIds.includes(current)
+            ? current
+            : null
+        );
+        setOrderingReview((current) =>
+          reviewState.ambiguous
+            ? current
+              ? { ...current, ambiguous: true }
+              : serverOrderReview()
+            : current
+              ? { ...current, ambiguous: false }
+              : current
+        );
+        setSelectedLotIndex(edited.focusLotIndex);
+        setGroupPage(Math.floor(edited.focusLotIndex / GROUP_PAGE_SIZE));
+        setGroupingNotice(
+          adding
+            ? "Lot boundary updated."
+            : "Divider removed and the neighbouring lots were joined."
+        );
+        // The server PATCH is the durable source of truth. A browser quota or
+        // IndexedDB failure must not roll back, refetch, or visually resurrect
+        // a boundary that the server has already committed.
+        await updateSmartUploadDraft(
+          userId,
+          kind,
+          { files: reviewFiles, details: reviewState.details },
+          scopeId
+        ).catch(() => {
+          toast.warning(
+            "The lot change was saved on the server, but this browser could not update its recovery copy. Keep this window open or resume from My Reports."
+          );
+        });
       } catch (updateError) {
-        setError(getSmartUploadError(updateError));
+        if (!(await recoverStaleGrouping(updateError))) {
+          setPreviousGrouping(null);
+          setError(getSmartUploadError(updateError));
+        }
       } finally {
         setBusyFileId(null);
       }
     },
-    [busyFileId, draft?.sessionId, grouping, kind]
+    [
+      busyFileId,
+      draft,
+      grouping,
+      kind,
+      orderingReview?.ambiguous,
+      recoverStaleGrouping,
+      scopeId,
+      unplacedDividerIds,
+      userId,
+    ]
   );
 
+  const saveAuthoritativeGroups = useCallback(
+    async (
+      nextGroups: string[][],
+      notice: string,
+      focusLotIndex: number,
+      options: {
+        resolvedDividerId?: string;
+        dividerFileIds?: string[];
+        confirmOrder?: boolean;
+        recordUndo?: boolean;
+        restoreUnplacedDividerIds?: string[];
+        restoreOrderingAmbiguous?: boolean;
+      } = {}
+    ) => {
+      if (!draft?.sessionId || !grouping || busyFileId) return;
+      setBusyFileId("grouping");
+      setError(null);
+      setGroupingNotice(null);
+      if (options.recordUndo !== false) {
+        setPreviousGrouping({
+          groups: grouping.groups.map((group) => ({
+            ...group,
+            fileIds: [...group.fileIds],
+          })),
+          dividerFileIds: [...grouping.dividerFileIds],
+          unplacedDividerIds: [...unplacedDividerIds],
+          orderingAmbiguous: orderingReview?.ambiguous === true,
+        });
+      }
+      const nextUnplacedDividerIds =
+        options.restoreUnplacedDividerIds !== undefined
+          ? [...options.restoreUnplacedDividerIds]
+          : options.resolvedDividerId
+            ? unplacedDividerIds.filter(
+                (fileId) => fileId !== options.resolvedDividerId
+              )
+            : [...unplacedDividerIds];
+      const nextOrderingAmbiguous =
+        options.restoreUnplacedDividerIds !== undefined
+          ? options.restoreOrderingAmbiguous === true
+          : options.confirmOrder
+            ? false
+            : options.resolvedDividerId
+              ? nextUnplacedDividerIds.length > 0
+              : orderingReview?.ambiguous === true ||
+                nextUnplacedDividerIds.length > 0;
+      const provisionalDetails = withPersistedOrderReview(
+        draft.details,
+        nextUnplacedDividerIds,
+        nextOrderingAmbiguous
+      );
+      try {
+        const updated = await updateSmartUploadDividers({
+          kind,
+          sessionId: draft.sessionId,
+          dividerFileIds:
+            options.dividerFileIds || grouping.dividerFileIds,
+          revision: grouping.revision,
+          groups: nextGroups,
+          orderReviewRequired: nextOrderingAmbiguous,
+          unresolvedDividerIds: nextUnplacedDividerIds,
+        });
+        setGrouping(updated);
+        const reviewFiles = attachGroupingUrls(draft.files, updated);
+        const reviewState = groupingReviewState(
+          { ...draft, files: reviewFiles, details: provisionalDetails },
+          updated
+        );
+        setDraft((current) =>
+          current
+            ? { ...current, files: reviewFiles, details: reviewState.details }
+            : current
+        );
+        setSelectedLotIndex(focusLotIndex);
+        setGroupPage(Math.floor(focusLotIndex / GROUP_PAGE_SIZE));
+        setUnplacedDividerIds(reviewState.unplacedDividerIds);
+        setDividerBeingPlaced((current) =>
+          current && reviewState.unplacedDividerIds.includes(current)
+            ? current
+            : null
+        );
+        setOrderingReview((current) =>
+          reviewState.ambiguous
+            ? current
+              ? { ...current, ambiguous: true }
+              : serverOrderReview()
+            : current
+              ? { ...current, ambiguous: false }
+              : current
+        );
+        setGroupingNotice(notice);
+        if (options.recordUndo === false) setPreviousGrouping(null);
+        await updateSmartUploadDraft(
+          userId,
+          kind,
+          { files: reviewFiles, details: reviewState.details },
+          scopeId
+        ).catch(() => {
+          toast.warning(
+            "The lot change was saved on the server, but this browser could not update its recovery copy. Keep this window open or resume from My Reports."
+          );
+        });
+      } catch (groupError) {
+        if (!(await recoverStaleGrouping(groupError))) {
+          if (options.recordUndo !== false) setPreviousGrouping(null);
+          setError(getSmartUploadError(groupError));
+        }
+      } finally {
+        setBusyFileId(null);
+      }
+    },
+    [
+      busyFileId,
+      draft,
+      grouping,
+      kind,
+      orderingReview?.ambiguous,
+      recoverStaleGrouping,
+      scopeId,
+      unplacedDividerIds,
+      userId,
+    ]
+  );
+
+  const excludeUnreadableImage = useCallback(
+    (fileId: string) => {
+      if (!grouping) return;
+      const sourceLotIndex = grouping.groups.findIndex((group) =>
+        group.fileIds.includes(fileId)
+      );
+      if (sourceLotIndex < 0) return;
+      const nextGroups = grouping.groups
+        .map((group) => group.fileIds.filter((candidate) => candidate !== fileId))
+        .filter((group) => group.length > 0);
+      if (!nextGroups.length) {
+        setError("A report needs at least one readable image.");
+        return;
+      }
+      const nextDividerIds = Array.from(
+        new Set([...grouping.dividerFileIds, fileId])
+      );
+      void saveAuthoritativeGroups(
+        nextGroups,
+        `${fileById.get(fileId)?.name || "Unreadable image"} was excluded from the report.`,
+        Math.min(sourceLotIndex, nextGroups.length - 1),
+        {
+          dividerFileIds: nextDividerIds,
+          resolvedDividerId: unplacedDividerIds.includes(fileId)
+            ? fileId
+            : undefined,
+        }
+      );
+    },
+    [fileById, grouping, saveAuthoritativeGroups, unplacedDividerIds]
+  );
+
+  const splitLotBefore = useCallback(
+    (
+      lotIndex: number,
+      fileIndex: number,
+      resolvedDividerId?: string
+    ) => {
+      if (!grouping || fileIndex <= 0) return;
+      const nextGroups = grouping.groups.map((group) => [...group.fileIds]);
+      const source = nextGroups[lotIndex];
+      if (!source || fileIndex >= source.length) return;
+      const nextLot = source.splice(fileIndex);
+      nextGroups.splice(lotIndex + 1, 0, nextLot);
+      void saveAuthoritativeGroups(
+        nextGroups,
+        `Created Lot ${lotIndex + 2} with ${nextLot.length} photos.`,
+        lotIndex + 1,
+        resolvedDividerId ? { resolvedDividerId } : {}
+      );
+    },
+    [grouping, saveAuthoritativeGroups]
+  );
+
+  const movePhotoToNeighbour = useCallback(
+    (lotIndex: number, fileId: string, direction: -1 | 1) => {
+      if (!grouping) return;
+      const targetIndex = lotIndex + direction;
+      if (targetIndex < 0 || targetIndex >= grouping.groups.length) return;
+      const nextGroups = grouping.groups.map((group) => [...group.fileIds]);
+      const sourceIndex = nextGroups[lotIndex].indexOf(fileId);
+      if (sourceIndex < 0 || nextGroups[lotIndex].length <= 1) return;
+      nextGroups[lotIndex].splice(sourceIndex, 1);
+      if (direction < 0) nextGroups[targetIndex].push(fileId);
+      else nextGroups[targetIndex].unshift(fileId);
+      void saveAuthoritativeGroups(
+        nextGroups,
+        `Moved the photo to Lot ${targetIndex + 1}.`,
+        targetIndex
+      );
+    },
+    [grouping, saveAuthoritativeGroups]
+  );
+
+  const placeUnresolvedDividerAfter = useCallback(
+    (fileId: string) => {
+      if (!draft || !grouping) return;
+      const dividerIndex = draft.files.findIndex((file) => file.fileId === fileId);
+      if (dividerIndex < 0) return;
+      const candidateId = draft.files
+        .slice(dividerIndex + 1)
+        .find((file) => !grouping.dividerFileIds.includes(file.fileId))?.fileId;
+      if (!candidateId) {
+        setGroupingNotice(
+          "This divider is at the end of the recovered sequence. In the mixed lot, choose the first photo that belongs to the next lot and select Start new lot here."
+        );
+        return;
+      }
+      const lotIndex = grouping.groups.findIndex((group) =>
+        group.fileIds.includes(candidateId)
+      );
+      const fileIndex = grouping.groups[lotIndex]?.fileIds.indexOf(candidateId);
+      if (lotIndex > 0 && fileIndex === 0) {
+        void saveAuthoritativeGroups(
+          grouping.groups.map((group) => [...group.fileIds]),
+          `Confirmed the existing boundary before Lot ${lotIndex + 1}.`,
+          lotIndex,
+          { resolvedDividerId: fileId }
+        );
+        return;
+      }
+      if (lotIndex < 0 || fileIndex <= 0) {
+        setGroupingNotice(
+          "The folder placed this divider at an unusable edge. In the mixed lot, choose the first photo that belongs to the next lot and select Start new lot here."
+        );
+        return;
+      }
+      splitLotBefore(lotIndex, fileIndex, fileId);
+    },
+    [draft, grouping, saveAuthoritativeGroups, splitLotBefore]
+  );
+
+  const undoGroupingChange = useCallback(() => {
+    if (!previousGrouping || !grouping) return;
+    const snapshot = previousGrouping;
+    void saveAuthoritativeGroups(
+      snapshot.groups.map((group) => [...group.fileIds]),
+      "Previous lot arrangement restored.",
+      0,
+      {
+        recordUndo: false,
+        dividerFileIds: snapshot.dividerFileIds,
+        restoreUnplacedDividerIds: snapshot.unplacedDividerIds,
+        restoreOrderingAmbiguous: snapshot.orderingAmbiguous,
+      }
+    );
+  }, [grouping, previousGrouping, saveAuthoritativeGroups]);
+
   const createPreview = useCallback(async () => {
-    if (!draft?.sessionId || !grouping) return;
+    if (!draft?.sessionId || !grouping || completionLockRef.current) return;
+    if (
+      !grouping.groups.length ||
+      grouping.groups.some((group) => group.overLimit || !group.fileIds.length) ||
+      grouping.metrics.some(
+        (metric) => Boolean(metric.error) && !dividerSet.has(metric.fileId)
+      ) ||
+      grouping.warnings.some((warning) =>
+        /(first image|last image|consecutive|non-empty lots|cannot separate)/i.test(
+          warning
+        )
+      ) ||
+      grouping.orderReviewRequired ||
+      grouping.unresolvedDividerIds.length > 0 ||
+      orderingReview?.ambiguous === true ||
+      unplacedDividerIds.length > 0
+    ) {
+      setError("Resolve every image and lot-order warning before creating the preview.");
+      return;
+    }
+    completionLockRef.current = true;
+    let result: Awaited<ReturnType<typeof completeSmartUpload>>;
     try {
       setError(null);
       setDraft((current) =>
@@ -690,30 +1816,70 @@ export default function SmartUploadWorkspace({
         { stage: "submitting" },
         scopeId
       );
-      await updateSmartUploadDividers({
-        kind,
-        sessionId: draft.sessionId,
-        dividerFileIds: grouping.dividerFileIds,
-        confirm: true,
-      });
-      const result = await completeSmartUpload(kind, draft.sessionId);
-      await deleteSmartUploadDraft(userId, kind, scopeId);
-      setDraft(null);
-      setGrouping(null);
-      await onSubmitted(result);
+      if (grouping.groupingStatus !== "confirmed") {
+        const confirmed = await updateSmartUploadDividers({
+          kind,
+          sessionId: draft.sessionId,
+          dividerFileIds: grouping.dividerFileIds,
+          revision: grouping.revision,
+          groups: grouping.groups.map((group) => group.fileIds),
+          orderReviewRequired: false,
+          unresolvedDividerIds: [],
+          confirm: true,
+        });
+        setGrouping(confirmed);
+      }
+      result = await completeSmartUpload(kind, draft.sessionId);
     } catch (submitError) {
-      setError(getSmartUploadError(submitError));
-      setDraft((current) =>
-        current ? { ...current, stage: "review" } : current
-      );
-      await updateSmartUploadDraft(
-        userId,
-        kind,
-        { stage: "review" },
-        scopeId
-      ).catch(() => undefined);
+      const message = getSmartUploadError(submitError);
+      try {
+        await refreshLatestGrouping(
+          "The saved lot arrangement was recovered. Select Create preview again to retry safely."
+        );
+      } catch {
+        setDraft((current) =>
+          current ? { ...current, stage: "review" } : current
+        );
+        await updateSmartUploadDraft(
+          userId,
+          kind,
+          { stage: "review" },
+          scopeId
+        ).catch(() => undefined);
+      }
+      setError(message);
+      completionLockRef.current = false;
+      return;
     }
-  }, [draft?.sessionId, grouping, kind, onSubmitted, scopeId, userId]);
+
+    // The report is already accepted at this point. IndexedDB cleanup is
+    // best-effort so a local quota/storage failure cannot suppress the
+    // successful handoff to the dashboard.
+    await deleteSmartUploadDraft(userId, kind, scopeId).catch(() => undefined);
+    setDraft(null);
+    setGrouping(null);
+    try {
+      await onSubmitted(result);
+    } catch {
+      toast.warning(
+        "The report was accepted, but the dashboard did not refresh. Reload the dashboard to see it."
+      );
+      onClose();
+    }
+    completionLockRef.current = false;
+  }, [
+    draft?.sessionId,
+    dividerSet,
+    grouping,
+    kind,
+    onClose,
+    onSubmitted,
+    orderingReview?.ambiguous,
+    refreshLatestGrouping,
+    scopeId,
+    unplacedDividerIds.length,
+    userId,
+  ]);
 
   const discard = useCallback(async () => {
     if (!draft || discarding) return;
@@ -724,7 +1890,15 @@ export default function SmartUploadWorkspace({
       if (draft.sessionId) {
         await cancelSmartUpload(kind, draft.sessionId);
       }
-      await deleteSmartUploadDraft(userId, kind, scopeId);
+      await deleteSmartUploadDraft(userId, kind, scopeId).catch((cleanupError) => {
+        if (!draft.sessionId) throw cleanupError;
+        // Once the server session is cancelled it cannot create a report. Do
+        // not trap the user in a dead draft solely because local recovery
+        // storage failed to delete.
+        toast.warning(
+          "The upload was cancelled, but this browser could not remove its local recovery copy."
+        );
+      });
       setDraft(null);
       setGrouping(null);
       setProgress(null);
@@ -759,7 +1933,13 @@ export default function SmartUploadWorkspace({
         : uploadPercent;
   const hasInvalidGroups =
     !grouping?.groups.length ||
-    grouping.groups.some((group) => group.overLimit);
+    grouping.groups.some((group) => group.overLimit) ||
+    hasIneffectiveDivider ||
+    unreadableImages.length > 0 ||
+    grouping.orderReviewRequired ||
+    grouping.unresolvedDividerIds.length > 0 ||
+    orderingReview?.ambiguous === true ||
+    unplacedDividerIds.length > 0;
 
   return createPortal(
     <div
@@ -830,6 +2010,38 @@ export default function SmartUploadWorkspace({
             </div>
           ) : null}
 
+          {localRecoveryUnavailable ? (
+            <div
+              className="rounded-md border border-amber-400 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950"
+              role="status"
+            >
+              <strong>Keep Smart Upload open until every image is uploaded.</strong>{" "}
+              This browser does not have enough local storage for a recovery copy,
+              but the current upload can continue safely from the selected files.
+            </div>
+          ) : null}
+
+          {groupingNotice ? (
+            <div
+              className="flex items-center justify-between gap-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+              role="status"
+              aria-live="polite"
+            >
+              <span>{groupingNotice}</span>
+              {previousGrouping ? (
+                <button
+                  type="button"
+                  onClick={undoGroupingChange}
+                  disabled={Boolean(busyFileId)}
+                  className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-emerald-400 px-3 font-bold disabled:opacity-50"
+                >
+                  <Undo2 className="h-4 w-4" />
+                  Undo
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           {loadingDraft ? (
             <div className="grid min-h-[50vh] place-items-center">
               <div className="text-center">
@@ -866,8 +2078,9 @@ export default function SmartUploadWorkspace({
                 </div>
                 <h3 className="mt-5 text-2xl font-bold">Drop all lot images here</h3>
                 <p className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
-                  Keep one black image between lots. Original selection order is
-                  preserved even while files upload in parallel.
+                  Keep one black image between lots. Smart Upload suggests an order
+                  when a computer returns files in folder order, then asks you to
+                  confirm anything that cannot be proved safely.
                 </p>
                 <input
                   ref={inputRef}
@@ -889,8 +2102,8 @@ export default function SmartUploadWorkspace({
                   Select images
                 </button>
                 <p className="mt-4 text-xs text-[var(--app-text-muted)]">
-                  JPEG, PNG, WebP, HEIC, and HEIF. Up to 200 report photos per
-                  detected lot.
+                  JPEG, PNG, WebP, HEIC, and HEIF. Up to 500 images, 50 MB each,
+                  2 GB total, and 200 report photos per detected lot.
                 </p>
               </div>
             </section>
@@ -933,20 +2146,250 @@ export default function SmartUploadWorkspace({
                         ? `${Math.round(grouping?.progressPercent || 0)}% classified`
                         : draft.stage === "review"
                           ? `${grouping?.groups.length || 0} lots detected - ${grouping?.dividerFileIds.length || 0} dividers excluded`
-                          : "Ready to upload in the order selected"}
+                          : selectionReviewRequired
+                            ? "Check the suggested image order before uploading"
+                            : "Ready to upload in the confirmed order"}
                   </p>
                 </div>
                 {draft.stage === "selected" || draft.stage === "failed" ? (
                   <button
                     type="button"
                     onClick={() => void runUploadAndDetection()}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-[var(--app-on-accent)]"
+                    disabled={selectionReviewRequired || Boolean(busyFileId)}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--app-accent)] px-5 text-sm font-bold text-[var(--app-on-accent)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ScanLine className="h-5 w-5" />
                     {draft.stage === "failed" ? "Resume upload" : "Upload & detect lots"}
                   </button>
                 ) : null}
               </section>
+
+              {orderingReview ? (
+                <section
+                  className={`rounded-md border px-4 py-3 ${
+                    orderingReview.ambiguous
+                      ? "border-amber-400 bg-amber-50 text-amber-950"
+                      : "border-[var(--app-border)] bg-[var(--app-panel)]"
+                  }`}
+                  aria-label="Image order check"
+                >
+                  <div className="flex items-start gap-3">
+                    <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="font-bold">
+                        {orderingReview.ambiguous
+                          ? "Confirm the lot boundary"
+                          : orderingReview.changed
+                            ? "Image order restored"
+                            : "Image order preserved"}
+                      </p>
+                      <p className="mt-1 text-sm leading-6">
+                        {orderingReview.message}
+                      </p>
+                      {selectionReviewRequired ? (
+                        <button
+                          type="button"
+                          onClick={() => void confirmSelectedOrder()}
+                          disabled={Boolean(busyFileId)}
+                          className="mt-3 min-h-10 rounded-md border border-amber-500 px-3 text-sm font-bold"
+                        >
+                          {orderingReview.strategy === "manual"
+                            ? "Confirm this image order"
+                            : "Use this suggested order"}
+                        </button>
+                      ) : null}
+                      {orderingReview.ambiguous &&
+                      draft.stage === "review" &&
+                      grouping &&
+                      unplacedDividerIds.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void saveAuthoritativeGroups(
+                              grouping.groups.map((group) => [
+                                ...group.fileIds,
+                              ]),
+                              "Lot order confirmed.",
+                              selectedLotIndex,
+                              { confirmOrder: true }
+                            )
+                          }
+                          disabled={Boolean(busyFileId)}
+                          className="mt-3 min-h-10 rounded-md border border-amber-500 px-3 text-sm font-bold"
+                        >
+                          I checked the lot order
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              {unreadableImages.length > 0 ? (
+                <section
+                  className="rounded-md border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-4 py-3 text-[var(--app-danger)]"
+                  role="alert"
+                >
+                  <p className="font-bold">
+                    {unreadableImages.length === 1
+                      ? "One image could not be checked"
+                      : `${unreadableImages.length} images could not be checked`}
+                  </p>
+                  <p className="mt-1 text-sm leading-6">
+                    Smart Upload will not put an unreadable image into a report. Exclude
+                    it below, or discard this upload and re-select a replacement image.
+                  </p>
+                  <ul className="mt-3 grid gap-2 text-sm">
+                    {unreadableImages.slice(0, 10).map((metric) => (
+                      <li
+                        key={metric.fileId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--app-danger-border)] bg-[var(--app-panel)] px-3 py-2"
+                      >
+                        <span className="min-w-0 break-all font-semibold">
+                          {fileById.get(metric.fileId)?.name || metric.fileId}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => excludeUnreadableImage(metric.fileId)}
+                          disabled={Boolean(busyFileId)}
+                          className="min-h-10 shrink-0 rounded-md border border-[var(--app-danger-border)] px-3 font-bold disabled:opacity-50"
+                        >
+                          Exclude from report
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {draft.stage === "selected" ? (
+                <section aria-labelledby="selected-sequence-heading">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <h3
+                        id="selected-sequence-heading"
+                        className="text-lg font-bold"
+                      >
+                        Check upload sequence
+                      </h3>
+                      <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+                        The numbers below are the exact order Smart Upload will use.
+                        Move any misplaced photo or divider, then confirm the final
+                        sequence above.
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-[var(--app-text-muted)]">
+                      {draft.files.length} image{draft.files.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                    {visibleFiles.map((item) => {
+                      const absoluteIndex = draft.files.findIndex(
+                        (file) => file.fileId === item.fileId
+                      );
+                      const isBusy = busyFileId === item.fileId;
+                      return (
+                        <article
+                          key={item.fileId}
+                          className="overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-panel)]"
+                        >
+                          <div className="relative aspect-square bg-[var(--app-panel-alt)]">
+                            <ImagePreview
+                              file={item.file}
+                              url={item.url}
+                              recoveryDraft={draft}
+                              recoveryFile={item}
+                              alt={item.name}
+                              className="h-full w-full object-cover"
+                            />
+                            <span className="absolute bottom-1 left-1 rounded bg-black/75 px-1.5 py-0.5 text-xs font-bold text-white">
+                              {absoluteIndex + 1}
+                            </span>
+                            {isLikelySmartUploadDividerName(item.name) ? (
+                              <span className="absolute inset-x-1 top-1 rounded bg-amber-500 px-1 py-1 text-center text-[10px] font-bold uppercase text-black">
+                                Possible divider
+                              </span>
+                            ) : null}
+                            {isBusy ? (
+                              <span className="absolute inset-0 grid place-items-center bg-black/45 text-white">
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="truncate px-2 pt-2 text-xs" title={item.name}>
+                            {item.name}
+                          </p>
+                          <div className="grid grid-cols-2 gap-1 p-2">
+                            <button
+                              type="button"
+                              onClick={() => void moveSelectedFile(item.fileId, -1)}
+                              disabled={Boolean(busyFileId) || absoluteIndex <= 0}
+                              className="inline-flex min-h-9 items-center justify-center gap-1 rounded border border-[var(--app-control-border)] px-2 text-xs font-semibold disabled:opacity-40"
+                              aria-label={`Move ${item.name} earlier`}
+                            >
+                              <ArrowLeft className="h-3.5 w-3.5" />
+                              Earlier
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void moveSelectedFile(item.fileId, 1)}
+                              disabled={
+                                Boolean(busyFileId) ||
+                                absoluteIndex >= draft.files.length - 1
+                              }
+                              className="inline-flex min-h-9 items-center justify-center gap-1 rounded border border-[var(--app-control-border)] px-2 text-xs font-semibold disabled:opacity-40"
+                              aria-label={`Move ${item.name} later`}
+                            >
+                              Later
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {draft.files.length > SEQUENCE_PAGE_SIZE ? (
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSequencePage((current) => Math.max(0, current - 1))
+                        }
+                        disabled={sequencePage === 0 || Boolean(busyFileId)}
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Previous images
+                      </button>
+                      <span className="text-center text-[var(--app-text-muted)]">
+                        Images {sequencePage * SEQUENCE_PAGE_SIZE + 1}-
+                        {Math.min(
+                          (sequencePage + 1) * SEQUENCE_PAGE_SIZE,
+                          draft.files.length
+                        )} of {draft.files.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSequencePage((current) =>
+                            Math.min(
+                              Math.ceil(draft.files.length / SEQUENCE_PAGE_SIZE) - 1,
+                              current + 1
+                            )
+                          )
+                        }
+                        disabled={
+                          Boolean(busyFileId) ||
+                          (sequencePage + 1) * SEQUENCE_PAGE_SIZE >=
+                            draft.files.length
+                        }
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-4 font-semibold disabled:opacity-50"
+                      >
+                        Next images
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
 
               {grouping?.groups.length ? (
                 <section aria-labelledby="detected-lots-heading">
@@ -956,7 +2399,7 @@ export default function SmartUploadWorkspace({
                         Detected lots
                       </h3>
                       <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-                        Tap any image below to add or remove a divider.
+                        Select a lot to inspect its photos and boundaries.
                       </p>
                     </div>
                     <span className="text-sm font-semibold">
@@ -975,12 +2418,17 @@ export default function SmartUploadWorkspace({
                         ? serverFileById.get(coverFileId)
                         : undefined;
                       return (
-                        <article
+                        <button
                           key={group.groupIndex}
-                          className={`overflow-hidden rounded-md border bg-[var(--app-panel)] ${
+                          type="button"
+                          onClick={() => setSelectedLotIndex(group.groupIndex)}
+                          aria-pressed={selectedLotIndex === group.groupIndex}
+                          className={`w-full overflow-hidden rounded-md border bg-[var(--app-panel)] text-left ${
                             group.overLimit
                               ? "border-[var(--app-danger)]"
-                              : "border-[var(--app-border)]"
+                              : selectedLotIndex === group.groupIndex
+                                ? "border-[var(--app-accent)] ring-2 ring-[var(--app-accent-ring)]"
+                                : "border-[var(--app-border)]"
                           }`}
                         >
                           <div className="h-28 bg-[var(--app-panel-alt)]">
@@ -1008,7 +2456,7 @@ export default function SmartUploadWorkspace({
                               <Check className="h-5 w-5 text-emerald-600" />
                             )}
                           </div>
-                        </article>
+                        </button>
                       );
                     })}
                   </div>
@@ -1044,6 +2492,210 @@ export default function SmartUploadWorkspace({
                       </button>
                     </div>
                   ) : null}
+                </section>
+              ) : null}
+
+              {grouping && selectedGroup ? (
+                <section
+                  className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-4 sm:p-5"
+                  aria-labelledby="selected-lot-heading"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 id="selected-lot-heading" className="text-lg font-bold">
+                        Lot {selectedLotIndex + 1} - {selectedGroup.imageCount} photos
+                      </h3>
+                      <p className="mt-1 text-sm text-[var(--app-text-muted)]">
+                        Check this lot only. If a neighbour photo slipped across the boundary,
+                        move it with one tap.
+                      </p>
+                    </div>
+                    <span className="rounded-md bg-[var(--app-accent-soft)] px-3 py-1 text-xs font-bold text-[var(--app-accent)]">
+                      Reviewing {selectedLotIndex + 1} of {grouping.groups.length}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                    {visibleSelectedGroupFiles.map((item, visibleFileIndex) => {
+                      const fileIndex =
+                        selectedLotPhotoPage * LOT_PHOTO_PAGE_SIZE +
+                        visibleFileIndex;
+                      return (
+                      <article
+                        key={item.fileId}
+                        className="overflow-hidden rounded-md border border-[var(--app-border)] bg-[var(--app-panel-alt)]"
+                      >
+                        <div className="aspect-square">
+                          <ImagePreview
+                            file={item.file}
+                            url={item.url || serverFileById.get(item.fileId)?.url}
+                            alt={`Lot ${selectedLotIndex + 1}, photo ${fileIndex + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div className="grid gap-2 p-2">
+                          {fileIndex > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                splitLotBefore(
+                                  selectedLotIndex,
+                                  fileIndex,
+                                  dividerBeingPlaced ||
+                                    (unplacedDividerIds.length === 1
+                                      ? unplacedDividerIds[0]
+                                      : undefined)
+                                )
+                              }
+                              disabled={Boolean(busyFileId)}
+                              className="min-h-10 rounded-md border border-[var(--app-control-border)] px-2 text-xs font-bold disabled:opacity-50"
+                            >
+                              Start new lot here
+                            </button>
+                          ) : null}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                movePhotoToNeighbour(
+                                  selectedLotIndex,
+                                  item.fileId,
+                                  -1
+                                )
+                              }
+                              disabled={
+                                Boolean(busyFileId) ||
+                                selectedLotIndex === 0 ||
+                                (grouping.groups[selectedLotIndex - 1]?.imageCount || 0) >=
+                                  200 ||
+                                selectedGroup.fileIds.length <= 1
+                              }
+                              className="inline-flex min-h-10 items-center justify-center gap-1 rounded-md border border-[var(--app-control-border)] px-2 text-xs font-bold disabled:opacity-40"
+                              aria-label={`Move photo ${fileIndex + 1} to previous lot`}
+                            >
+                              <ArrowLeft className="h-3.5 w-3.5" />
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                movePhotoToNeighbour(
+                                  selectedLotIndex,
+                                  item.fileId,
+                                  1
+                                )
+                              }
+                              disabled={
+                                Boolean(busyFileId) ||
+                                selectedLotIndex >= grouping.groups.length - 1 ||
+                                (grouping.groups[selectedLotIndex + 1]?.imageCount || 0) >=
+                                  200 ||
+                                selectedGroup.fileIds.length <= 1
+                              }
+                              className="inline-flex min-h-10 items-center justify-center gap-1 rounded-md border border-[var(--app-control-border)] px-2 text-xs font-bold disabled:opacity-40"
+                              aria-label={`Move photo ${fileIndex + 1} to next lot`}
+                            >
+                              Next
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                      );
+                    })}
+                  </div>
+                  {selectedGroupFiles.length > LOT_PHOTO_PAGE_SIZE ? (
+                    <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedLotPhotoPage((current) =>
+                            Math.max(0, current - 1)
+                          )
+                        }
+                        disabled={selectedLotPhotoPage === 0}
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-3 font-semibold disabled:opacity-40"
+                      >
+                        Previous photos
+                      </button>
+                      <span className="text-center text-[var(--app-text-muted)]">
+                        Photos {selectedLotPhotoPage * LOT_PHOTO_PAGE_SIZE + 1}-
+                        {Math.min(
+                          (selectedLotPhotoPage + 1) * LOT_PHOTO_PAGE_SIZE,
+                          selectedGroupFiles.length
+                        )} of {selectedGroupFiles.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedLotPhotoPage((current) =>
+                            Math.min(
+                              Math.ceil(
+                                selectedGroupFiles.length / LOT_PHOTO_PAGE_SIZE
+                              ) - 1,
+                              current + 1
+                            )
+                          )
+                        }
+                        disabled={
+                          (selectedLotPhotoPage + 1) * LOT_PHOTO_PAGE_SIZE >=
+                          selectedGroupFiles.length
+                        }
+                        className="min-h-10 rounded-md border border-[var(--app-control-border)] px-3 font-semibold disabled:opacity-40"
+                      >
+                        Next photos
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {unplacedDividerIds.length && grouping ? (
+                <section className="rounded-lg border border-amber-400 bg-amber-50 p-4 text-amber-950">
+                  <h3 className="font-bold">
+                    {unplacedDividerIds.length === 1
+                      ? "One boundary needs your confirmation"
+                      : `${unplacedDividerIds.length} boundaries need your confirmation`}
+                  </h3>
+                  <p className="mt-1 text-sm leading-6">
+                    The browser could not prove this file sequence. If a detected
+                    boundary is already correct, confirm its current position. If two
+                    lots are mixed, choose the first photo belonging to the next lot
+                    above and use <strong>Start new lot here</strong>.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {unplacedDividerIds.map((fileId) => (
+                      <div key={fileId} className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => placeUnresolvedDividerAfter(fileId)}
+                          disabled={Boolean(busyFileId)}
+                          className="min-h-10 rounded-md border border-amber-500 px-3 text-sm font-bold disabled:opacity-50"
+                        >
+                          Confirm current position: {fileById.get(fileId)?.name || fileId}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDividerBeingPlaced(fileId);
+                            setGroupingNotice(
+                              `Choose the first report photo after ${fileById.get(fileId)?.name || fileId}, then select Start new lot here.`
+                            );
+                          }}
+                          disabled={Boolean(busyFileId)}
+                          aria-pressed={dividerBeingPlaced === fileId}
+                          className={`min-h-10 rounded-md border px-3 text-sm font-bold disabled:opacity-50 ${
+                            dividerBeingPlaced === fileId
+                              ? "border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-on-accent)]"
+                              : "border-amber-500"
+                          }`}
+                        >
+                          {dividerBeingPlaced === fileId
+                            ? "Placing this boundary"
+                            : "Place this boundary manually"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               ) : null}
 
@@ -1161,7 +2813,11 @@ export default function SmartUploadWorkspace({
             }`}
           >
             {hasInvalidGroups
-              ? grouping.warnings?.[0] || "Keep at least one report image."
+              ? unplacedDividerIds.length
+                ? "Confirm where the next lot starts before creating the preview."
+                : orderingReview?.ambiguous
+                  ? "Check the detected lots and confirm the image order before creating the preview."
+                  : grouping.warnings?.[0] || "Keep at least one report image."
               : `${grouping.groups.length} Bundle lots are ready for preview.`}
           </p>
           <button

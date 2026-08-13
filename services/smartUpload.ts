@@ -18,6 +18,7 @@ export type SmartUploadTarget = {
   uploadUrl: string;
   method: "PUT";
   contentType: string;
+  headers?: Record<string, string>;
 };
 
 export type SmartUploadGroup = {
@@ -36,6 +37,7 @@ export type SmartUploadServerFile = {
   size: number;
   url: string;
   originalOrder: number;
+  captureOrder?: number;
 };
 
 export type SmartUploadMetric = {
@@ -57,6 +59,12 @@ export type SmartUploadGrouping = {
     | "confirmed"
     | "failed";
   progressPercent: number;
+  revision: number;
+  orderReviewRequired: boolean;
+  unresolvedDividerIds: string[];
+  /** Distinguishes a current server's authoritative empty set from legacy responses. */
+  hasOrderReviewState?: boolean;
+  orderSource?: "manifest" | "capture" | "manual" | "groups";
   algorithmVersion?: string;
   classificationJobId?: string;
   groups: SmartUploadGroup[];
@@ -106,6 +114,7 @@ function normalizeServerFiles(value: unknown): SmartUploadServerFile[] {
     if (!fileId) return [];
     const size = Number(candidate.size);
     const originalOrder = Number(candidate.originalOrder);
+    const captureOrder = Number(candidate.captureOrder);
     return [
       {
         fileId,
@@ -116,6 +125,9 @@ function normalizeServerFiles(value: unknown): SmartUploadServerFile[] {
         originalOrder: Number.isFinite(originalOrder)
           ? originalOrder
           : fallbackOrder,
+        captureOrder: Number.isFinite(captureOrder)
+          ? captureOrder
+          : undefined,
       },
     ];
   });
@@ -164,19 +176,19 @@ function normalizeSmartUploadGrouping(
       new Set([
         ...explicitFileIds,
         ...groupFiles.map((file) => file.fileId),
-        ...(explicitCoverFileId ? [explicitCoverFileId] : []),
       ])
     );
-    const groupIndex = Number(candidate.groupIndex);
-    const imageCount = Number(candidate.imageCount);
     return [
       {
-        groupIndex: Number.isFinite(groupIndex) ? groupIndex : fallbackIndex,
-        imageCount: Number.isFinite(imageCount)
-          ? Math.max(0, imageCount)
-          : fileIds.length,
+        // The response array is the authoritative group order. Canonicalizing
+        // indices prevents a stale/duplicate server label from selecting or
+        // editing the wrong neighbouring lot.
+        groupIndex: fallbackIndex,
+        imageCount: fileIds.length,
         fileIds,
-        coverFileId: explicitCoverFileId || fileIds[0],
+        coverFileId: fileIds.includes(explicitCoverFileId)
+          ? explicitCoverFileId
+          : fileIds[0],
         overLimit: candidate.overLimit === true,
         files: groupFiles,
       },
@@ -191,6 +203,13 @@ function normalizeSmartUploadGrouping(
   const progressPercent = Number(value.progressPercent);
   const expectedFileCount = Number(value.expectedFileCount);
   const confirmedFileCount = Number(value.confirmedFileCount);
+  const revision = Number(value.revision);
+  const rawOrderSource = String(value.orderSource || "");
+  const orderSource = ["manifest", "capture", "manual", "groups"].includes(
+    rawOrderSource
+  )
+    ? (rawOrderSource as SmartUploadGrouping["orderSource"])
+    : undefined;
 
   return {
     sessionId: String(value.sessionId || fallbackSessionId),
@@ -199,6 +218,22 @@ function normalizeSmartUploadGrouping(
     progressPercent: Number.isFinite(progressPercent)
       ? Math.max(0, Math.min(100, progressPercent))
       : 0,
+    revision: Number.isInteger(revision) && revision >= 0 ? revision : 0,
+    orderReviewRequired: value.orderReviewRequired === true,
+    hasOrderReviewState:
+      Object.prototype.hasOwnProperty.call(value, "orderReviewRequired") ||
+      Object.prototype.hasOwnProperty.call(value, "unresolvedDividerIds"),
+    unresolvedDividerIds: Array.isArray(value.unresolvedDividerIds)
+      ? Array.from(
+          new Set(
+            value.unresolvedDividerIds
+              .filter((fileId): fileId is string => typeof fileId === "string")
+              .map((fileId) => fileId.trim())
+              .filter(Boolean)
+          )
+        )
+      : [],
+    orderSource,
     algorithmVersion:
       typeof value.algorithmVersion === "string"
         ? value.algorithmVersion
@@ -209,7 +244,9 @@ function normalizeSmartUploadGrouping(
         : undefined,
     groups,
     dividerFileIds: Array.isArray(value.dividerFileIds)
-      ? value.dividerFileIds.map(String)
+      ? Array.from(
+          new Set(value.dividerFileIds.map(String).map((fileId) => fileId.trim()).filter(Boolean))
+        )
       : [],
     metrics: normalizeMetrics(value.metrics),
     warnings: Array.isArray(value.warnings)
@@ -238,6 +275,9 @@ function createManifest(files: SmartUploadDraft["files"]) {
     size: item.size,
     fieldname: "images",
     imageIndex: item.originalOrder,
+    captureTimestamp: item.lastModified || undefined,
+    // This is the client-resolved canonical rank, not a raw file timestamp.
+    // Reusable divider images often have an older lastModified value.
     captureOrder: item.originalOrder,
     originalOrder: item.originalOrder,
     role: "main",
@@ -246,12 +286,20 @@ function createManifest(files: SmartUploadDraft["files"]) {
 
 function unwrapMessage(error: unknown, fallback: string) {
   const candidate = error as {
-    response?: { data?: { message?: string; error?: string } };
+    response?: {
+      data?: {
+        message?: string;
+        error?: string | { code?: string };
+        code?: string;
+      };
+    };
     message?: string;
   };
   return (
     candidate?.response?.data?.message ||
-    candidate?.response?.data?.error ||
+    (typeof candidate?.response?.data?.error === "string"
+      ? candidate.response.data.error
+      : undefined) ||
     candidate?.message ||
     fallback
   );
@@ -259,6 +307,18 @@ function unwrapMessage(error: unknown, fallback: string) {
 
 export function getSmartUploadError(error: unknown) {
   return unwrapMessage(error, "Smart Upload could not continue.");
+}
+
+export function getSmartUploadErrorCode(error: unknown) {
+  const data = (
+    error as {
+      response?: {
+        data?: { code?: unknown; error?: { code?: unknown } };
+      };
+    }
+  )?.response?.data;
+  const code = data?.code ?? data?.error?.code;
+  return typeof code === "string" ? code : undefined;
 }
 
 export async function createOrResumeSmartUploadSession(
@@ -380,6 +440,7 @@ export async function uploadSmartUploadFiles(args: {
           uploadUrl: target.uploadUrl,
           file,
           contentType: target.contentType,
+          headers: target.headers,
           onDelta: (delta) => {
             // Retries restart XHR progress at zero, so cap the accumulated
             // contribution at the source file size.
@@ -450,6 +511,25 @@ export async function getSmartUploadGrouping(
   return normalizeSmartUploadGrouping(envelope.data, sessionId);
 }
 
+function waitForNextGroupingPoll(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    return Promise.reject(
+      new DOMException("Smart Upload polling was cancelled.", "AbortError")
+    );
+  }
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException("Smart Upload polling was cancelled.", "AbortError"));
+    };
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, GROUPING_POLL_INTERVAL_MS);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export async function waitForSmartUploadGrouping(args: {
   kind: SmartUploadKind;
   sessionId: string;
@@ -470,17 +550,7 @@ export async function waitForSmartUploadGrouping(args: {
         grouping.error || "Black-image separator detection failed."
       );
     }
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(resolve, GROUPING_POLL_INTERVAL_MS);
-      args.signal?.addEventListener(
-        "abort",
-        () => {
-          window.clearTimeout(timeout);
-          reject(new DOMException("Smart Upload polling was cancelled.", "AbortError"));
-        },
-        { once: true }
-      );
-    });
+    await waitForNextGroupingPoll(args.signal);
   }
   throw new DOMException("Smart Upload polling was cancelled.", "AbortError");
 }
@@ -489,12 +559,26 @@ export async function updateSmartUploadDividers(args: {
   kind: SmartUploadKind;
   sessionId: string;
   dividerFileIds: string[];
+  revision?: number;
+  orderedFileIds?: string[];
+  groups?: Array<string[] | { fileIds: string[] }>;
+  orderReviewRequired?: boolean;
+  unresolvedDividerIds?: string[];
   confirm?: boolean;
 }) {
   const { data: envelope } = await API.patch<{ data: SmartUploadGrouping }>(
     `${endpointFor(args.kind)}/upload-session/${args.sessionId}/smart-grouping`,
     {
       dividerFileIds: args.dividerFileIds,
+      ...(args.revision !== undefined ? { revision: args.revision } : {}),
+      ...(args.orderedFileIds ? { orderedFileIds: args.orderedFileIds } : {}),
+      ...(args.groups ? { groups: args.groups } : {}),
+      ...(args.orderReviewRequired !== undefined
+        ? { orderReviewRequired: args.orderReviewRequired }
+        : {}),
+      ...(args.unresolvedDividerIds !== undefined
+        ? { unresolvedDividerIds: args.unresolvedDividerIds }
+        : {}),
       confirm: args.confirm === true,
     }
   );

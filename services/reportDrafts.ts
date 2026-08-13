@@ -1,5 +1,9 @@
 import API from "@/lib/api";
-import { mapWithConcurrency, putFileWithRetry } from "@/services/directUpload";
+import {
+  canUseDirectBrowserUpload,
+  mapWithConcurrency,
+  putFileWithRetry,
+} from "@/services/directUpload";
 
 export type ReportDraftKind = "asset" | "lot-listing";
 export type ReportDraftApiType = "asset" | "lotListing";
@@ -583,7 +587,10 @@ export const ReportDraftService = {
             markEntryUploaded(entry);
             return;
           }
-          if (!target.uploadUrl) {
+          if (
+            !target.uploadUrl ||
+            !canUseDirectBrowserUpload(target.uploadUrl)
+          ) {
             fallback.push(entry);
             return;
           }

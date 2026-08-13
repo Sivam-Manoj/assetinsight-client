@@ -240,6 +240,10 @@ async function mockSmartUploadApi(page: Page, onComplete: () => void) {
       smartUpload: true,
       groupingStatus: "review_ready",
       progressPercent: 100,
+      revision: 0,
+      orderReviewRequired: false,
+      unresolvedDividerIds: [],
+      hasOrderReviewState: true,
       groups: Array.from(
         { length: Math.ceil(files.length / 3) },
         (_, groupIndex) => {

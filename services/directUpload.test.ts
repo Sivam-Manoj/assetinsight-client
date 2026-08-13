@@ -32,6 +32,34 @@ afterEach(() => {
 });
 
 describe("report-session upload transport", () => {
+  it("never sends a browser PUT to the standard R2 endpoint", async () => {
+    globalThis.XMLHttpRequest =
+      FailingDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const apiPost = vi.spyOn(API, "post").mockResolvedValue({ data: {} });
+    const file = new File(["jpeg-content"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+
+    await expect(
+      uploadFileToReportSession({
+        endpoint: "/asset",
+        sessionId: "session-r2-cors",
+        fileId: "images-0",
+        uploadUrl:
+          "https://example.r2.cloudflarestorage.com/bucket/presigned",
+        file,
+        contentType: "image/jpeg",
+      })
+    ).resolves.toEqual({ transport: "server" });
+
+    expect(FailingDirectUploadRequest.sendCount).toBe(0);
+    expect(apiPost).toHaveBeenCalledWith(
+      "/asset/upload-session/session-r2-cors/files/images-0",
+      expect.any(FormData),
+      expect.objectContaining({ timeout: 300000 })
+    );
+  });
+
   it("accepts an R2 upload that completed behind an opaque CORS error", async () => {
     vi.useFakeTimers();
     globalThis.XMLHttpRequest =

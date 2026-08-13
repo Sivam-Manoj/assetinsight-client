@@ -24,6 +24,7 @@ type UploadSession = {
     uploadUrl: string;
     method: "PUT";
     contentType: string;
+    headers?: Record<string, string>;
   }>;
 };
 
@@ -45,22 +46,27 @@ function directUploadHost(url: string) {
   }
 }
 
-function shouldAttemptDirectBrowserUpload(url: string) {
-  const configured = process.env.NEXT_PUBLIC_DIRECT_R2_UPLOAD;
-  if (configured === "true") return true;
-  if (configured === "false") return false;
-
+export function canUseDirectBrowserUpload(url: string) {
   try {
     // Cloudflare's standard R2 endpoint rejects browser PUT preflights unless
     // the bucket has an explicit CORS policy. Keep uploads working through the
-    // authenticated API by default; direct R2 can be opted back in after that
-    // policy is configured.
-    return !new URL(url).hostname
-      .toLowerCase()
-      .endsWith(CLOUDFLARE_R2_HOST_SUFFIX);
+    // authenticated API. This safety rule intentionally wins over a stale
+    // NEXT_PUBLIC_DIRECT_R2_UPLOAD build flag: production must not strand a
+    // whole selection in repeated, browser-blocked preflights.
+    if (
+      new URL(url).hostname
+        .toLowerCase()
+        .endsWith(CLOUDFLARE_R2_HOST_SUFFIX)
+    ) {
+      return false;
+    }
   } catch {
     return false;
   }
+
+  const configured = process.env.NEXT_PUBLIC_DIRECT_R2_UPLOAD;
+  if (configured === "false") return false;
+  return true;
 }
 
 function directUploadIsUnavailable(url: string) {
@@ -113,13 +119,18 @@ export function putFileWithProgress(
   url: string,
   file: File,
   contentType: string,
-  onDelta?: (delta: number) => void
+  onDelta?: (delta: number) => void,
+  headers?: Record<string, string>
 ) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let lastLoaded = 0;
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", contentType || file.type || "application/octet-stream");
+    for (const [name, value] of Object.entries(headers || {})) {
+      if (name.toLowerCase() === "content-type") continue;
+      xhr.setRequestHeader(name, value);
+    }
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
       const delta = Math.max(0, event.loaded - lastLoaded);
@@ -198,10 +209,11 @@ export async function uploadFileToReportSession(args: {
   uploadUrl: string;
   file: File;
   contentType: string;
+  headers?: Record<string, string>;
   onDelta?: (delta: number) => void;
 }) {
   if (
-    !shouldAttemptDirectBrowserUpload(args.uploadUrl) ||
+    !canUseDirectBrowserUpload(args.uploadUrl) ||
     directUploadIsUnavailable(args.uploadUrl)
   ) {
     await uploadFileThroughServerFallback(
@@ -218,7 +230,8 @@ export async function uploadFileToReportSession(args: {
       args.uploadUrl,
       args.file,
       args.contentType,
-      args.onDelta
+      args.onDelta,
+      args.headers
     );
     return { transport: "direct" as const };
   } catch (directUploadError) {
@@ -271,12 +284,13 @@ export async function putFileWithRetry(
   url: string,
   file: File,
   contentType: string,
-  onDelta?: (delta: number) => void
+  onDelta?: (delta: number) => void,
+  headers?: Record<string, string>
 ) {
   let lastError: unknown;
   for (let attempt = 0; attempt <= DIRECT_UPLOAD_RETRIES; attempt += 1) {
     try {
-      await putFileWithProgress(url, file, contentType, onDelta);
+      await putFileWithProgress(url, file, contentType, onDelta, headers);
       return;
     } catch (error) {
       lastError = error;
@@ -360,6 +374,7 @@ export async function uploadReportFilesDirectToR2(args: {
         uploadUrl: target.uploadUrl,
         file: item.file,
         contentType: target.contentType,
+        headers: target.headers,
         onDelta: (delta) => {
           const nextLoaded = Math.min(item.file.size, fileLoaded + delta);
           uploadedBytes += Math.max(0, nextLoaded - fileLoaded);
