@@ -33,6 +33,7 @@ export interface LotListingLot {
   image_urls?: string[];
   extra_image_indexes?: number[];
   extra_image_urls?: string[];
+  video_urls?: string[];
   cover_index?: number;
   sub_mode?: string;
   tags?: string[];
@@ -86,6 +87,7 @@ export interface LotListing {
   };
   lots?: LotListingLot[];
   imageUrls?: string[];
+  videoUrls?: string[];
   preview_data?: {
     contract_no?: string;
     sales_date?: string;
@@ -96,6 +98,7 @@ export interface LotListing {
     include_damage_analysis?: boolean;
     valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
     lots?: LotListingLot[];
+    videoUrls?: string[];
     total_value?: number;
   };
   preview_files?: LotListingPreviewFiles;

@@ -1150,12 +1150,16 @@ export default function LotListingForm({
         ...lot.files,
         ...lot.extraFiles,
       ]);
-      const totalSize = filesToSend.reduce((sum, file) => sum + file.size, 0);
+      const videoFilesToSend = lotsForSubmission.flatMap(
+        (lot) => lot.videoFiles || []
+      );
+      const allFilesToSend = [...filesToSend, ...videoFilesToSend];
+      const totalSize = allFilesToSend.reduce((sum, file) => sum + file.size, 0);
 
       setSubmitting(true);
       setUploadPercent(0);
       setUploadStats({
-        totalFiles: filesToSend.length,
+        totalFiles: allFilesToSend.length,
         totalSize,
         uploadedBytes: 0,
       });
@@ -1196,6 +1200,7 @@ export default function LotListingForm({
         mixed_lots: lotsForSubmission.map((lot) => ({
           count: lot.files.length,
           extra_count: lot.extraFiles.length,
+          video_count: (lot.videoFiles || []).length,
           cover_index: Math.max(
             0,
             Math.min(lot.files.length - 1, lot.coverIndex || 0)
@@ -1248,6 +1253,15 @@ export default function LotListingForm({
                 role: "extra",
               });
             });
+            (lot.videoFiles || []).forEach((file, videoIndex) => {
+              directFiles.push({
+                file,
+                fieldname: "videos",
+                lotIndex,
+                imageIndex: videoIndex,
+                role: "video",
+              });
+            });
           });
 
           responseData = await uploadReportFilesDirectToR2({
@@ -1262,6 +1276,7 @@ export default function LotListingForm({
 
           const formData = new FormData();
           filesToSend.forEach((file) => formData.append("images", file));
+          videoFilesToSend.forEach((file) => formData.append("videos", file));
           formData.append("details", JSON.stringify(details));
           const response = await API.post("/lot-listing", formData, {
             headers: { "Content-Type": "multipart/form-data" },
@@ -1648,7 +1663,7 @@ export default function LotListingForm({
                 value={mixedLots}
                 onChange={handleLotsChange}
                 downloadPrefix={contractNo || "lot-listing"}
-                allowVideo={false}
+                allowVideo
                 analysisImageLimit={50}
                 lockLotStructure={auctioneer?.kind === "scheduleA"}
               />
