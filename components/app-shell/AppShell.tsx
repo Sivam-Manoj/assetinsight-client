@@ -392,14 +392,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Bell size={21} strokeWidth={1.8} aria-hidden />
             </Link>
-            <a
+            <Link
               className={styles.topbarIcon}
-              href="mailto:support@assetinsight.com"
+              href="/support"
               aria-label="Contact support"
               title="Help and support"
             >
               <CircleHelp size={21} strokeWidth={1.8} aria-hidden />
-            </a>
+            </Link>
             <button
               className={styles.topbarIcon}
               onClick={() => void logout()}

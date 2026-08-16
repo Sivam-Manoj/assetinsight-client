@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import API from "@/lib/api";
 import {
+  putFileWithProgress,
   resetDirectUploadCircuitBreakerForTests,
   uploadFileToReportSession,
 } from "./directUpload";
@@ -24,14 +25,59 @@ class FailingDirectUploadRequest {
   }
 }
 
+class SuccessfulDirectUploadRequest {
+  static headers = new Map<string, string>();
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
+  status = 200;
+  responseText = "";
+  onload?: () => void;
+
+  open() {}
+
+  setRequestHeader(name: string, value: string) {
+    SuccessfulDirectUploadRequest.headers.set(name, value);
+  }
+
+  send() {
+    this.onload?.();
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
   globalThis.XMLHttpRequest = originalXmlHttpRequest;
   FailingDirectUploadRequest.sendCount = 0;
+  SuccessfulDirectUploadRequest.headers.clear();
   resetDirectUploadCircuitBreakerForTests();
 });
 
 describe("report-session upload transport", () => {
+  it("forwards every signed upload header verbatim", async () => {
+    globalThis.XMLHttpRequest =
+      SuccessfulDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const file = new File(["png-content"], "failure.png", {
+      type: "image/png",
+    });
+
+    await putFileWithProgress(
+      "https://r2.example.test/presigned",
+      file,
+      "image/png",
+      undefined,
+      {
+        "Content-Type": "image/png",
+        "If-None-Match": "*",
+        "X-Signed-Metadata": "support-attachment",
+      }
+    );
+
+    expect(Object.fromEntries(SuccessfulDirectUploadRequest.headers)).toEqual({
+      "Content-Type": "image/png",
+      "If-None-Match": "*",
+      "X-Signed-Metadata": "support-attachment",
+    });
+  });
+
   it("never sends a browser PUT to the standard R2 endpoint", async () => {
     globalThis.XMLHttpRequest =
       FailingDirectUploadRequest as unknown as typeof XMLHttpRequest;

@@ -126,10 +126,18 @@ export function putFileWithProgress(
     const xhr = new XMLHttpRequest();
     let lastLoaded = 0;
     xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", contentType || file.type || "application/octet-stream");
+    let hasSignedContentType = false;
     for (const [name, value] of Object.entries(headers || {})) {
-      if (name.toLowerCase() === "content-type") continue;
+      if (name.toLowerCase() === "content-type") {
+        hasSignedContentType = true;
+      }
       xhr.setRequestHeader(name, value);
+    }
+    if (!hasSignedContentType) {
+      xhr.setRequestHeader(
+        "Content-Type",
+        contentType || file.type || "application/octet-stream"
+      );
     }
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;

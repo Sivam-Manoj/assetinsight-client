@@ -5,6 +5,7 @@ import {
   FileText,
   Inbox,
   LayoutDashboard,
+  LifeBuoy,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -55,6 +56,11 @@ export const PRIMARY_NAVIGATION: readonly NavItem[] = [
 
 export const SECONDARY_NAVIGATION: readonly NavItem[] = [
   {
+    label: "Support",
+    href: "/support",
+    icon: LifeBuoy,
+  },
+  {
     label: "Settings",
     href: "/settings",
     icon: Settings,
@@ -74,5 +80,6 @@ export const PAGE_TITLES: Record<string, string> = {
   "/previews": "Previews",
   "/approvals": "Approvals",
   "/releases": "Releases",
+  "/support": "Support",
   "/settings": "Settings",
 };

@@ -218,6 +218,7 @@ describe("AppShell", () => {
       ["Previews", "/previews"],
       ["Approvals", "/approvals"],
       ["Releases", "/releases"],
+      ["Support", "/support"],
       ["Settings", "/settings"],
     ] as const) {
       expect(
@@ -249,7 +250,7 @@ describe("AppShell", () => {
     ).toHaveAttribute("href", "/approvals");
     expect(
       screen.getByRole("link", { name: "Contact support" })
-    ).toHaveAttribute("href", "mailto:support@assetinsight.com");
+    ).toHaveAttribute("href", "/support");
     expect(
       screen.getByRole("button", { name: "Sign out" })
     ).toBeInTheDocument();
