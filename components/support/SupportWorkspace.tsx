@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Clock3,
   Inbox,
-  Lightbulb,
   LoaderCircle,
   MessageSquareText,
   Plus,
@@ -77,6 +76,19 @@ function categoryLabel(category: SupportCategory) {
   if (category === "feature") return "Feature";
   if (category === "question") return "Question";
   return "Other";
+}
+
+function initials(value: string) {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "AI";
+  return `${parts[0]?.[0] || ""}${
+    parts.length > 1 ? parts[parts.length - 1]?.[0] || "" : ""
+  }`
+    .toUpperCase()
+    .slice(0, 2);
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -152,19 +164,33 @@ function ConversationRow({
   );
 }
 
-function MessageBubble({ message }: { message: SupportMessage }) {
+function MessageBubble({
+  message,
+  userName,
+}: {
+  message: SupportMessage;
+  userName: string;
+}) {
   const isUser = message.senderRole === "user";
   const isSystem = message.senderRole === "system";
+  const authorName = isUser
+    ? message.senderName || userName
+    : message.senderName || "Asset Insight Support";
   return (
     <article
       className={styles.messageRow}
       data-sender={message.senderRole}
       aria-label={`${isSystem ? "System" : isUser ? "You" : "Support team"} at ${formatDate(message.createdAt)}`}
     >
+      {!isSystem ? (
+        <span className={styles.messageAvatar} data-sender={message.senderRole} aria-hidden>
+          {isUser ? initials(authorName) : "AI"}
+        </span>
+      ) : null}
       <div className={styles.messageBubble}>
         {!isSystem ? (
           <div className={styles.messageAuthor}>
-            <strong>{isUser ? "You" : message.senderName || "Support team"}</strong>
+            <strong>{authorName}</strong>
             <time dateTime={message.createdAt}>{formatDate(message.createdAt)}</time>
           </div>
         ) : null}
@@ -202,7 +228,7 @@ export default function SupportWorkspace() {
   const [olderPages, setOlderPages] = useState<Array<SupportPage<SupportMessage>>>([]);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderError, setOlderError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const readReceiptRef = useRef("");
 
   const {
@@ -270,6 +296,10 @@ export default function SupportWorkspace() {
     olderPages.length > 0
       ? olderPages[olderPages.length - 1].nextCursor
       : currentMessages?.nextCursor;
+  const openRequestCount = allConversations.filter(
+    (item) => item.status !== "closed" && item.status !== "resolved"
+  ).length;
+  const userName = user?.username || user?.email || "You";
 
   const visibleConversations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -312,12 +342,19 @@ export default function SupportWorkspace() {
       });
   }, [messages, mutateConversations, selectedId]);
 
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = "auto") => {
+    const scroller = messagesRef.current;
+    if (!scroller) return;
+    scroller.scrollTo?.({ top: scroller.scrollHeight, behavior });
+  }, []);
+
   useEffect(() => {
     // Loading an older cursor page must keep the reader at that history
-    // position. Initial/latest pages still follow the live end of the chat.
+    // position. Initial/latest pages follow the end of this scroller only;
+    // scrolling the marker into view could also move the document itself.
     if (!selectedId || messagesLoading || olderPages.length > 0) return;
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, messagesLoading, olderPages.length, selectedId]);
+    scrollToLatest();
+  }, [messages.length, messagesLoading, olderPages.length, scrollToLatest, selectedId]);
 
   const refreshThread = useCallback(async () => {
     await Promise.all([
@@ -329,10 +366,8 @@ export default function SupportWorkspace() {
 
   const refreshAfterSend = useCallback(async () => {
     await refreshThread();
-    window.requestAnimationFrame(() =>
-      messagesEndRef.current?.scrollIntoView({ block: "end" })
-    );
-  }, [refreshThread]);
+    window.requestAnimationFrame(() => scrollToLatest("smooth"));
+  }, [refreshThread, scrollToLatest]);
 
   const loadOlder = async () => {
     if (!selectedId || !nextOlderCursor || loadingOlder) return;
@@ -372,21 +407,29 @@ export default function SupportWorkspace() {
   return (
     <div className={`app-page app-page-stack ${styles.page}`}>
       <header className={`app-surface ${styles.pageHeader}`}>
-        <div>
-          <span className="app-kicker">Help desk</span>
-          <h1 className="app-title" style={{ marginTop: 5 }}>Support</h1>
-          <p className="app-subtitle">
-            Report a problem, suggest an improvement, and continue the conversation with our team.
-          </p>
+        <div className={styles.pageTitle}>
+          <h1 className="app-title">Support</h1>
+          <span>
+            {openRequestCount} open request{openRequestCount === 1 ? "" : "s"}
+          </span>
         </div>
         <div className={styles.headerActions}>
           <button
             type="button"
-            className="app-button app-button--secondary"
-            onClick={() => openNewRequest("feature")}
+            className="app-button app-button--icon"
+            onClick={() => {
+              setMoreConversationPages([]);
+              void mutateConversations();
+            }}
+            disabled={conversationsRefreshing}
+            aria-label="Refresh support requests"
+            title="Refresh support requests"
           >
-            <Lightbulb size={16} aria-hidden />
-            Request a feature
+            <RefreshCw
+              size={17}
+              className={conversationsRefreshing ? styles.spin : undefined}
+              aria-hidden
+            />
           </button>
           <button
             type="button"
@@ -405,25 +448,6 @@ export default function SupportWorkspace() {
         aria-label="Support conversations"
       >
         <aside className={styles.conversationPane} aria-label="Your support requests">
-          <div className={styles.listHeader}>
-            <div>
-              <h2>Requests</h2>
-              <span>{allConversations.length} loaded</span>
-            </div>
-            <button
-              type="button"
-              className="app-button app-button--icon"
-              onClick={() => {
-                setMoreConversationPages([]);
-                void mutateConversations();
-              }}
-              disabled={conversationsRefreshing}
-              aria-label="Refresh support requests"
-              title="Refresh support requests"
-            >
-              <RefreshCw size={17} className={conversationsRefreshing ? styles.spin : undefined} aria-hidden />
-            </button>
-          </div>
           <div className={styles.listFilters}>
             <label className={styles.searchField}>
               <span className="sr-only">Search support requests</span>
@@ -453,7 +477,7 @@ export default function SupportWorkspace() {
             </label>
           </div>
 
-          <div className={styles.conversationList}>
+          <div className={styles.conversationList} data-support-scroll="requests">
             {conversationsLoading ? (
               <div className={styles.listState} role="status">
                 <span className="app-spinner" aria-hidden />
@@ -542,11 +566,11 @@ export default function SupportWorkspace() {
                   <ArrowLeft size={18} aria-hidden />
                 </button>
                 <div className={styles.threadHeading}>
-                  <div>
+                  <div className={styles.threadTitleRow}>
+                    <h2>{conversation.subject}</h2>
                     <span className={styles.category}>{categoryLabel(conversation.category)}</span>
                     <span data-tone={statusTone(conversation.status)}>{STATUS_LABELS[conversation.status]}</span>
                   </div>
-                  <h2>{conversation.subject}</h2>
                   <p>Created {formatDate(conversation.createdAt)}</p>
                 </div>
                 <button
@@ -561,7 +585,13 @@ export default function SupportWorkspace() {
                 </button>
               </header>
 
-              <div className={styles.messages} aria-live="polite" aria-busy={messagesLoading}>
+              <div
+                ref={messagesRef}
+                className={styles.messages}
+                data-support-scroll="messages"
+                aria-live="polite"
+                aria-busy={messagesLoading}
+              >
                 {nextOlderCursor ? (
                   <button
                     type="button"
@@ -585,14 +615,15 @@ export default function SupportWorkspace() {
                     <button className="app-button" onClick={() => void mutateMessages()}>Try again</button>
                   </div>
                 ) : messages.length ? (
-                  messages.map((message) => <MessageBubble key={message.id} message={message} />)
+                  messages.map((message) => (
+                    <MessageBubble key={message.id} message={message} userName={userName} />
+                  ))
                 ) : (
                   <div className={styles.messageLoading}>
                     <CheckCircle2 size={22} aria-hidden />
                     Your request is ready for a reply.
                   </div>
                 )}
-                <div ref={messagesEndRef} />
               </div>
 
               <SupportComposer

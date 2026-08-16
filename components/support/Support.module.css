@@ -1,13 +1,43 @@
 .page {
-  max-width: 1540px;
+  width: 100%;
+  max-width: none;
+  height: calc(100dvh - 60px);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .pageHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 20px;
+  gap: 16px;
+  padding: 0 clamp(16px, 2vw, 28px);
+  border: 0;
+  border-bottom: 1px solid var(--app-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.pageTitle {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+
+.pageTitle h1 {
+  font-size: 1.26rem;
+  letter-spacing: -0.035em;
+}
+
+.pageTitle > span {
+  color: var(--app-text-muted);
+  font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 .headerActions {
@@ -18,11 +48,15 @@
 }
 
 .workspace {
-  height: max(500px, calc(100dvh - 272px));
-  min-height: 500px;
+  width: 100%;
+  height: auto;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
   overflow: hidden;
+  box-shadow: none;
 }
 
 .conversationPane {
@@ -72,10 +106,13 @@
 .listFilters {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 108px;
-  gap: 7px;
-  padding: 10px;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 8px;
+  min-height: 62px;
+  align-items: center;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
 }
 
 .listFilters select {
@@ -120,6 +157,9 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .conversationList ul {
@@ -150,8 +190,8 @@
 .conversationRow {
   width: 100%;
   display: grid;
-  gap: 7px;
-  padding: 13px 14px;
+  gap: 6px;
+  padding: 14px 16px;
   border: 0;
   border-left: 3px solid transparent;
   background: transparent;
@@ -284,28 +324,34 @@
   display: flex;
   flex-direction: column;
   background: var(--app-panel);
+  overflow: hidden;
+  container: support-thread / inline-size;
 }
 
 .threadHeader {
-  min-height: 76px;
-  padding: 11px 15px;
+  min-height: 78px;
+  padding: 10px clamp(14px, 2vw, 24px);
 }
 
 .threadHeading {
   min-width: 0;
   flex: 1;
   display: grid;
-  gap: 3px;
+  gap: 5px;
 }
 
-.threadHeading > div {
+.threadTitleRow {
+  min-width: 0;
   display: flex;
+  align-items: center;
   gap: 5px;
 }
 
 .threadHeading h2 {
+  min-width: 0;
   overflow: hidden;
   font-size: 1.02rem;
+  margin-right: 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -324,10 +370,11 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 18px clamp(14px, 3vw, 32px);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--app-accent-soft) 55%, transparent), transparent 36%),
-    var(--app-panel-soft);
+  overflow-x: hidden;
+  padding: 18px clamp(16px, 3vw, 32px);
+  background: var(--app-panel);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
 }
 
@@ -338,13 +385,13 @@
 
 .messageRow {
   display: flex;
-  margin: 0 0 14px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 90px;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 20px;
 }
 
 .messageRow[data-sender="user"] {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .messageRow[data-sender="system"] {
@@ -352,20 +399,21 @@
 }
 
 .messageBubble {
-  width: fit-content;
-  max-width: min(720px, 82%);
-  padding: 11px 13px;
-  border: 1px solid var(--app-border);
-  border-radius: 7px 12px 12px 12px;
-  background: var(--app-panel);
+  width: min(820px, calc(100% - 52px));
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--app-text);
-  box-shadow: var(--app-shadow-card);
+  box-shadow: none;
 }
 
 .messageRow[data-sender="user"] .messageBubble {
-  border-color: var(--app-info-border);
-  border-radius: 12px 7px 12px 12px;
-  background: var(--app-accent-soft);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .messageRow[data-sender="system"] .messageBubble {
@@ -379,13 +427,35 @@
   box-shadow: none;
 }
 
+.messageAvatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--app-info-border);
+  border-radius: 999px;
+  background: var(--app-accent);
+  color: var(--app-on-accent);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  box-shadow: 0 0 0 3px var(--app-accent-soft);
+}
+
+.messageAvatar[data-sender="support"] {
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  box-shadow: none;
+}
+
 .messageAuthor {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 5px;
-  font-size: 0.69rem;
+  justify-content: flex-start;
+  gap: 14px;
+  margin-bottom: 6px;
+  font-size: 0.74rem;
 }
 
 .messageAuthor strong {
@@ -401,8 +471,8 @@
 .messageBubble > p {
   margin: 0;
   color: var(--app-text);
-  font-size: 0.85rem;
-  line-height: 1.55;
+  font-size: 0.86rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -412,35 +482,43 @@
 }
 
 .attachmentGrid {
+  width: min(100%, 680px);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 240px));
-  gap: 8px;
-  margin-top: 9px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .attachmentCard {
   min-width: 0;
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: minmax(132px, 34%) minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--app-panel);
 }
 
 .attachmentMedia {
-  min-height: 120px;
-  max-height: 260px;
+  min-width: 0;
+  height: 116px;
+  min-height: 0;
+  max-height: 116px;
   display: grid;
   place-items: center;
   overflow: hidden;
+  border-right: 1px solid var(--app-border);
   background: #07101e;
 }
 
 .attachmentMedia img,
 .attachmentMedia video {
   width: 100%;
-  max-height: 260px;
+  height: 100%;
+  max-height: 116px;
   display: block;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .attachmentMeta,
@@ -451,7 +529,8 @@
 }
 
 .attachmentMeta {
-  padding: 7px 8px;
+  min-width: 0;
+  padding: 10px 12px;
 }
 
 .attachmentIcon {
@@ -470,7 +549,7 @@
 .selectedFileName strong {
   overflow: hidden;
   color: var(--app-text-strong);
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -478,7 +557,7 @@
 .attachmentName small,
 .selectedFileName small {
   color: var(--app-text-muted);
-  font-size: 0.61rem;
+  font-size: 0.64rem;
 }
 
 .downloadLink,
@@ -560,22 +639,23 @@
 .composer {
   flex: 0 0 auto;
   display: grid;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 7px;
+  padding: 10px 12px 12px;
   border-top: 1px solid var(--app-border);
   background: var(--app-panel);
 }
 
 .composerInput {
-  min-height: 72px;
-  max-height: 190px;
-  resize: vertical;
+  min-height: 48px;
+  max-height: 112px;
+  padding: 10px 12px;
+  resize: none;
 }
 
 .composerActions,
 .sendGroup {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
@@ -592,6 +672,10 @@
   font-size: 0.68rem;
 }
 
+.sendHint {
+  display: none;
+}
+
 .filePicker {
   min-width: 0;
   display: flex;
@@ -602,10 +686,19 @@
 
 .filePicker[data-compact="true"] {
   flex: 1;
+  flex-wrap: nowrap;
 }
 
 .attachButton {
   white-space: nowrap;
+}
+
+.filePicker[data-compact="true"] .attachButton {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0;
 }
 
 .selectedFiles {
@@ -619,7 +712,19 @@
 }
 
 .filePicker[data-compact="true"] .selectedFiles {
-  grid-column: 1 / -1;
+  width: auto;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.filePicker[data-compact="true"] .selectedFiles li {
+  width: min(210px, 72vw);
+  flex: 0 0 auto;
 }
 
 .selectedFiles li {
@@ -835,50 +940,17 @@
   }
 }
 
-@media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: 280px minmax(0, 1fr);
-  }
-
-  .attachmentGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .messageBubble {
-    max-width: 90%;
-  }
-}
-
-@media (max-width: 767px) {
-  .pageHeader {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 16px;
-    padding: 17px;
-  }
-
-  .headerActions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .headerActions button {
-    min-width: 0;
-  }
-
-  .workspace {
-    height: max(500px, calc(100dvh - 344px));
-    min-height: 520px;
-    display: block;
+@media (max-width: 1100px) {
+  .page:has(.workspace[data-thread-open="true"]) {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .page:has(.workspace[data-thread-open="true"]) .pageHeader {
     display: none;
   }
 
-  .page:has(.workspace[data-thread-open="true"]) .workspace {
-    height: calc(100dvh - 84px);
-    min-height: 540px;
+  .workspace {
+    display: block;
   }
 
   .conversationPane,
@@ -898,42 +970,123 @@
   }
 
   .threadHeader {
-    min-height: 70px;
-    padding: 9px 10px;
+    min-height: 64px;
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .page {
+    height: calc(100dvh - 56px);
+  }
+}
+
+@media (max-width: 767px) {
+  .page {
+    grid-template-rows: 58px minmax(0, 1fr);
+    padding: 0;
+  }
+
+  .pageHeader {
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  .pageTitle {
+    gap: 10px;
+  }
+
+  .pageTitle h1 {
+    font-size: 1.08rem;
+  }
+
+  .pageTitle > span {
+    font-size: 0.68rem;
+  }
+
+  .headerActions {
+    gap: 5px;
+  }
+
+  .headerActions button {
+    min-width: 0;
+  }
+
+  .listFilters {
+    min-height: 56px;
+    padding: 8px 10px;
+  }
+
+  .conversationRow {
+    padding: 13px 14px;
+  }
+
+  .threadHeading {
+    gap: 0;
+  }
+
+  .threadHeading p,
+  .threadTitleRow .category {
+    display: none;
+  }
+
+  .threadTitleRow {
+    gap: 8px;
+  }
+
+  .threadHeading h2 {
+    font-size: 0.98rem;
   }
 
   .messages {
     padding: 14px 11px;
   }
 
+  .messageRow {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .messageAvatar {
+    width: 34px;
+    height: 34px;
+  }
+
   .messageBubble {
-    max-width: 94%;
+    width: calc(100% - 44px);
+  }
+
+  .messageAuthor {
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 10px;
   }
 
   .attachmentGrid {
-    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .attachmentCard {
+    grid-template-columns: minmax(112px, 36%) minmax(0, 1fr);
+  }
+
+  .attachmentMedia {
+    height: 90px;
+    max-height: 90px;
   }
 
   .composer {
-    padding: 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
   }
 
-  .composerActions {
-    align-items: stretch;
-    flex-direction: column;
+  .composerInput {
+    min-height: 44px;
+    max-height: 92px;
   }
 
-  .filePicker[data-compact="true"] {
-    width: 100%;
-  }
-
-  .sendGroup {
-    width: 100%;
-  }
-
-  .sendGroup button {
-    margin-left: auto;
+  .sendHint {
+    display: none;
   }
 
   .selectedFiles,
@@ -952,26 +1105,43 @@
   }
 }
 
-@media (max-width: 460px) {
-  .headerActions {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .workspace {
-    height: max(500px, calc(100dvh - 344px));
-    min-height: 500px;
-  }
-
-  .sendHint {
+@media (max-width: 420px) {
+  .pageTitle > span {
     display: none;
   }
 
-  .sendGroup button {
-    width: 100%;
+  .headerActions > button:first-child {
+    display: none;
   }
 
-  .fileHint {
-    width: 100%;
+  .attachmentMeta {
+    padding: 8px 9px;
+  }
+}
+
+@media (max-height: 520px) {
+  .page {
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
+  .threadHeader {
+    min-height: 54px;
+    padding-block: 5px;
+  }
+
+  .messages {
+    padding-block: 10px;
+  }
+
+  .composer {
+    gap: 5px;
+    padding-top: 6px;
+  }
+
+  .composerInput {
+    min-height: 38px;
+    max-height: 60px;
+    padding-block: 7px;
   }
 }
 

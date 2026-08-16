@@ -132,7 +132,6 @@ describe("SupportWorkspace", () => {
       attachmentIds: [],
       failures: [],
     });
-    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it("renders a persisted attachment and sends an idempotent chat reply", async () => {

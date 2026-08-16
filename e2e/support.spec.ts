@@ -140,29 +140,9 @@ async function mockSupportApi(page: Page) {
   let nextConversation = 2;
   let nextMessage = 3;
   let nextAttachment = 1;
-  let r2PutCount = 0;
-  let confirmCount = 0;
-  let signedHeaderPutCount = 0;
-
-  await page.route("https://r2.support-e2e.test/**", async (route) => {
-    r2PutCount += 1;
-    const headers = route.request().headers();
-    if (
-      headers["if-none-match"] === "*" &&
-      ["image/png", "video/mp4"].includes(headers["content-type"])
-    ) {
-      signedHeaderPutCount += 1;
-    }
-    await route.fulfill({
-      status: 200,
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-headers": "content-type,if-none-match",
-        "access-control-allow-methods": "PUT,OPTIONS",
-      },
-      body: "",
-    });
-  });
+  let rawUploadCount = 0;
+  let authenticatedUploadCount = 0;
+  let sizedUploadCount = 0;
   await page.route("https://media.support-e2e.test/**", async (route) => {
     const isVideo = route.request().url().endsWith(".mp4");
     await route.fulfill({
@@ -299,59 +279,35 @@ async function mockSupportApi(page: Page) {
       return;
     }
 
-    const presignMatch = path.match(/\/api\/support\/conversations\/([^/]+)\/attachments\/presign$/);
-    if (presignMatch) {
-      const input = request.postDataJSON() as {
-        fileName: string;
-        contentType: string;
-        sizeBytes: number;
-      };
-      const id = `support-attachment-${nextAttachment++}`;
-      await json(
-        route,
-        {
-          attachment: {
-            id,
-            type: input.contentType.startsWith("video/") ? "video" : "image",
-            originalName: input.fileName,
-            contentType: input.contentType,
-            sizeBytes: input.sizeBytes,
-            status: "pending",
-            uploadExpiresAt: now,
-          },
-          upload: {
-            url: `https://r2.support-e2e.test/${id}`,
-            method: "PUT",
-            headers: {
-              "Content-Type": input.contentType,
-              "If-None-Match": "*",
-            },
-            expiresInSeconds: 900,
-          },
-        },
-        201
-      );
-      return;
-    }
-    const confirmMatch = path.match(
-      /\/api\/support\/conversations\/([^/]+)\/attachments\/([^/]+)\/confirm$/
+    const uploadMatch = path.match(
+      /\/api\/support\/conversations\/([^/]+)\/attachments\/upload$/
     );
-    if (confirmMatch) {
-      const id = confirmMatch[2];
-      const isVideo = id.endsWith("2");
+    if (uploadMatch && method === "POST") {
+      const headers = request.headers();
+      const contentType = headers["content-type"] || "application/octet-stream";
+      const fileName = url.searchParams.get("fileName") || "attachment";
+      const body = request.postDataBuffer();
+      const id = `support-attachment-${nextAttachment++}`;
+      const isVideo = contentType.startsWith("video/");
       const attachment: ReadyAttachment = {
         id,
         type: isVideo ? "video" : "image",
-        originalName: isVideo ? "workflow.mp4" : "error.png",
-        contentType: isVideo ? "video/mp4" : "image/png",
-        sizeBytes: isVideo ? 11 : 9,
+        originalName: fileName,
+        contentType,
+        sizeBytes: body?.byteLength || 0,
         status: "ready",
         url: isVideo ? videoMediaUrl : imageMediaUrl,
         createdAt: now,
       };
       readyAttachments.set(id, attachment);
-      confirmCount += 1;
-      await json(route, { attachment });
+      rawUploadCount += 1;
+      if (headers.authorization === "Bearer support-e2e-access") {
+        authenticatedUploadCount += 1;
+      }
+      if (headers["x-file-size"] === String(body?.byteLength || 0)) {
+        sizedUploadCount += 1;
+      }
+      await json(route, { attachment }, 201);
       return;
     }
 
@@ -359,7 +315,11 @@ async function mockSupportApi(page: Page) {
   });
 
   return {
-    uploadCounts: () => ({ r2PutCount, confirmCount, signedHeaderPutCount }),
+    uploadCounts: () => ({
+      rawUploadCount,
+      authenticatedUploadCount,
+      sizedUploadCount,
+    }),
   };
 }
 
@@ -374,14 +334,21 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
   ).toEqual([]);
 }
 
-test("customer support chat creates requests, confirms R2 media, and replies", async ({
+test("customer support chat uploads authenticated media, stays fitted, and replies", async ({
   page,
 }, testInfo) => {
+  const runtimeErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") runtimeErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
   const api = await mockSupportApi(page);
+  const viewport = testInfo.project.use.viewport;
+  const singlePane = Boolean(viewport && viewport.width <= 1100);
   await page.goto("/support");
 
   await expect(page.getByRole("heading", { level: 1, name: "Support" })).toBeVisible();
-  if (testInfo.project.use.isMobile) {
+  if (singlePane) {
     await expect(page.getByRole("button", { name: /Preview upload fails/i })).toBeVisible();
   }
   await page.getByRole("button", { name: /Preview upload fails/i }).click();
@@ -396,7 +363,7 @@ test("customer support chat creates requests, confirms R2 media, and replies", a
     page.getByLabel(/^You at/).last().getByText("I can reproduce it on another report.")
   ).toBeVisible();
 
-  if (testInfo.project.use.isMobile) {
+  if (singlePane) {
     await page.getByRole("button", { name: "Back to support requests" }).click();
   }
   await page.getByRole("button", { name: "New request" }).click();
@@ -416,17 +383,48 @@ test("customer support chat creates requests, confirms R2 media, and replies", a
   await expect(page.getByRole("img", { name: "Attachment: error.png" })).toBeVisible();
   await expect(page.getByLabel("Video attachment: workflow.mp4")).toBeVisible();
   await expect.poll(api.uploadCounts).toEqual({
-    r2PutCount: 2,
-    confirmCount: 2,
-    signedHeaderPutCount: 2,
+    rawUploadCount: 2,
+    authenticatedUploadCount: 2,
+    sizedUploadCount: 2,
   });
   await expectNoSeriousAccessibilityViolations(page);
 
   const metrics = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
+    viewportWidth: document.documentElement.clientWidth,
+    viewportHeight: document.documentElement.clientHeight,
     scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+    scrollHeight: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
+    bodyScrollY: window.scrollY,
+    workspace: (() => {
+      const element = document.querySelector<HTMLElement>(
+        '[aria-label="Support conversations"]'
+      );
+      const rect = element?.getBoundingClientRect();
+      return rect ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left } : null;
+    })(),
+    composer: (() => {
+      const element = document.querySelector<HTMLTextAreaElement>("#support-reply")?.form;
+      const rect = element?.getBoundingClientRect();
+      return rect ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left } : null;
+    })(),
+    messageOverflow: (() => {
+      const element = document.querySelector<HTMLElement>('[data-support-scroll="messages"]');
+      return element ? element.scrollWidth - element.clientWidth : null;
+    })(),
   }));
-  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.viewport + 1);
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  expect(metrics.bodyScrollY).toBe(0);
+  expect(metrics.workspace).not.toBeNull();
+  expect(metrics.workspace!.top).toBeGreaterThanOrEqual(0);
+  expect(metrics.workspace!.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+  expect(metrics.workspace!.bottom).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  expect(metrics.composer).not.toBeNull();
+  expect(metrics.composer!.bottom).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  expect(metrics.composer!.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+  expect(metrics.messageOverflow).not.toBeNull();
+  expect(metrics.messageOverflow!).toBeLessThanOrEqual(1);
+  expect(runtimeErrors).toEqual([]);
 
   const screenshotDirectory = process.env.SUPPORT_QA_SCREENSHOT_DIR;
   if (screenshotDirectory) {

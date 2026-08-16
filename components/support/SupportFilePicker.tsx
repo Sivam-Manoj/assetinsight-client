@@ -65,9 +65,11 @@ export default function SupportFilePicker({
         className={`app-button app-button--secondary ${styles.attachButton}`}
         onClick={() => inputRef.current?.click()}
         disabled={disabled}
+        aria-label={compact ? "Attach image or video" : undefined}
+        title={compact ? "Attach image or video" : undefined}
       >
         <Paperclip size={16} aria-hidden />
-        Attach image or video
+        {compact ? null : "Attach image or video"}
       </button>
       {!compact ? (
         <span className={styles.fileHint}>

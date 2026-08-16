@@ -34,21 +34,35 @@ export default defineConfig({
       },
   projects: [
     {
-      name: "concept-desktop",
+      name: "scaled-desktop",
       use: {
-        viewport: { width: 1536, height: 1024 },
+        viewport: { width: 1535, height: 694 },
       },
     },
     {
       name: "desktop",
       use: {
-        viewport: { width: 1440, height: 900 },
+        viewport: { width: 1366, height: 768 },
+      },
+    },
+    {
+      name: "tablet",
+      use: {
+        viewport: { width: 1024, height: 768 },
       },
     },
     {
       name: "mobile",
       use: {
         viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+      },
+    },
+    {
+      name: "mobile-landscape",
+      use: {
+        viewport: { width: 844, height: 390 },
         hasTouch: true,
         isMobile: true,
       },

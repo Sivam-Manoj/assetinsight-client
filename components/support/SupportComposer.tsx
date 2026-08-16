@@ -152,7 +152,7 @@ export default function SupportComposer({
         id="support-reply"
         className={`app-field ${styles.composerInput}`}
         value={body}
-        rows={3}
+        rows={2}
         maxLength={12_000}
         placeholder={
           disabled ? "This conversation is closed." : "Write a reply…"
@@ -189,9 +189,10 @@ export default function SupportComposer({
             type="submit"
             className="app-button app-button--primary"
             disabled={disabled || submitting || (!body.trim() && !files.length)}
+            aria-label="Send reply"
           >
             <SendHorizontal size={16} aria-hidden />
-            {submitting ? "Sending…" : "Send reply"}
+            {submitting ? "Sending…" : "Send"}
           </button>
         </div>
       </div>
