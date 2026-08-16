@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import API from "@/lib/api";
-import { putFileWithRetry } from "@/services/directUpload";
 import { SupportService } from "./support";
 
 vi.mock("@/lib/api", () => ({
@@ -11,10 +10,9 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/services/directUpload", () => ({
-  putFileWithRetry: vi.fn(),
-  mapWithConcurrency: async <T,>(
+  mapWithConcurrency: async <T>(
     items: T[],
-    worker: (item: T, index: number) => Promise<void>
+    worker: (item: T, index: number) => Promise<void>,
   ) => {
     await Promise.all(items.map(worker));
   },
@@ -69,11 +67,6 @@ describe("SupportService", () => {
   beforeEach(() => {
     vi.mocked(API.get).mockReset();
     vi.mocked(API.post).mockReset();
-    vi.mocked(putFileWithRetry).mockReset().mockImplementation(
-      async (_url, file, _contentType, onDelta) => {
-        onDelta?.(file.size);
-      }
-    );
   });
 
   it("uses the server's deployment-specific upload limits", async () => {
@@ -133,7 +126,7 @@ describe("SupportService", () => {
     });
     expect(API.get).toHaveBeenLastCalledWith(
       "/support/conversations/conversation-1/messages",
-      { params: { limit: 50 } }
+      { params: { limit: 50 } },
     );
   });
 
@@ -172,37 +165,26 @@ describe("SupportService", () => {
         body: "Here is another example.",
         attachmentIds: ["attachment-ready"],
         clientMessageId: "web-message-1",
-      }
+      },
     );
   });
 
-  it("presigns each file, uploads to R2, and confirms before returning its id", async () => {
-    vi.mocked(API.post).mockImplementation(async (url: string) => {
-      if (url.endsWith("/attachments/presign")) {
-        return {
-          data: {
-            attachment: {
-              id: "attachment-1",
-              originalName: "screen.png",
-              contentType: "image/png",
-              sizeBytes: 6,
-              status: "pending",
-            },
-            upload: {
-              url: "https://r2.example.test/attachment-1",
-              method: "PUT",
-              headers: {
-                "Content-Type": "image/png",
-                "If-None-Match": "*",
-              },
-            },
+  it("streams raw file bytes through the authenticated support upload endpoint", async () => {
+    vi.mocked(API.post).mockImplementation(async (_url, _body, config) => {
+      config?.onUploadProgress?.({ loaded: 6, total: 6 } as never);
+      return {
+        data: {
+          attachment: {
+            id: "attachment-1",
+            type: "image",
+            originalName: "screen.png",
+            contentType: "image/png",
+            sizeBytes: 6,
+            status: "ready",
+            url: "https://media.example.test/screen.png",
           },
-        };
-      }
-      if (url.endsWith("/attachments/attachment-1/confirm")) {
-        return { data: { attachment: { id: "attachment-1", status: "ready" } } };
-      }
-      throw new Error(`Unexpected POST ${url}`);
+        },
+      } as never;
     });
     const file = new File(["screen"], "screen.png", { type: "image/png" });
     const progress = vi.fn();
@@ -210,72 +192,49 @@ describe("SupportService", () => {
     const result = await SupportService.uploadAttachments(
       "conversation-1",
       [file],
-      progress
+      progress,
     );
 
     expect(result).toEqual({ attachmentIds: ["attachment-1"], failures: [] });
-    expect(API.post).toHaveBeenNthCalledWith(
-      1,
-      "/support/conversations/conversation-1/attachments/presign",
-      { fileName: "screen.png", contentType: "image/png", sizeBytes: 6 }
-    );
-    expect(putFileWithRetry).toHaveBeenCalledWith(
-      "https://r2.example.test/attachment-1",
+    expect(API.post).toHaveBeenCalledWith(
+      "/support/conversations/conversation-1/attachments/upload",
       file,
-      "image/png",
-      expect.any(Function),
-      { "Content-Type": "image/png", "If-None-Match": "*" }
-    );
-    expect(API.post).toHaveBeenNthCalledWith(
-      2,
-      "/support/conversations/conversation-1/attachments/attachment-1/confirm",
-      {}
+      expect.objectContaining({
+        params: { fileName: "screen.png" },
+        headers: { "Content-Type": "image/png", "X-File-Size": "6" },
+        timeout: 15 * 60 * 1000,
+        onUploadProgress: expect.any(Function),
+      }),
     );
     expect(progress).toHaveBeenLastCalledWith(1);
   });
 
-  it.each(["R2 upload returned 412", "R2 upload timed out"])(
-    "confirms after %s because the no-overwrite PUT may have landed",
-    async (putFailure) => {
-    vi.mocked(putFileWithRetry).mockRejectedValueOnce(
-      new Error(putFailure)
-    );
-    vi.mocked(API.post).mockImplementation(async (url: string) => {
-      if (url.endsWith("/attachments/presign")) {
-        return {
-          data: {
-            attachment: {
-              id: "attachment-recovered",
-              contentType: "image/png",
-              status: "pending",
-            },
-            upload: {
-              url: "https://r2.example.test/attachment-recovered",
-              headers: {
-                "Content-Type": "image/png",
-                "If-None-Match": "*",
-              },
-            },
-          },
-        };
-      }
-      if (url.endsWith("/attachments/attachment-recovered/confirm")) {
-        return { data: { attachment: { id: "attachment-recovered", status: "ready" } } };
-      }
-      throw new Error(`Unexpected POST ${url}`);
-    });
-    const file = new File(["screen"], "screen.png", { type: "image/png" });
+  it("does not return an attachment id unless the backend publishes a ready URL", async () => {
+    vi.mocked(API.post).mockResolvedValueOnce({
+      data: {
+        attachment: {
+          id: "attachment-pending",
+          type: "video",
+          originalName: "recording.mp4",
+          contentType: "video/mp4",
+          sizeBytes: 5,
+          status: "pending",
+        },
+      },
+    } as never);
+    const file = new File(["video"], "recording.mp4", { type: "video/mp4" });
 
     await expect(
-      SupportService.uploadAttachments("conversation-1", [file])
+      SupportService.uploadAttachments("conversation-1", [file]),
     ).resolves.toEqual({
-      attachmentIds: ["attachment-recovered"],
-      failures: [],
+      attachmentIds: [],
+      failures: [
+        expect.objectContaining({
+          file,
+          message:
+            "The server did not return a ready attachment for this file.",
+        }),
+      ],
     });
-    expect(API.post).toHaveBeenLastCalledWith(
-      "/support/conversations/conversation-1/attachments/attachment-recovered/confirm",
-      {}
-    );
-    }
-  );
+  });
 });

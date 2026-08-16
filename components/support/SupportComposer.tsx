@@ -2,7 +2,6 @@
 
 import { SendHorizontal } from "lucide-react";
 import { useRef, useState } from "react";
-import { toast } from "@/components/ui/toast";
 import { supportFileKey } from "@/lib/supportFiles";
 import { SupportService } from "@/services/support";
 import SupportFilePicker from "./SupportFilePicker";
@@ -18,7 +17,8 @@ function createClientMessageId() {
 type PreparedAttachments = {
   fileSignature: string;
   attachmentIds: string[];
-  failedCount: number;
+  pendingFiles: File[];
+  failureMessages: string[];
 };
 
 function signatureFor(files: File[]) {
@@ -61,17 +61,45 @@ export default function SupportComposer({
         const upload = await SupportService.uploadAttachments(
           conversationId,
           files,
-          setUploadProgress
+          setUploadProgress,
         );
         prepared = {
           fileSignature,
           attachmentIds: upload.attachmentIds,
-          failedCount: upload.failures.length,
+          pendingFiles: upload.failures.map((failure) => failure.file),
+          failureMessages: upload.failures.map((failure) => failure.message),
+        };
+        preparedRef.current = prepared;
+      } else if (prepared.pendingFiles.length) {
+        // Keep ready attachment ids and retry only files whose authenticated
+        // backend upload failed. Re-uploading every selection would create
+        // abandoned ready objects and make weak-connection retries expensive.
+        const retry = await SupportService.uploadAttachments(
+          conversationId,
+          prepared.pendingFiles,
+          setUploadProgress,
+        );
+        prepared = {
+          fileSignature,
+          attachmentIds: [...prepared.attachmentIds, ...retry.attachmentIds],
+          pendingFiles: retry.failures.map((failure) => failure.file),
+          failureMessages: retry.failures.map((failure) => failure.message),
         };
         preparedRef.current = prepared;
       }
+      if (prepared.pendingFiles.length) {
+        const count = prepared.pendingFiles.length;
+        const detail = prepared.failureMessages[0];
+        throw new Error(
+          `${count} attachment${count === 1 ? "" : "s"} could not be uploaded. Nothing was sent.${
+            detail ? ` ${detail}` : " Try again."
+          }`,
+        );
+      }
       if (!message && !prepared.attachmentIds.length) {
-        throw new Error("No attachments could be uploaded. Choose another file and try again.");
+        throw new Error(
+          "No attachments could be uploaded. Choose another file and try again.",
+        );
       }
 
       clientMessageIdRef.current ||= createClientMessageId();
@@ -81,21 +109,15 @@ export default function SupportComposer({
         clientMessageId: clientMessageIdRef.current,
       });
 
-      const failedCount = prepared.failedCount;
       setBody("");
       setFiles([]);
       resetPreparedSubmission();
       await onSent();
-      if (failedCount) {
-        toast.warning(
-          `Message sent, but ${failedCount} attachment${failedCount === 1 ? "" : "s"} could not be uploaded.`
-        );
-      }
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
-          : "Your reply could not be sent. Try again."
+          : "Your reply could not be sent. Try again.",
       );
     } finally {
       setSubmitting(false);
@@ -118,7 +140,9 @@ export default function SupportComposer({
       {submitting && files.length ? (
         <div className={styles.uploadProgress} role="status" aria-live="polite">
           <span style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
-          <small>Securing attachments… {Math.round(uploadProgress * 100)}%</small>
+          <small>
+            Securing attachments… {Math.round(uploadProgress * 100)}%
+          </small>
         </div>
       ) : null}
       <label className="sr-only" htmlFor="support-reply">
@@ -130,13 +154,15 @@ export default function SupportComposer({
         value={body}
         rows={3}
         maxLength={12_000}
-        placeholder={disabled ? "This conversation is closed." : "Write a reply…"}
+        placeholder={
+          disabled ? "This conversation is closed." : "Write a reply…"
+        }
         disabled={disabled || submitting}
         onChange={(event) => {
           setBody(event.target.value);
           setError(null);
-          // A changed message needs a new idempotency key. Confirmed file ids
-          // remain reusable, avoiding duplicate R2 objects after a send timeout.
+          // A changed message needs a new idempotency key. Ready attachment ids
+          // remain reusable, avoiding duplicate uploads after a send timeout.
           clientMessageIdRef.current = null;
         }}
         onKeyDown={(event) => {
@@ -162,9 +188,7 @@ export default function SupportComposer({
           <button
             type="submit"
             className="app-button app-button--primary"
-            disabled={
-              disabled || submitting || (!body.trim() && !files.length)
-            }
+            disabled={disabled || submitting || (!body.trim() && !files.length)}
           >
             <SendHorizontal size={16} aria-hidden />
             {submitting ? "Sending…" : "Send reply"}

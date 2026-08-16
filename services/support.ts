@@ -6,18 +6,11 @@ import {
   supportFileContentType,
   type SupportFileLimits,
 } from "@/lib/supportFiles";
-import {
-  mapWithConcurrency,
-  putFileWithRetry,
-} from "@/services/directUpload";
+import { mapWithConcurrency } from "@/services/directUpload";
 
 export type SupportCategory = "error" | "feature" | "question" | "other";
 export type SupportStatus =
-  | "open"
-  | "in_progress"
-  | "waiting_on_user"
-  | "resolved"
-  | "closed";
+  "open" | "in_progress" | "waiting_on_user" | "resolved" | "closed";
 export type SupportPriority = "low" | "normal" | "high" | "urgent";
 export type SupportSenderRole = "user" | "support" | "system";
 
@@ -84,14 +77,8 @@ export type SupportUploadResult = {
   failures: SupportUploadFailure[];
 };
 
-type SupportUploadTarget = {
-  attachmentId: string;
-  uploadUrl: string;
-  contentType: string;
-  headers?: Record<string, string>;
-};
-
 const SUPPORT_UPLOAD_CONCURRENCY = 3;
+const SUPPORT_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -118,7 +105,7 @@ function unwrap(value: unknown): unknown {
 function enumValue<T extends string>(
   value: unknown,
   allowed: readonly T[],
-  fallback: T
+  fallback: T,
 ) {
   const candidate = asString(value) as T;
   return allowed.includes(candidate) ? candidate : fallback;
@@ -163,13 +150,13 @@ function attachmentUrl(value: unknown) {
 }
 
 export function normalizeSupportAttachment(
-  value: unknown
+  value: unknown,
 ): SupportAttachment | null {
   if (!isRecord(value)) return null;
   const id = asString(value.id || value._id || value.attachmentId);
   if (!id) return null;
   const url = attachmentUrl(
-    value.url || value.downloadUrl || value.publicUrl || value.fileUrl
+    value.url || value.downloadUrl || value.publicUrl || value.fileUrl,
   );
   const rawStatus = asString(value.status).toLowerCase();
   // A URL is only renderable after the backend has verified the object in R2.
@@ -184,11 +171,11 @@ export function normalizeSupportAttachment(
     id,
     fileName: asString(
       value.fileName || value.filename || value.originalName || value.name,
-      "Attachment"
+      "Attachment",
     ),
     contentType: asString(
       value.contentType || value.mimeType || value.type,
-      "application/octet-stream"
+      "application/octet-stream",
     ),
     size: Math.max(0, Number(value.sizeBytes || value.size) || 0),
     url,
@@ -216,7 +203,7 @@ export function normalizeSupportMessage(value: unknown): SupportMessage | null {
       asString(value.conversationId || value.conversation) || undefined,
     body: asString(value.body || value.message || value.text || value.content),
     senderRole: normalizeSenderRole(
-      value.senderRole || value.senderType || value.authorRole || sender?.role
+      value.senderRole || value.senderType || value.authorRole || sender?.role,
     ),
     senderName:
       asString(
@@ -224,7 +211,7 @@ export function normalizeSupportMessage(value: unknown): SupportMessage | null {
           value.authorName ||
           sender?.name ||
           sender?.username ||
-          sender?.email
+          sender?.email,
       ) || undefined,
     clientMessageId: asString(value.clientMessageId) || undefined,
     attachments: rawAttachments.flatMap((attachment) => {
@@ -236,7 +223,7 @@ export function normalizeSupportMessage(value: unknown): SupportMessage | null {
 }
 
 export function normalizeSupportConversation(
-  value: unknown
+  value: unknown,
 ): SupportConversation | null {
   if (!isRecord(value)) return null;
   const id = asString(value.id || value._id || value.conversationId);
@@ -258,15 +245,17 @@ export function normalizeSupportConversation(
     source: enumValue(value.source, ["web", "mobile"] as const, "web"),
     preview:
       asString(
-        value.preview || value.lastMessagePreview || latest?.preview || latest?.body
-      ) ||
-      undefined,
+        value.preview ||
+          value.lastMessagePreview ||
+          latest?.preview ||
+          latest?.body,
+      ) || undefined,
     unreadCount: Math.max(
       0,
       Number(
         value.unreadCount ||
-          (isRecord(value.unread) ? value.unread.user : undefined)
-      ) || 0
+          (isRecord(value.unread) ? value.unread.user : undefined),
+      ) || 0,
     ),
     createdAt,
     updatedAt,
@@ -279,7 +268,7 @@ export function normalizeSupportConversation(
 function normalizePage<T>(
   value: unknown,
   itemKeys: readonly string[],
-  normalizeItem: (item: unknown) => T | null
+  normalizeItem: (item: unknown) => T | null,
 ): SupportPage<T> {
   const envelope = isRecord(value) ? value : {};
   const payload = unwrap(value);
@@ -301,7 +290,7 @@ function normalizePage<T>(
     record.nextCursor ||
       pagination.nextCursor ||
       envelope.nextCursor ||
-      envelopePagination.nextCursor
+      envelopePagination.nextCursor,
   );
   return {
     items: candidates.flatMap((candidate) => {
@@ -313,62 +302,15 @@ function normalizePage<T>(
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  const responseMessage = (error as {
-    response?: { data?: { message?: unknown; error?: unknown } };
-  })?.response?.data;
+  const responseMessage = (
+    error as {
+      response?: { data?: { message?: unknown; error?: unknown } };
+    }
+  )?.response?.data;
   return (
     asString(responseMessage?.message || responseMessage?.error) ||
     (error instanceof Error && error.message ? error.message : fallback)
   );
-}
-
-function normalizeUploadTargets(value: unknown): SupportUploadTarget[] {
-  const payload = unwrap(value);
-  const record = isRecord(payload) ? payload : {};
-  const singleAttachment = isRecord(record.attachment)
-    ? record.attachment
-    : undefined;
-  const singleUpload = isRecord(record.upload) ? record.upload : undefined;
-  const candidates = singleAttachment && singleUpload
-    ? [{ ...singleAttachment, upload: singleUpload }]
-    : Array.isArray(payload)
-    ? payload
-    : Array.isArray(record.attachments)
-      ? record.attachments
-      : Array.isArray(record.files)
-        ? record.files
-        : Array.isArray(record.targets)
-          ? record.targets
-          : [];
-
-  return candidates.flatMap((candidate) => {
-    if (!isRecord(candidate)) return [];
-    const upload = isRecord(candidate.upload) ? candidate.upload : candidate;
-    const attachmentId = asString(
-      candidate.attachmentId || candidate.id || candidate._id
-    );
-    const uploadUrl = asString(
-      upload.url || upload.uploadUrl || upload.presignedUrl
-    );
-    if (!attachmentId || !uploadUrl) return [];
-    const rawHeaders = isRecord(upload.headers) ? upload.headers : {};
-    const headers = Object.fromEntries(
-      Object.entries(rawHeaders).flatMap(([name, headerValue]) =>
-        typeof headerValue === "string" ? [[name, headerValue]] : []
-      )
-    );
-    return [
-      {
-        attachmentId,
-        uploadUrl,
-        contentType: asString(
-          candidate.contentType || candidate.mimeType || rawHeaders["Content-Type"],
-          "application/octet-stream"
-        ),
-        headers,
-      },
-    ];
-  });
 }
 
 export const SupportService = {
@@ -382,12 +324,12 @@ export const SupportService = {
       : {};
     const imageContentTypes = Array.isArray(record.imageContentTypes)
       ? record.imageContentTypes.filter(
-          (value): value is string => typeof value === "string"
+          (value): value is string => typeof value === "string",
         )
       : [];
     const videoContentTypes = Array.isArray(record.videoContentTypes)
       ? record.videoContentTypes.filter(
-          (value): value is string => typeof value === "string"
+          (value): value is string => typeof value === "string",
         )
       : [];
     const positive = (value: unknown, fallback: number) => {
@@ -405,24 +347,26 @@ export const SupportService = {
           : DEFAULT_SUPPORT_FILE_LIMITS.videoContentTypes,
       maxImageBytes: positive(
         record.maxImageBytes,
-        DEFAULT_SUPPORT_FILE_LIMITS.maxImageBytes
+        DEFAULT_SUPPORT_FILE_LIMITS.maxImageBytes,
       ),
       maxVideoBytes: positive(
         record.maxVideoBytes,
-        DEFAULT_SUPPORT_FILE_LIMITS.maxVideoBytes
+        DEFAULT_SUPPORT_FILE_LIMITS.maxVideoBytes,
       ),
       maxAttachmentsPerMessage: positive(
         record.maxAttachmentsPerMessage,
-        DEFAULT_SUPPORT_FILE_LIMITS.maxAttachmentsPerMessage
+        DEFAULT_SUPPORT_FILE_LIMITS.maxAttachmentsPerMessage,
       ),
       maxPendingUploads: positive(
         record.maxPendingUploads,
-        DEFAULT_SUPPORT_FILE_LIMITS.maxPendingUploads
+        DEFAULT_SUPPORT_FILE_LIMITS.maxPendingUploads,
       ),
     };
   },
 
-  async listConversations(cursor?: string): Promise<SupportPage<SupportConversation>> {
+  async listConversations(
+    cursor?: string,
+  ): Promise<SupportPage<SupportConversation>> {
     const { data } = await API.get("/support/conversations", {
       params: { limit: 50, ...(cursor ? { cursor } : {}) },
     });
@@ -431,18 +375,19 @@ export const SupportService = {
 
   async getConversation(id: string): Promise<SupportConversation> {
     const { data } = await API.get(
-      `/support/conversations/${encodeURIComponent(id)}`
+      `/support/conversations/${encodeURIComponent(id)}`,
     );
     const payload = unwrap(data);
     const normalized = normalizeSupportConversation(
-      isRecord(payload) ? payload.conversation || payload : payload
+      isRecord(payload) ? payload.conversation || payload : payload,
     );
-    if (!normalized) throw new Error("Support returned an invalid conversation.");
+    if (!normalized)
+      throw new Error("Support returned an invalid conversation.");
     return normalized;
   },
 
   async createConversation(
-    input: CreateSupportConversationInput
+    input: CreateSupportConversationInput,
   ): Promise<SupportConversation> {
     const { data } = await API.post("/support/conversations", {
       subject: input.subject,
@@ -453,26 +398,27 @@ export const SupportService = {
     });
     const payload = unwrap(data);
     const normalized = normalizeSupportConversation(
-      isRecord(payload) ? payload.conversation || payload : payload
+      isRecord(payload) ? payload.conversation || payload : payload,
     );
-    if (!normalized) throw new Error("Support returned an invalid conversation.");
+    if (!normalized)
+      throw new Error("Support returned an invalid conversation.");
     return normalized;
   },
 
   async listMessages(
     conversationId: string,
-    cursor?: string
+    cursor?: string,
   ): Promise<SupportPage<SupportMessage>> {
     const { data } = await API.get(
       `/support/conversations/${encodeURIComponent(conversationId)}/messages`,
-      { params: { limit: 50, ...(cursor ? { before: cursor } : {}) } }
+      { params: { limit: 50, ...(cursor ? { before: cursor } : {}) } },
     );
     return normalizePage(data, ["messages"], normalizeSupportMessage);
   },
 
   async sendMessage(
     conversationId: string,
-    input: SendSupportMessageInput
+    input: SendSupportMessageInput,
   ): Promise<SupportMessage> {
     const { data } = await API.post(
       `/support/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -482,11 +428,11 @@ export const SupportService = {
         attachmentIds: input.attachmentIds?.length
           ? input.attachmentIds
           : undefined,
-      }
+      },
     );
     const payload = unwrap(data);
     const normalized = normalizeSupportMessage(
-      isRecord(payload) ? payload.message || payload : payload
+      isRecord(payload) ? payload.message || payload : payload,
     );
     if (!normalized) throw new Error("Support returned an invalid message.");
     return normalized;
@@ -495,92 +441,92 @@ export const SupportService = {
   async markRead(conversationId: string): Promise<void> {
     await API.post(
       `/support/conversations/${encodeURIComponent(conversationId)}/read`,
-      {}
+      {},
     );
   },
 
   async uploadAttachments(
     conversationId: string,
     files: File[],
-    onProgress?: (fraction: number) => void
+    onProgress?: (fraction: number) => void,
+    signal?: AbortSignal,
   ): Promise<SupportUploadResult> {
     if (!files.length) return { attachmentIds: [], failures: [] };
     const totalBytes =
       files.reduce((total, file) => total + Math.max(1, file.size), 0) || 1;
     let uploadedBytes = 0;
     const loadedByIndex = new Map<number, number>();
-    const attachmentIds: string[] = [];
-    const failures: SupportUploadFailure[] = [];
+    const attachmentIdsByIndex: Array<string | undefined> = new Array(
+      files.length,
+    );
+    const failuresByIndex: Array<SupportUploadFailure | undefined> = new Array(
+      files.length,
+    );
 
     await mapWithConcurrency(
       files,
       async (file, index) => {
         try {
+          const contentType =
+            supportFileContentType(file) || "application/octet-stream";
           const { data } = await API.post(
-            `/support/conversations/${encodeURIComponent(conversationId)}/attachments/presign`,
+            `/support/conversations/${encodeURIComponent(conversationId)}/attachments/upload`,
+            file,
             {
-              fileName: file.name,
-              contentType:
-                supportFileContentType(file) || "application/octet-stream",
-              sizeBytes: file.size,
-            }
-          );
-          const target = normalizeUploadTargets(data)[0];
-          if (!target) {
-            throw new Error(
-              "The server did not return a valid upload target for this file."
-            );
-          }
-          let putError: unknown;
-          try {
-            await putFileWithRetry(
-              target.uploadUrl,
-              file,
-              target.contentType || supportFileContentType(file),
-              (delta) => {
+              params: { fileName: file.name },
+              headers: {
+                "Content-Type": contentType,
+                "X-File-Size": String(file.size),
+              },
+              timeout: SUPPORT_UPLOAD_TIMEOUT_MS,
+              signal,
+              onUploadProgress: (event) => {
                 const previous = loadedByIndex.get(index) || 0;
-                const next = Math.min(file.size, previous + Math.max(0, delta));
+                const next = Math.min(
+                  file.size,
+                  Math.max(previous, Number(event.loaded || 0)),
+                );
                 loadedByIndex.set(index, next);
                 uploadedBytes += Math.max(0, next - previous);
                 onProgress?.(Math.min(0.95, uploadedBytes / totalBytes));
               },
-              target.headers
+            },
+          );
+          const payload = unwrap(data);
+          const record = isRecord(payload) ? payload : {};
+          const attachment = normalizeSupportAttachment(
+            record.attachment || payload,
+          );
+          if (!attachment?.url) {
+            throw new Error(
+              "The server did not return a ready attachment for this file.",
             );
-          } catch (error) {
-            putError = error;
           }
-
-          try {
-            // A browser timeout or 412 can mean the first no-overwrite PUT
-            // landed but its response was lost. Confirmation HEAD-checks R2,
-            // so it is the authoritative result and prevents duplicate files.
-            await API.post(
-              `/support/conversations/${encodeURIComponent(conversationId)}/attachments/${encodeURIComponent(target.attachmentId)}/confirm`,
-              {}
-            );
-          } catch (confirmError) {
-            if (putError) {
-              throw new Error(
-                `${errorMessage(putError, "R2 upload failed")} ${errorMessage(
-                  confirmError,
-                  "The uploaded file could not be confirmed."
-                )}`
-              );
-            }
-            throw confirmError;
+          const previous = loadedByIndex.get(index) || 0;
+          if (previous < file.size) {
+            loadedByIndex.set(index, file.size);
+            uploadedBytes += file.size - previous;
+            onProgress?.(Math.min(0.95, uploadedBytes / totalBytes));
           }
-          attachmentIds.push(target.attachmentId);
+          attachmentIdsByIndex[index] = attachment.id;
         } catch (error) {
-          failures.push({
+          failuresByIndex[index] = {
             file,
             message: errorMessage(error, `Unable to upload ${file.name}.`),
-          });
+          };
         }
       },
-      SUPPORT_UPLOAD_CONCURRENCY
+      SUPPORT_UPLOAD_CONCURRENCY,
     );
 
     onProgress?.(1);
-    return { attachmentIds, failures };
+    return {
+      attachmentIds: attachmentIdsByIndex.filter((id): id is string =>
+        Boolean(id),
+      ),
+      failures: failuresByIndex.filter(
+        (failure): failure is SupportUploadFailure => Boolean(failure),
+      ),
+    };
   },
 };
