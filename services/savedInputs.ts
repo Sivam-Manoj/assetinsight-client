@@ -26,6 +26,7 @@ export type AssetFormData = {
   factorsAnalysis?: string;
   includeDamageAnalysis?: boolean;
   bankPhotosEnabled?: boolean;
+  watermarkImages?: boolean;
 };
 
 // Real Estate form data

@@ -108,6 +108,7 @@ type DraftSnapshot = {
   language: "en" | "fr" | "es";
   currency: string;
   bankPhotosEnabled: boolean;
+  watermarkImages: boolean;
   clientSubmissionId: string | null;
   lots: MixedLot[];
 };
@@ -301,6 +302,7 @@ export default function LotListingForm({
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
+  const [watermarkImages, setWatermarkImages] = useState(true);
 
   const [openSections, setOpenSections] = useState({
     details: true,
@@ -385,6 +387,7 @@ export default function LotListingForm({
     language,
     currency,
     bankPhotosEnabled,
+    watermarkImages,
     clientSubmissionId: jobIdRef.current,
     lots: mixedLots,
   };
@@ -615,6 +618,7 @@ export default function LotListingForm({
       setLanguage(data.language || "en");
       setCurrency(data.currency || "CAD");
       setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
+      setWatermarkImages(data.watermarkImages !== false);
       setMixedLots(Array.isArray(data.lots) ? data.lots : []);
       jobIdRef.current =
         data.clientSubmissionId ||
@@ -819,6 +823,11 @@ export default function LotListingForm({
       bankPhotosEnabled: Boolean(
         formData.bankPhotosEnabled ?? formData.bank_photos_enabled
       ),
+      watermarkImages:
+        formData.watermarkImages === undefined &&
+        formData.watermark_images === undefined
+          ? true
+          : Boolean(formData.watermarkImages ?? formData.watermark_images),
       clientSubmissionId: resumeDraft.clientDraftId,
       lots: restoredLots,
     };
@@ -926,6 +935,7 @@ export default function LotListingForm({
     setLanguage("en");
     setCurrency("CAD");
     setBankPhotosEnabled(false);
+    setWatermarkImages(true);
     setError(null);
     setErrors({});
     setUploadPercent(0);
@@ -974,9 +984,28 @@ export default function LotListingForm({
     requestedRevisionRef.current += 1;
     const committed = await flushDraft();
     if (committed) {
-      toast.success("Draft and photos saved to your account.");
+      try {
+        const draft = await ReportDraftService.getByClientId(
+          draftScopeId,
+          "lot-listing"
+        );
+        await ReportDraftService.processPreview(draft.id || draft._id);
+        reportDraftStatus(
+          "saved",
+          "Draft saved. Its preview is now being prepared."
+        );
+        toast.success("Draft saved. Preview processing has started.");
+      } catch (error) {
+        const issue = draftFailureGuidance(error);
+        setDraftIssue({
+          tone: "warning",
+          title: "Draft saved, preview not started",
+          message: issue.message,
+        });
+        toast.error("Draft saved, but preview processing could not start.");
+      }
     }
-  }, [flushDraft]);
+  }, [draftScopeId, flushDraft, reportDraftStatus]);
 
   const validateForm = useCallback(
     ({ requireMedia = true }: { requireMedia?: boolean } = {}) => {
@@ -1071,6 +1100,7 @@ export default function LotListingForm({
       valuation_methods: LOT_LISTING_VALUATION_METHODS,
       include_damage_analysis: true,
       bank_photos_enabled: bankPhotosEnabled,
+      watermark_images: watermarkImages,
       force_new: forceNewSubmissionRef.current,
       ...(auctioneer && {
         auctioneer_work_item_id: auctioneer.workItemId,
@@ -1086,6 +1116,7 @@ export default function LotListingForm({
       location,
       longitude,
       salesDate,
+      watermarkImages,
     ]
   );
 
@@ -1191,6 +1222,7 @@ export default function LotListingForm({
         valuation_methods: LOT_LISTING_VALUATION_METHODS,
         include_damage_analysis: true,
         bank_photos_enabled: bankPhotosEnabled,
+        watermark_images: watermarkImages,
         progress_id: jobId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
@@ -1348,6 +1380,7 @@ export default function LotListingForm({
       onSuccess,
       resumeDraftAfterFailure,
       salesDate,
+      watermarkImages,
       validateForm,
     ]
   );
@@ -1579,6 +1612,20 @@ export default function LotListingForm({
                   checked={bankPhotosEnabled}
                   onChange={(event) => {
                     setBankPhotosEnabled(event.target.checked);
+                    markDirty();
+                  }}
+                  disabled={submitting}
+                />
+              </div>
+
+              <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-4 py-3">
+                <FormSwitch
+                  id="lot-watermark-images"
+                  label="Apply watermark"
+                  description="Turn off when re-uploading photos that already contain the Asset Insight watermark."
+                  checked={watermarkImages}
+                  onChange={(event) => {
+                    setWatermarkImages(event.target.checked);
                     markDirty();
                   }}
                   disabled={submitting}

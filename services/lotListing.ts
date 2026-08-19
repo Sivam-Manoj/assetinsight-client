@@ -70,6 +70,7 @@ export interface LotListing {
     updatedAt?: string;
   };
   include_damage_analysis?: boolean;
+  watermark_images?: boolean;
   progress?: {
     phase: string;
     percent: number;
@@ -83,6 +84,7 @@ export interface LotListing {
     longitude?: number;
     currency?: string;
     include_damage_analysis?: boolean;
+    watermark_images?: boolean;
     valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
   };
   lots?: LotListingLot[];
@@ -96,6 +98,7 @@ export interface LotListing {
     longitude?: number;
     currency?: string;
     include_damage_analysis?: boolean;
+    watermark_images?: boolean;
     valuation_methods?: Array<"FML" | "TKV" | "OLV" | "FLV">;
     lots?: LotListingLot[];
     videoUrls?: string[];

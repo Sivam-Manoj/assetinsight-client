@@ -379,6 +379,22 @@ export default function DashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const serialized = window.sessionStorage.getItem("cv:resume-report-draft");
+    if (!serialized) return;
+    window.sessionStorage.removeItem("cv:resume-report-draft");
+    try {
+      const draft = JSON.parse(serialized) as ReportDraftRecord;
+      if (!draft?._id) return;
+      setResumeLocalDraftKind(null);
+      setResumeLocalDraftScopeId(null);
+      setResumeReportDraft(draft);
+      setDrawerType(draftKindForRecord(draft));
+    } catch {
+      // A malformed navigation handoff must not prevent the dashboard loading.
+    }
+  }, []);
+
   useEffect(() => setDraftStatus(null), [drawerType]);
 
   const closeDrawer = useCallback(() => {

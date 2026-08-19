@@ -30,6 +30,10 @@ import {
   type RealEstateReport,
 } from "@/services/realEstate";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
+import {
+  ReportDraftService,
+  type ReportDraftRecord,
+} from "@/services/reportDrafts";
 import styles from "./page.module.css";
 
 const AssetMergeDialog = dynamic(
@@ -53,7 +57,7 @@ type CombinedReport =
   | (RealEstateReport & { reportType: "realEstate" })
   | (LotListing & { reportType: "lotListing" });
 
-type TabType = "new" | "submitted";
+type TabType = "new" | "submitted" | "drafts";
 
 const WORKFLOW_LABELS: Record<string, string> = {
   preparing_preview: "Preparing preview",
@@ -220,9 +224,14 @@ export default function PreviewsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
+  const [draftReports, setDraftReports] = useState<ReportDraftRecord[]>([]);
   const hasActiveJobs = useMemo(
-    () => [...newReports, ...submittedReports].some(isWorkflowActive),
-    [newReports, submittedReports]
+    () =>
+      [...newReports, ...submittedReports].some(isWorkflowActive) ||
+      draftReports.some((draft) =>
+        ["queued", "processing"].includes(String(draft.previewStatus || ""))
+      ),
+    [draftReports, newReports, submittedReports]
   );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -258,12 +267,14 @@ export default function PreviewsPage() {
         submittedAssetResponse,
         lotListingResponse,
         submittedLotListingResponse,
+        reportDraftResponse,
       ] = await Promise.all([
         getAssetReports().catch(() => ({ data: [] })),
         RealEstateService.getReports().catch(() => ({ data: [] })),
         getSubmittedReports().catch(() => ({ data: [] })),
         getLotListings().catch(() => ({ data: [] })),
         getSubmittedLotListings().catch(() => ({ data: [] })),
+        ReportDraftService.list().catch(() => []),
       ]);
 
       const assetPreviews: CombinedReport[] = (assetResponse.data || [])
@@ -336,6 +347,12 @@ export default function PreviewsPage() {
         [...submittedAssets, ...realEstateSubmitted, ...lotListingSubmitted].sort(
           (a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+      );
+      setDraftReports(
+        [...reportDraftResponse].sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         )
       );
       if (options.successToast) {
@@ -449,6 +466,36 @@ export default function PreviewsPage() {
     setIsResubmitMode(false);
   };
 
+  const handleOpenDraftPreview = (draft: ReportDraftRecord) => {
+    if (!draft.previewReportId || draft.previewStatus !== "ready") return;
+    setSelectedReportId(String(draft.previewReportId));
+    setIsResubmitMode(false);
+    if (draft.type === "lotListing") setLotListingModalOpen(true);
+    else setPreviewModalOpen(true);
+  };
+
+  const handleContinueDraft = (draft: ReportDraftRecord) => {
+    window.sessionStorage.setItem(
+      "cv:resume-report-draft",
+      JSON.stringify(draft)
+    );
+    window.location.assign("/dashboard?resumeDraft=1");
+  };
+
+  const handleRetryDraftPreview = async (draft: ReportDraftRecord) => {
+    try {
+      await ReportDraftService.processPreview(draft.id || draft._id);
+      toast.success("Draft preview processing restarted.");
+      await loadReports({ silent: true });
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Draft preview processing could not be started."
+      );
+    }
+  };
+
   const handleSuccess = (submittedReport?: any) => {
     const reportId = String(
       submittedReport?._id || submittedReport?.reportId || selectedReportId || ""
@@ -520,18 +567,24 @@ export default function PreviewsPage() {
     }
   };
 
-  const reports = activeTab === "new" ? newReports : submittedReports;
+  const reports =
+    activeTab === "new"
+      ? newReports
+      : activeTab === "submitted"
+        ? submittedReports
+        : [];
 
   const summary = useMemo(() => {
     const all = [...newReports, ...submittedReports];
     return {
       newCount: newReports.length,
+      draftCount: draftReports.length,
       pendingCount: all.filter((report) => report.status === "pending_approval")
         .length,
       approvedCount: all.filter((report) => report.status === "approved").length,
       declinedCount: all.filter((report) => report.status === "declined").length,
     };
-  }, [newReports, submittedReports]);
+  }, [draftReports.length, newReports, submittedReports]);
 
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
 
@@ -584,6 +637,7 @@ export default function PreviewsPage() {
       >
         {[
           { label: "New", value: summary.newCount },
+          { label: "Draft previews", value: summary.draftCount },
           {
             label: "Pending approval",
             value: summary.pendingCount,
@@ -619,6 +673,11 @@ export default function PreviewsPage() {
                 label: "Submitted",
                 count: submittedReports.length,
               },
+              {
+                id: "drafts" as const,
+                label: "Draft Previews",
+                count: draftReports.length,
+              },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -643,7 +702,118 @@ export default function PreviewsPage() {
           role="tabpanel"
           aria-labelledby={`preview-tab-${activeTab}`}
         >
-          {reports.length === 0 ? (
+          {activeTab === "drafts" && draftReports.length > 0 ? (
+            <ul className={styles.reportList}>
+              {draftReports.map((draft) => {
+                const status = draft.previewStatus || "idle";
+                const isActive = status === "queued" || status === "processing";
+                const isReady = status === "ready" && Boolean(draft.previewReportId);
+                const imageCount = (draft.media || []).filter(
+                  (item) => item.slot !== "video"
+                ).length;
+                const lotCount = Array.isArray(draft.lots) ? draft.lots.length : 0;
+                const processedRevision = Number(draft.previewProcessedRevision || 0);
+                const stale = isReady && processedRevision < Number(draft.revision || 0);
+                return (
+                  <li key={draft._id} className={styles.reportRow}>
+                    <div className={styles.rowMain}>
+                      <div className={styles.reportIdentity}>
+                        <span className={styles.thumbnail}>
+                          <ReportThumbnail
+                            src={(draft.media || []).find((item) => item.url)?.url || null}
+                            title={draft.title || draft.contractNo || "Draft report"}
+                            size="table"
+                          />
+                        </span>
+                        <div className={styles.identityCopy}>
+                          <div className={styles.metaLine}>
+                            <span className={styles.typeLabel}>
+                              {draft.type === "lotListing" ? "Lot Listing" : "Asset"}
+                            </span>
+                            <span
+                              className={`${styles.badge} ${
+                                status === "ready"
+                                  ? styles.badgeSuccess
+                                  : status === "error"
+                                    ? styles.badgeDanger
+                                    : isActive
+                                      ? styles.badgeInfo
+                                      : styles.badgeNeutral
+                              }`}
+                            >
+                              {stale
+                                ? "Changes need processing"
+                                : status === "idle"
+                                  ? "Saved draft"
+                                  : status === "queued"
+                                    ? "Queued"
+                                    : status === "processing"
+                                      ? "Preparing preview"
+                                      : status === "ready"
+                                        ? "Draft preview ready"
+                                        : "Preview failed"}
+                            </span>
+                          </div>
+                          <h3 className={styles.reportTitle}>
+                            {draft.title || draft.contractNo || "Untitled draft"}
+                          </h3>
+                          <p className={styles.createdAt}>
+                            Contract: {draft.contractNo || "Not set"} · {lotCount} lot{lotCount === 1 ? "" : "s"} · {imageCount} image{imageCount === 1 ? "" : "s"} · Updated {PREVIEW_DATE_FORMATTER.format(new Date(draft.updatedAt))}
+                          </p>
+                          {draft.previewError ? (
+                            <div className={`${styles.notice} ${styles.noticeDanger}`}>
+                              {draft.previewError}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className={styles.actions}>
+                        {isReady && !stale ? (
+                          <button
+                            type="button"
+                            className={`${styles.action} ${styles.actionPrimary}`}
+                            onClick={() => handleOpenDraftPreview(draft)}
+                          >
+                            <FileSearch className="size-4" /> Open preview
+                          </button>
+                        ) : null}
+                        {(status === "error" || stale || status === "idle") ? (
+                          <button
+                            type="button"
+                            className={`${styles.action} ${styles.actionSecondary}`}
+                            onClick={() => void handleRetryDraftPreview(draft)}
+                          >
+                            <RefreshCw className="size-4" /> Prepare preview
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className={`${styles.action} ${styles.actionSecondary}`}
+                          onClick={() => handleContinueDraft(draft)}
+                        >
+                          <Pencil className="size-4" /> Continue editing
+                        </button>
+                      </div>
+                    </div>
+                    {isActive ? (
+                      <div className={`${styles.progressPanel} ${styles.rowContinuation}`}>
+                        <div className={styles.progressHeader}>
+                          <span>Preparing a draft preview from the saved details and media</span>
+                          <span>{status === "queued" ? "Queued" : "Processing"}</span>
+                        </div>
+                        <div className={styles.progressTrack}>
+                          <span
+                            className={styles.progressValue}
+                            style={{ width: status === "queued" ? "18%" : "62%" }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : reports.length === 0 ? (
             <div className={styles.emptyState}>
               <div>
                 <span className={styles.emptyIcon} aria-hidden="true">
@@ -652,12 +822,16 @@ export default function PreviewsPage() {
                 <h3 className={styles.emptyTitle}>
                   {activeTab === "new"
                     ? "No new previews"
-                    : "No submitted previews"}
+                    : activeTab === "submitted"
+                      ? "No submitted previews"
+                      : "No draft previews"}
                 </h3>
                 <p className={styles.emptyDescription}>
                   {activeTab === "new"
                     ? "Generate a new report to begin the review and submission flow."
-                    : "Submitted previews and approvals will appear here."}
+                    : activeTab === "submitted"
+                      ? "Submitted previews and approvals will appear here."
+                      : "Use Save Draft in an Asset or Lot Listing form to prepare a draft preview without submitting it."}
                 </p>
                 {activeTab === "new" ? (
                   <a

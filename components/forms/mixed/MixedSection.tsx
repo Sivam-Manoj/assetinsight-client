@@ -1947,6 +1947,17 @@ export default function MixedSection({
                   ) : null}
                 </fieldset>
 
+                {activeLot.mode === "single_lot" ? (
+                  <div
+                    className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-xs leading-5 text-sky-900 dark:text-sky-100"
+                    role="note"
+                  >
+                    Make the lot-number card the first main photo. Bundle lots
+                    numbered 1000 or higher analyze only the first 5 photos. All
+                    photos remain included.
+                  </div>
+                ) : null}
+
                 {analysisImageLimit && activeLot.files.length > analysisImageLimit ? (
                   <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-200" role="note">
                     Only the first {analysisImageLimit} main photos are analyzed. All {activeLot.files.length} main photos remain included in the report.

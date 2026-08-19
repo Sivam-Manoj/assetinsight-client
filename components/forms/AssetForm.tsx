@@ -154,6 +154,7 @@ type AssetDraftFormData = {
   selectedValuationMethods: ValuationMethod[];
   includeDamageAnalysis: boolean;
   bankPhotosEnabled: boolean;
+  watermarkImages: boolean;
   preparedFor: string;
   factorsAgeCondition: string;
   factorsQuality: string;
@@ -360,6 +361,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(true);
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
+  const [watermarkImages, setWatermarkImages] = useState(true);
   const [factorsAgeCondition, setFactorsAgeCondition] = useState("");
   const [factorsQuality, setFactorsQuality] = useState("");
   const [factorsAnalysis, setFactorsAnalysis] = useState("");
@@ -497,6 +499,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     selectedValuationMethods,
     includeDamageAnalysis,
     bankPhotosEnabled,
+    watermarkImages,
     preparedFor,
     factorsAgeCondition,
     factorsQuality,
@@ -542,6 +545,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       selectedValuationMethods,
       includeDamageAnalysis,
       bankPhotosEnabled,
+      watermarkImages,
       preparedFor,
       factorsAgeCondition,
       factorsQuality,
@@ -704,6 +708,27 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     saveRevisionRef.current = revision;
     publishDraftStatus("dirty", "Unsaved changes");
     await requestDraftSave(revision);
+    if (committedRevisionRef.current < revision) return;
+
+    try {
+      const draft = await ReportDraftService.getByClientId(
+        draftScopeId,
+        "asset"
+      );
+      await ReportDraftService.processPreview(draft.id || draft._id);
+      publishDraftStatus(
+        "saved",
+        "Draft saved. Its preview is now being prepared."
+      );
+      toast.success("Draft saved. Preview processing has started.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The draft was saved, but preview processing could not start.";
+      setDraftGuidance({ tone: "error", message });
+      toast.error(message);
+    }
   };
 
   retryAccountSyncRef.current = () => {
@@ -781,6 +806,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (typeof formData.bankPhotosEnabled === "boolean") {
       setBankPhotosEnabled(formData.bankPhotosEnabled);
     }
+    setWatermarkImages(formData.watermarkImages !== false);
     if (typeof formData.preparedFor === "string") setPreparedFor(formData.preparedFor);
     if (typeof formData.factorsAgeCondition === "string") setFactorsAgeCondition(formData.factorsAgeCondition);
     if (typeof formData.factorsQuality === "string") setFactorsQuality(formData.factorsQuality);
@@ -977,6 +1003,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         "bankPhotosEnabled",
         "bank_photos_enabled"
       ),
+      watermarkImages:
+        value("watermarkImages", "watermark_images") === undefined
+          ? true
+          : booleanValue("watermarkImages", "watermark_images"),
       factorsAgeCondition: textValue(
         "factorsAgeCondition",
         "factors_age_condition"
@@ -1277,6 +1307,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         selectedValuationMethods,
         includeDamageAnalysis,
         bankPhotosEnabled,
+        watermarkImages,
         groupingMode: "mixed",
         preparedFor,
         factorsAgeCondition,
@@ -1317,6 +1348,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         selectedValuationMethods: data.selectedValuationMethods,
         includeDamageAnalysis: data.includeDamageAnalysis,
         bankPhotosEnabled: data.bankPhotosEnabled,
+        watermarkImages: data.watermarkImages,
         preparedFor: data.preparedFor,
         factorsAgeCondition: data.factorsAgeCondition,
         factorsQuality: data.factorsQuality,
@@ -1440,6 +1472,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         : [],
       include_damage_analysis: includeDamageAnalysis,
       bank_photos_enabled: bankPhotosEnabled,
+      watermark_images: watermarkImages,
       force_new: forceNewSubmissionRef.current,
       ...(auctioneer && {
         auctioneer_work_item_id: auctioneer.workItemId,
@@ -1461,6 +1494,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       appraiser,
       auctioneer,
       bankPhotosEnabled,
+      watermarkImages,
       clientName,
       contractNo,
       currency,
@@ -1596,6 +1630,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       valuation_methods: includeValuationTable ? selectedValuationMethods : [],
       include_damage_analysis: includeDamageAnalysis,
       bank_photos_enabled: bankPhotosEnabled,
+      watermark_images: watermarkImages,
       progress_id: jobId,
       client_submission_id: jobId,
       force_new: forceNewSubmissionRef.current,
@@ -1963,6 +1998,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     description="Include all photos in the client report."
                   />
                 </div>
+                <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-3.5 py-3">
+                  <FormSwitch
+                    id="asset-watermarkImages"
+                    checked={watermarkImages}
+                    onChange={(event) => setWatermarkImages(event.target.checked)}
+                    label="Apply watermark"
+                    description="Turn off when re-uploading photos that already contain the Asset Insight watermark."
+                  />
+                </div>
               </div>
             </FormSection>
 
@@ -2144,6 +2188,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   maxImagesPerLot={MAX_ASSET_LOT_PHOTOS}
                   maxExtraImagesPerLot={MAX_ASSET_LOT_PHOTOS}
                   maxTotalImages={MAX_ASSET_LOT_PHOTOS}
+                  analysisImageLimit={50}
                   lockLotStructure={auctioneer?.kind === "scheduleA"}
                   downloadPrefix={(contractNo || "asset").replace(/[^a-zA-Z0-9_-]/g, "-")}
                 />

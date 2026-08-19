@@ -79,6 +79,14 @@ export type ReportDraftRecord = {
   activeLotIdx?: number;
   media: ReportDraftMediaDescriptor[];
   smartUploadSummary?: SmartUploadDraftSummary;
+  previewStatus?: "idle" | "queued" | "processing" | "ready" | "error";
+  previewReportId?: string;
+  previewJobId?: string;
+  previewRequestedRevision?: number;
+  previewProcessedRevision?: number;
+  previewError?: string;
+  previewRequestedAt?: string;
+  previewReadyAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -427,6 +435,14 @@ export const ReportDraftService = {
       await API.get<{ data: ReportDraftRecord }>(
         `/report-drafts/client/${encodeURIComponent(clientDraftId)}`,
         { params: { type: apiTypeFor(kind) } }
+      )
+    );
+  },
+
+  async processPreview(id: string) {
+    return unwrap(
+      await API.post<{ data: ReportDraftRecord }>(
+        `/report-drafts/${encodeURIComponent(id)}/process-preview`
       )
     );
   },
