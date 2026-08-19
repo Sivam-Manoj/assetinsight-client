@@ -14,6 +14,7 @@ import {
   type LotListing,
   type LotListingLot,
 } from "@/services/lotListing";
+import { mergeSubmittedPreviewData } from "@/lib/previewSaveMerge";
 import { getAssetCategorySpecs, type AssetCategorySpec } from "@/services/assets";
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
@@ -359,10 +360,15 @@ export default function LotListingPreviewModal({
         ? await updatePreviewDataOverride(reportId, previewForRequest)
         : await updateLotListingPreview(reportId, { preview_data: previewForRequest });
       if ((saved as any)?.data) {
+        const savedListing = (saved as any).data;
+        const serverPreview = updatePreviewDataOverride
+          ? savedListing
+          : savedListing?.preview_data;
+        const savedPreview = mergeSubmittedPreviewData(serverPreview, previewForRequest);
         applyLotListingState(
           updatePreviewDataOverride
-            ? { preview_data: (saved as any).data }
-            : (saved as any).data
+            ? { preview_data: savedPreview }
+            : { ...savedListing, preview_data: savedPreview }
         );
       }
       const savedImageUrls = Array.isArray((saved as any)?.imageUrls)
@@ -393,9 +399,8 @@ export default function LotListingPreviewModal({
           spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
           cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
         }));
-        if (pdf.data?.preview_data) {
-          setPreviewData(applyDamageAnalysisLotPolicy(pdf.data.preview_data));
-        }
+        // File refresh responses can lag behind the save response. They must
+        // not replace the newly saved editable preview snapshot.
         if (Array.isArray(pdf.data?.imageUrls)) {
           setImageUrls(pdf.data.imageUrls);
         }

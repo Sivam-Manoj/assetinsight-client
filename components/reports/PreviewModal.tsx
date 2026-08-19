@@ -14,6 +14,7 @@ import {
   uploadPreviewLotImages,
   type AssetCategorySpec,
 } from "@/services/assets";
+import { mergeSubmittedPreviewData } from "@/lib/previewSaveMerge";
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
@@ -475,7 +476,10 @@ export default function PreviewModal({
       const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
       setPreviewData(previewForRequest);
       const saved = await savePreview(reportId, previewForRequest);
-      if (saved?.data) setPreviewData(applyDamageAnalysisLotPolicy(saved.data));
+      const savedPreview = applyDamageAnalysisLotPolicy(
+        mergeSubmittedPreviewData(saved?.data, previewForRequest)
+      );
+      setPreviewData(savedPreview);
       if (Array.isArray(saved?.imageUrls)) {
         setImageUrls(saved.imageUrls);
         setImageCount(saved.imageUrls.length);
@@ -505,9 +509,8 @@ export default function PreviewModal({
             spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
             cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
           }));
-          if (pdf.data?.preview_data) {
-            setPreviewData(applyDamageAnalysisLotPolicy(pdf.data.preview_data));
-          }
+          // CR generation updates file URLs only. Keep the exact snapshot that
+          // was just saved instead of accepting a stale generation response.
           if (Array.isArray(pdf.data?.imageUrls)) {
             setImageUrls(pdf.data.imageUrls);
             setImageCount(pdf.data.imageUrls.length);
