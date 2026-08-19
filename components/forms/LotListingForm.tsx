@@ -1421,7 +1421,7 @@ export default function LotListingForm({
 
   return (
     <form
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--app-panel-alt)]"
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--app-text)]"
       onSubmit={onSubmit}
       aria-busy={submitting || draftSaving}
       noValidate

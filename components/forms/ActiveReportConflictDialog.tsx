@@ -28,7 +28,7 @@ export default function ActiveReportConflictDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/55 p-4 ]"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-[var(--app-overlay)] p-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) onCancel();
@@ -38,17 +38,17 @@ export default function ActiveReportConflictDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="active-report-title"
-        className="w-full max-w-lg overflow-hidden rounded-lg border border-slate-200 bg-[var(--app-panel)] shadow-sm"
+        className="w-full max-w-lg overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text)] shadow-sm"
       >
-        <header className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
-          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-amber-100 text-amber-700">
+        <header className="flex items-start gap-3 border-b border-[var(--app-border)] px-5 py-4">
+          <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[var(--app-warning-soft)] text-[var(--app-warning)]">
             <AlertTriangle className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 id="active-report-title" className="text-base font-bold text-slate-950">
+            <h2 id="active-report-title" className="text-base font-bold text-[var(--app-text-strong)]">
               Report already processing
             </h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
+            <p className="mt-1 text-sm leading-6 text-[var(--app-text-muted)]">
               A {reportLabel} with this contract is already queued or processing.{" "}
               {allowCreateSeparate
                 ? "Resume it to avoid a duplicate, or explicitly create a separate report."
@@ -58,7 +58,7 @@ export default function ActiveReportConflictDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-[var(--app-text-muted)] transition hover:bg-[var(--app-panel-alt)] hover:text-[var(--app-text-strong)]"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -82,7 +82,7 @@ export default function ActiveReportConflictDialog({
             <button
               type="button"
               onClick={onCreateSeparate}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-[var(--app-panel)] px-4 py-2.5 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--app-border-strong)] bg-[var(--app-panel)] px-4 py-2.5 text-sm font-bold text-[var(--app-text)] transition hover:bg-[var(--app-panel-alt)]"
             >
               <CopyPlus className="h-4 w-4" />
               Create Separate Report

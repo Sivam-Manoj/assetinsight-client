@@ -23,6 +23,7 @@ import {
   draftKindForRecord,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
+import { navigateToReportForm } from "@/services/reportFormNavigation";
 import {
   SavedInputService,
   type AssetFormData,
@@ -166,36 +167,38 @@ export default function InputsHistoryModal({
   const handleLoad = (savedInput: SavedInput) => {
     onLoadInput(savedInput);
     onClose();
+    if (savedInput.formType === "asset") {
+      navigateToReportForm(router, {
+        kind: "asset",
+        savedInput,
+        returnTo: "/dashboard",
+      });
+      return;
+    }
     router.push("/dashboard");
     window.setTimeout(() => {
-      const eventName =
-        savedInput.formType === "realEstate"
-          ? "load-realestate-input"
-          : "load-saved-input";
-      window.dispatchEvent(new CustomEvent(eventName, { detail: savedInput }));
+      window.dispatchEvent(
+        new CustomEvent("load-realestate-input", { detail: savedInput })
+      );
     }, 300);
   };
 
   const handleResumeLocal = (draft: ScopedDraftSummary) => {
     onClose();
-    router.push("/dashboard");
-    window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("resume-local-draft", {
-          detail: { kind: draft.kind, scopeId: draft.scopeId },
-        })
-      );
-    }, 300);
+    navigateToReportForm(router, {
+      kind: draft.kind,
+      resumeLocalDraftScopeId: draft.scopeId,
+      returnTo: "/dashboard",
+    });
   };
 
   const handleResumeReportDraft = (draft: ReportDraftRecord) => {
     onClose();
-    router.push("/dashboard");
-    window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("resume-report-draft", { detail: draft })
-      );
-    }, 300);
+    navigateToReportForm(router, {
+      kind: draftKindForRecord(draft),
+      resumeDraft: draft,
+      returnTo: "/dashboard",
+    });
   };
 
   const handleDeleteReportDraft = async (draft: ReportDraftRecord) => {

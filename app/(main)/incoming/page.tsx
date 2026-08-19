@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -19,28 +18,14 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import BottomDrawer from "@/components/BottomDrawer";
 import Loading from "@/components/common/Loading";
-import type { DraftStatus } from "@/components/forms/ui/FormUI";
 import { useAuthContext } from "@/context/AuthContext";
 import AuctioneerService, {
   type AuctioneerIncomingItem,
   type AuctioneerReportType,
-  type AuctioneerWorkItemSetup,
 } from "@/services/auctioneer";
+import { navigateToReportForm } from "@/services/reportFormNavigation";
 import styles from "./Incoming.module.css";
-
-const AssetForm = dynamic(() => import("@/components/forms/AssetForm"), {
-  ssr: false,
-  loading: () => <Loading message="Loading asset workflow…" />,
-});
-const LotListingForm = dynamic(
-  () => import("@/components/forms/LotListingForm"),
-  {
-    ssr: false,
-    loading: () => <Loading message="Loading lot listing workflow…" />,
-  }
-);
 
 type IncomingData = {
   items: AuctioneerIncomingItem[];
@@ -147,12 +132,6 @@ export default function IncomingPage() {
     useState<AuctioneerReportType>("asset");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [setup, setSetup] = useState<AuctioneerWorkItemSetup | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState<{
-    status: DraftStatus;
-    label?: string;
-  } | null>(null);
 
   const {
     data,
@@ -242,16 +221,19 @@ export default function IncomingPage() {
       setActionError(null);
       try {
         const nextSetup = await AuctioneerService.getSetup(item.workItemId);
-        setSetup(nextSetup);
-        setDraftStatus(null);
-        setDrawerOpen(true);
+        navigateToReportForm(router, {
+          kind:
+            nextSetup.reportType === "lotListing" ? "lot-listing" : "asset",
+          auctioneer: nextSetup,
+          returnTo: "/incoming",
+        });
       } catch (error) {
         setActionError(messageFor(error, "Unable to resume this contract."));
       } finally {
         setBusyAction(null);
       }
     },
-    []
+    [router]
   );
 
   const claim = useCallback(async () => {
@@ -263,11 +245,14 @@ export default function IncomingPage() {
         selected.cycleKey,
         reportType
       );
-      setSetup(nextSetup);
-      setDraftStatus(null);
-      setDrawerOpen(true);
       setSelectedKey(null);
       await refresh();
+      navigateToReportForm(router, {
+        kind:
+          nextSetup.reportType === "lotListing" ? "lot-listing" : "asset",
+        auctioneer: nextSetup,
+        returnTo: "/incoming",
+      });
     } catch (error) {
       const claimError = messageFor(
         error,
@@ -278,7 +263,7 @@ export default function IncomingPage() {
     } finally {
       setBusyAction(null);
     }
-  }, [busyAction, refresh, reportType, selected]);
+  }, [busyAction, refresh, reportType, router, selected]);
 
   const release = useCallback(async () => {
     if (!selected?.workItemId || busyAction) return;
@@ -316,13 +301,6 @@ export default function IncomingPage() {
     }
     if (selected.status === "available") void claim();
   }, [claim, isMine, openSetup, router, selected]);
-
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setSetup(null);
-    setDraftStatus(null);
-    void refresh();
-  }, [refresh]);
 
   if (isLoading) {
     return (
@@ -694,60 +672,6 @@ export default function IncomingPage() {
         </aside>
       </section>
 
-      <BottomDrawer
-        open={drawerOpen}
-        onClose={closeDrawer}
-        title={
-          setup?.reportType === "lotListing"
-            ? `Lot listing · ${setup.contract.contractNo}`
-            : `Asset report · ${setup?.contract.contractNo || ""}`
-        }
-        description={
-          setup
-            ? `${
-                setup.kind === "scheduleA"
-                  ? "Schedule A mappings are locked"
-                  : "Unknown lots can be edited"
-              } · imported from Auctioneer`
-            : undefined
-        }
-        headerStatus={
-          draftStatus ? (
-            <span className={styles.draftStatus}>
-              {draftStatus.label ??
-                (draftStatus.status === "saving"
-                  ? "Saving draft…"
-                  : draftStatus.status === "saved"
-                    ? "Draft saved"
-                    : "Unsaved changes")}
-            </span>
-          ) : undefined
-        }
-        contentScrollable={false}
-        closeDisabled={draftStatus?.status === "saving"}
-      >
-        {setup?.reportType === "asset" ? (
-          <AssetForm
-            key={`${setup.workItemId}:asset`}
-            auctioneer={setup}
-            onSuccess={closeDrawer}
-            onCancel={closeDrawer}
-            onDraftStatusChange={(status, label) =>
-              setDraftStatus({ status, label })
-            }
-          />
-        ) : setup?.reportType === "lotListing" ? (
-          <LotListingForm
-            key={`${setup.workItemId}:lotListing`}
-            auctioneer={setup}
-            onSuccess={closeDrawer}
-            onCancel={closeDrawer}
-            onDraftStatusChange={(status, label) =>
-              setDraftStatus({ status, label })
-            }
-          />
-        ) : null}
-      </BottomDrawer>
     </div>
   );
 }

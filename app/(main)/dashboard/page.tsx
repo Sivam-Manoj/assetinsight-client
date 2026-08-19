@@ -21,7 +21,6 @@ import useSWR from "swr";
 import BottomDrawer from "@/components/BottomDrawer";
 import Loading from "@/components/common/Loading";
 import { WorkspaceClock } from "@/components/dashboard/WorkspaceClock";
-import type { DraftStatus } from "@/components/forms/ui/FormUI";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
@@ -29,6 +28,8 @@ import {
   draftKindForRecord,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
+import { navigateToReportForm } from "@/services/reportFormNavigation";
+import type { SavedInput } from "@/services/savedInputs";
 import {
   ReportsService,
   type PdfReport,
@@ -44,20 +45,7 @@ const SalvageForm = dynamic(() => import("@/components/forms/SalvageForm"), {
   ssr: false,
   loading: () => <Loading message="Loading salvage workflow…" />,
 });
-const AssetForm = dynamic(() => import("@/components/forms/AssetForm"), {
-  ssr: false,
-  loading: () => <Loading message="Loading asset workflow…" />,
-});
-const LotListingForm = dynamic(
-  () => import("@/components/forms/LotListingForm"),
-  {
-    ssr: false,
-    loading: () => <Loading message="Loading lot listing workflow…" />,
-  }
-);
-
-type DrawerType = "real-estate" | "salvage" | "asset" | "lot-listing" | null;
-type LocalDraftKind = "asset" | "lot-listing";
+type DrawerType = "real-estate" | "salvage" | null;
 
 type IncomingSummary = {
   availableCount: number;
@@ -67,8 +55,6 @@ type IncomingSummary = {
 const DRAWER_TITLES: Record<Exclude<DrawerType, null>, string> = {
   "real-estate": "Create real estate report",
   salvage: "Create salvage report",
-  asset: "Create asset report",
-  "lot-listing": "Create lot listing",
 };
 
 const REPORT_ACTIONS = [
@@ -252,18 +238,7 @@ export default function DashboardPage() {
   const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
-  const [resumeLocalDraftKind, setResumeLocalDraftKind] =
-    useState<LocalDraftKind | null>(null);
-  const [resumeLocalDraftScopeId, setResumeLocalDraftScopeId] = useState<
-    string | null
-  >(null);
-  const [resumeReportDraft, setResumeReportDraft] =
-    useState<ReportDraftRecord | null>(null);
   const [greetingLabel] = useState(greeting);
-  const [draftStatus, setDraftStatus] = useState<{
-    status: DraftStatus;
-    label?: string;
-  } | null>(null);
 
   const {
     data: stats,
@@ -329,43 +304,43 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const openAsset = (event: Event) => {
-      if ((event as CustomEvent).detail) {
-        setResumeLocalDraftKind(null);
-        setResumeLocalDraftScopeId(null);
-        setResumeReportDraft(null);
-        setDrawerType("asset");
-      }
+      const savedInput = (event as CustomEvent<SavedInput>).detail;
+      if (!savedInput) return;
+      navigateToReportForm(router, {
+        kind: "asset",
+        savedInput,
+        returnTo: "/dashboard",
+      });
     };
     const openRealEstate = (event: Event) => {
       if ((event as CustomEvent).detail) {
-        setResumeLocalDraftKind(null);
-        setResumeLocalDraftScopeId(null);
-        setResumeReportDraft(null);
         setDrawerType("real-estate");
       }
     };
     const resumeLocalDraft = (event: Event) => {
       const detail = (
         event as CustomEvent<{
-          kind?: LocalDraftKind;
+          kind?: "asset" | "lot-listing";
           scopeId?: string;
         }>
       ).detail;
       const kind = detail?.kind;
       if (kind !== "asset" && kind !== "lot-listing") return;
-      setResumeLocalDraftKind(kind);
-      setResumeLocalDraftScopeId(detail?.scopeId || null);
-      setResumeReportDraft(null);
-      setDrawerType(kind);
+      navigateToReportForm(router, {
+        kind,
+        resumeLocalDraftScopeId: detail?.scopeId,
+        returnTo: "/dashboard",
+      });
     };
     const resumeServerDraft = (event: Event) => {
       const draft = (event as CustomEvent<ReportDraftRecord>).detail;
       if (!draft?._id) return;
       const kind = draftKindForRecord(draft);
-      setResumeLocalDraftKind(null);
-      setResumeLocalDraftScopeId(null);
-      setResumeReportDraft(draft);
-      setDrawerType(kind);
+      navigateToReportForm(router, {
+        kind,
+        resumeDraft: draft,
+        returnTo: "/dashboard",
+      });
     };
     window.addEventListener("load-saved-input", openAsset);
     window.addEventListener("load-realestate-input", openRealEstate);
@@ -377,7 +352,7 @@ export default function DashboardPage() {
       window.removeEventListener("resume-local-draft", resumeLocalDraft);
       window.removeEventListener("resume-report-draft", resumeServerDraft);
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const serialized = window.sessionStorage.getItem("cv:resume-report-draft");
@@ -386,23 +361,18 @@ export default function DashboardPage() {
     try {
       const draft = JSON.parse(serialized) as ReportDraftRecord;
       if (!draft?._id) return;
-      setResumeLocalDraftKind(null);
-      setResumeLocalDraftScopeId(null);
-      setResumeReportDraft(draft);
-      setDrawerType(draftKindForRecord(draft));
+      navigateToReportForm(router, {
+        kind: draftKindForRecord(draft),
+        resumeDraft: draft,
+        returnTo: "/dashboard",
+      });
     } catch {
       // A malformed navigation handoff must not prevent the dashboard loading.
     }
-  }, []);
-
-  useEffect(() => setDraftStatus(null), [drawerType]);
+  }, [router]);
 
   const closeDrawer = useCallback(() => {
     setDrawerType(null);
-    setResumeLocalDraftKind(null);
-    setResumeLocalDraftScopeId(null);
-    setResumeReportDraft(null);
-    setDraftStatus(null);
     refreshDashboard();
   }, [refreshDashboard]);
 
@@ -427,11 +397,12 @@ export default function DashboardPage() {
         </div>
         <button
           className={styles.createButton}
-          onClick={() => {
-            setResumeLocalDraftKind(null);
-            setResumeReportDraft(null);
-            setDrawerType("asset");
-          }}
+          onClick={() =>
+            navigateToReportForm(router, {
+              kind: "asset",
+              returnTo: "/dashboard",
+            })
+          }
         >
           <FilePlus2 size={21} strokeWidth={1.8} aria-hidden />
           Create report
@@ -458,8 +429,13 @@ export default function DashboardPage() {
               key={action.key}
               className={styles.workflowButton}
               onClick={() => {
-                setResumeLocalDraftKind(null);
-                setResumeReportDraft(null);
+                if (action.key === "asset" || action.key === "lot-listing") {
+                  navigateToReportForm(router, {
+                    kind: action.key,
+                    returnTo: "/dashboard",
+                  });
+                  return;
+                }
                 setDrawerType(action.key);
               }}
             >
@@ -659,51 +635,12 @@ export default function DashboardPage() {
         onClose={closeDrawer}
         title={drawerType ? DRAWER_TITLES[drawerType] : undefined}
         description="Complete the required details, attach supporting media, and save or submit when ready."
-        headerStatus={
-          draftStatus ? (
-            <span className={styles.draftStatus} data-status={draftStatus.status}>
-              {draftStatus.label ??
-                (draftStatus.status === "saving"
-                  ? "Saving draft…"
-                  : draftStatus.status === "saved"
-                    ? "Draft saved"
-                    : draftStatus.status === "dirty"
-                      ? "Unsaved changes"
-                      : "Draft status")}
-            </span>
-          ) : undefined
-        }
         contentScrollable={false}
-        closeDisabled={draftStatus?.status === "saving"}
       >
         {drawerType === "real-estate" ? (
           <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} />
         ) : drawerType === "salvage" ? (
           <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} />
-        ) : drawerType === "asset" ? (
-          <AssetForm
-            onSuccess={closeDrawer}
-            onCancel={closeDrawer}
-            resumeDraft={resumeReportDraft?.type === "asset" ? resumeReportDraft : null}
-            restoreDraftOnMount={resumeLocalDraftKind === "asset"}
-            resumeLocalDraftScopeId={resumeLocalDraftScopeId || undefined}
-            onDraftStatusChange={(status, label) =>
-              setDraftStatus({ status, label })
-            }
-          />
-        ) : drawerType === "lot-listing" ? (
-          <LotListingForm
-            onSuccess={closeDrawer}
-            onCancel={closeDrawer}
-            restoreDraftOnMount={resumeLocalDraftKind === "lot-listing"}
-            resumeLocalDraftScopeId={resumeLocalDraftScopeId || undefined}
-            resumeDraft={
-              resumeReportDraft?.type === "lotListing" ? resumeReportDraft : null
-            }
-            onDraftStatusChange={(status, label) =>
-              setDraftStatus({ status, label })
-            }
-          />
         ) : null}
       </BottomDrawer>
     </div>

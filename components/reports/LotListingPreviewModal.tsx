@@ -852,12 +852,12 @@ export default function LotListingPreviewModal({
     const selections = lot?.condition_report_selections || {};
 
     return (
-      <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+      <div className="rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] p-3 sm:col-span-2">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-strong)]">
             Required selections
           </p>
-          <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
+          <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]">
             N/A allowed
           </span>
         </div>
@@ -893,8 +893,8 @@ export default function LotListingPreviewModal({
                         key={option}
                         className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                           checked
-                            ? "border-amber-500 bg-[var(--app-panel)] text-amber-950 shadow-sm"
-                            : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-amber-300 hover:bg-[var(--app-panel)]"
+                            ? "border-[var(--app-warning)] bg-[var(--app-panel)] text-[var(--app-text-strong)] shadow-sm"
+                            : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-[var(--app-warning)]"
                         }`}
                       >
                         <input
@@ -925,17 +925,17 @@ export default function LotListingPreviewModal({
     const sharedSelection = getSharedRunningConditionSelection(lots);
 
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+      <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] p-4 shadow-sm">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h4 className="text-sm font-bold text-amber-950">
+            <h4 className="text-sm font-bold text-[var(--app-text-strong)]">
               Set Running Condition for all lots
             </h4>
-            <p className="text-xs text-amber-800">
+            <p className="text-xs text-[var(--app-warning)]">
               Optional shortcut for large listings. Individual lots can still be changed after this.
             </p>
           </div>
-          <span className="self-start rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+          <span className="self-start rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]">
             {lots.length} lots
           </span>
         </div>
@@ -983,21 +983,21 @@ export default function LotListingPreviewModal({
       fullscreen
       dismissOnBackdrop={false}
     >
-      <div className="preview-editor">
+      <div className="preview-editor min-h-full bg-[var(--app-bg)] text-[var(--app-text)]">
       {status === "declined" && declineReason && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="app-alert app-alert--error mb-4 flex items-start gap-3">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-danger)]" />
           <div>
-            <p className="font-semibold text-red-900">Lot Listing Declined</p>
-            <p className="text-sm text-red-700 mt-1">{declineReason}</p>
+            <p className="font-semibold text-[var(--app-text-strong)]">Lot Listing Declined</p>
+            <p className="mt-1 text-sm text-[var(--app-danger)]">{declineReason}</p>
           </div>
         </div>
       )}
 
       {specPdfUrl && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-[var(--app-panel)] px-4 py-3 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 shadow-sm">
           <div className="mr-auto">
-            <p className="text-sm font-semibold text-slate-900">CR</p>
+            <p className="text-sm font-semibold text-[var(--app-text-strong)]">CR</p>
           </div>
           <button
             type="button"
@@ -1139,7 +1139,7 @@ export default function LotListingPreviewModal({
                   <div className="text-xs text-[var(--app-text-muted)]">Images</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-amber-600">
+                  <div className="text-2xl font-bold text-[var(--app-warning)]">
                     {displayedTotalValue
                       ? `${previewData.currency || "CAD"} ${displayedTotalValue.toLocaleString()}`
                       : "-"}
@@ -1456,7 +1456,7 @@ export default function LotListingPreviewModal({
           <div className="sticky bottom-0 z-10 mx-auto mt-4 flex max-w-5xl flex-wrap items-center justify-between gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-3 pb-1">
             <div className="flex items-center gap-2">
               {hasChanges && (
-                <span className="text-xs font-medium text-amber-700">Unsaved changes</span>
+                <span className="text-xs font-medium text-[var(--app-warning)]">Unsaved changes</span>
               )}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">

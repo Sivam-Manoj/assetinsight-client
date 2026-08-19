@@ -232,7 +232,7 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-[var(--app-panel)] p-3 shadow-sm">
+    <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div>
           <label className="block text-xs sm:text-sm font-semibold text-[var(--app-text)]">
@@ -260,7 +260,7 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
         onPointerUp={finishDrawing}
         onPointerCancel={finishDrawing}
         onPointerLeave={finishDrawing}
-        className={`h-40 w-full rounded-lg border border-dashed border-slate-300 bg-slate-50 touch-none ${
+        className={`h-40 w-full touch-none rounded-lg border border-dashed border-[var(--app-control-border)] bg-[var(--app-panel-alt)] ${
           disabled ? "cursor-not-allowed opacity-60" : "cursor-crosshair"
         }`}
         aria-label="Draw appraiser signature"
@@ -1164,25 +1164,25 @@ export default function PreviewModal({
       fullscreen
       dismissOnBackdrop={false}
     >
-      <div className="preview-editor">
+      <div className="preview-editor min-h-full bg-[var(--app-bg)] text-[var(--app-text)]">
       {status === "declined" && declineReason && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="app-alert app-alert--error mb-4 flex items-start gap-3">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-danger)]" />
           <div>
-            <p className="font-semibold text-red-900">Report Declined</p>
-            <p className="text-sm text-red-700 mt-1">{declineReason}</p>
+            <p className="font-semibold text-[var(--app-text-strong)]">Report Declined</p>
+            <p className="mt-1 text-sm text-[var(--app-danger)]">{declineReason}</p>
           </div>
         </div>
       )}
 
       {workflowLocked && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-info)]" />
           <div>
-            <p className="font-semibold text-blue-900">
+            <p className="font-semibold text-[var(--app-text-strong)]">
               {filesRegenerating ? "Files are being regenerated" : "Report already submitted"}
             </p>
-            <p className="text-sm text-blue-700 mt-1">
+            <p className="mt-1 text-sm text-[var(--app-info)]">
               {filesRegenerating
                 ? "This report is already in the submitted queue while the new files are being regenerated."
                 : "Your preview has already been submitted. It will appear in Submitted Previews while DOCX, Excel, and Images files are generated."}
@@ -1195,22 +1195,22 @@ export default function PreviewModal({
         <div
           className={`mb-4 border p-4 ${
             duplicateLotNumberKeys.size > 0
-              ? "border-amber-300 bg-amber-50"
-              : "border-blue-200 bg-blue-50"
+              ? "border-[var(--app-warning-border)] bg-[var(--app-warning-soft)]"
+              : "border-[var(--app-info-border)] bg-[var(--app-info-soft)]"
           }`}
         >
           <div className="flex items-start gap-3">
-            <MergeIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-700" />
+            <MergeIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-info)]" />
             <div>
-              <p className="font-semibold text-slate-900">
+              <p className="font-semibold text-[var(--app-text-strong)]">
                 Merged from {Array.isArray(previewData?.merged_from_report_ids) ? previewData.merged_from_report_ids.length : 2} Asset reports
               </p>
               {duplicateLotNumberKeys.size > 0 ? (
-                <p className="mt-1 text-sm text-amber-800">
+                <p className="mt-1 text-sm text-[var(--app-warning)]">
                   Duplicate lot numbers {Array.from(duplicateLotNumberKeys).join(", ")} must be changed before this report can be submitted.
                 </p>
               ) : (
-                <p className="mt-1 text-sm text-blue-700">
+                <p className="mt-1 text-sm text-[var(--app-info)]">
                   Source reports remain unchanged. Review the combined lots before submission.
                 </p>
               )}
@@ -1220,9 +1220,9 @@ export default function PreviewModal({
       )}
 
       {specPdfUrl && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-[var(--app-panel)] px-4 py-3 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 shadow-sm">
           <div className="mr-auto">
-            <p className="text-sm font-semibold text-slate-900">CR</p>
+            <p className="text-sm font-semibold text-[var(--app-text-strong)]">CR</p>
           </div>
           <button
             type="button"
@@ -1285,7 +1285,7 @@ export default function PreviewModal({
                     placeholder="e.g., ABC Corporation"
                   />
                   {!previewData?.client_name && (
-                    <p className="text-xs text-amber-600 mt-1">⚠️ Required field</p>
+                    <p className="mt-1 text-xs text-[var(--app-warning)]">⚠️ Required field</p>
                   )}
                 </div>
                 <div>
@@ -1477,7 +1477,7 @@ export default function PreviewModal({
             {/* Additional Report Details */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
-                <span className="text-amber-600">📝</span>
+                <span className="text-[var(--app-warning)]">📝</span>
                 Additional Details
               </h3>
               <div className="grid grid-cols-1 gap-4">
@@ -1793,7 +1793,7 @@ export default function PreviewModal({
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
                                   className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
                                     isDuplicateLotNumber(lot, idx)
-                                      ? "border-amber-500 bg-amber-50"
+                                      ? "border-[var(--app-warning)] bg-[var(--app-warning-soft)]"
                                       : "border-[var(--app-border)]"
                                   }`}
                                   placeholder={String(idx + 1)}
@@ -1918,7 +1918,7 @@ export default function PreviewModal({
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
                                   className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-semibold ${
                                     isDuplicateLotNumber(lot, idx)
-                                      ? "border-amber-500 bg-amber-50"
+                                      ? "border-[var(--app-warning)] bg-[var(--app-warning-soft)]"
                                       : "border-[var(--app-border)]"
                                   }`}
                                   placeholder={String(idx + 1)}
@@ -2308,7 +2308,7 @@ export default function PreviewModal({
 
             return (
               <div
-                className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/45 px-3 py-6  sm:px-6"
+                className="fixed inset-0 z-[1000] flex items-center justify-center bg-[var(--app-overlay)] px-3 py-6 sm:px-6"
                 onMouseDown={closeExpandedLotTextEditor}
               >
                 <div
@@ -2320,7 +2320,7 @@ export default function PreviewModal({
                       <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-muted)]">
                         Lot {lotNumber}
                       </p>
-                      <h4 className="mt-0.5 text-lg font-bold text-gray-950">
+                      <h4 className="mt-0.5 text-lg font-bold text-[var(--app-text-strong)]">
                         {meta.label}
                       </h4>
                     </div>
@@ -2339,7 +2339,7 @@ export default function PreviewModal({
                       autoFocus
                       value={lot[field] || ""}
                       onChange={(event) => updateLot(lotIndex, field, event.target.value)}
-                      className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 text-base leading-7 text-gray-950 shadow-inner outline-none transition-all placeholder:text-[var(--app-text-muted)] focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                      className="h-[52vh] min-h-[280px] w-full resize-none rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-4 py-3 text-base leading-7 text-[var(--app-text)] shadow-inner outline-none transition-all placeholder:text-[var(--app-text-muted)] focus:border-transparent focus:ring-2 focus:ring-[var(--app-accent)]"
                       placeholder={meta.placeholder}
                     />
                   </div>
@@ -2358,7 +2358,7 @@ export default function PreviewModal({
             </button>
             <div className="order-1 sm:order-2 flex flex-col sm:flex-row gap-2 sm:gap-3">
               {hasChanges && (
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-medium">
+                <div className="hidden items-center gap-2 rounded-lg bg-[var(--app-warning-soft)] px-3 py-1 text-xs font-medium text-[var(--app-warning)] sm:flex">
                   <AlertCircle className="h-3.5 w-3.5" />
                   Unsaved changes
                 </div>

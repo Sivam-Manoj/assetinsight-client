@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   Download,
   FileSearch,
@@ -32,8 +33,10 @@ import {
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import {
   ReportDraftService,
+  draftKindForRecord,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
+import { navigateToReportForm } from "@/services/reportFormNavigation";
 import styles from "./page.module.css";
 
 const AssetMergeDialog = dynamic(
@@ -221,6 +224,7 @@ function previewThumbnailForReport(report: CombinedReport): string | null {
 }
 
 export default function PreviewsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
@@ -475,11 +479,11 @@ export default function PreviewsPage() {
   };
 
   const handleContinueDraft = (draft: ReportDraftRecord) => {
-    window.sessionStorage.setItem(
-      "cv:resume-report-draft",
-      JSON.stringify(draft)
-    );
-    window.location.assign("/dashboard?resumeDraft=1");
+    navigateToReportForm(router, {
+      kind: draftKindForRecord(draft),
+      resumeDraft: draft,
+      returnTo: "/previews",
+    });
   };
 
   const handleRetryDraftPreview = async (draft: ReportDraftRecord) => {

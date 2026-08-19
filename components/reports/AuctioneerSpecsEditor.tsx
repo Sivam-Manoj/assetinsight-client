@@ -183,8 +183,8 @@ export default function AuctioneerSpecsEditor({
   ];
   const accentClasses =
     accent === "purple"
-      ? "border-purple-200 bg-purple-50/50 text-purple-900"
-      : "border-blue-200 bg-blue-50/50 text-blue-900";
+      ? "border-[var(--app-border)] bg-[var(--app-panel-alt)] text-[var(--app-text)]"
+      : "border-[var(--app-info-border)] bg-[var(--app-info-soft)] text-[var(--app-text)]";
   const focusClass =
     accent === "purple"
       ? "focus:ring-purple-500"
@@ -306,7 +306,7 @@ export default function AuctioneerSpecsEditor({
     expandedEditor && typeof document !== "undefined"
       ? createPortal(
           <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/55 px-4 py-6 "
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-[var(--app-overlay)] px-4 py-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="auctioneer-spec-expanded-title"
@@ -319,7 +319,7 @@ export default function AuctioneerSpecsEditor({
                 <div className="min-w-0">
                   <p
                     id="auctioneer-spec-expanded-title"
-                    className="text-sm font-black uppercase tracking-wide text-gray-950"
+                    className="text-sm font-black uppercase tracking-wide text-[var(--app-text-strong)]"
                   >
                     {expandedEditor.isNew ? "ADD CONDITION REPORT FIELD" : expandedEditor.fieldName}
                   </p>
@@ -375,7 +375,7 @@ export default function AuctioneerSpecsEditor({
                   </p>
                 )}
                 {expandedEditor.notice && (
-                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  <p className="mt-2 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-2 text-xs font-semibold text-[var(--app-warning)]">
                     {expandedEditor.notice}
                   </p>
                 )}
@@ -384,7 +384,7 @@ export default function AuctioneerSpecsEditor({
                 <button
                   type="button"
                   onClick={expandedEditor.isNew ? closeExpandedEditor : deleteExpandedField}
-                  className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100"
+                  className="rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-4 py-2 text-sm font-bold text-[var(--app-danger)] transition hover:border-[var(--app-danger)]"
                 >
                   {expandedEditor.isNew
                     ? "Cancel add"
@@ -435,7 +435,7 @@ export default function AuctioneerSpecsEditor({
             className={`w-fit rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold ring-1 ${
               categorySpec
                 ? "text-[var(--app-text)] "
-                : "text-amber-800 ring-amber-200"
+                : "text-[var(--app-warning)] ring-[var(--app-warning-border)]"
             }`}
           >
             {categoryChipText}
@@ -446,7 +446,7 @@ export default function AuctioneerSpecsEditor({
           <button
             type="button"
             onClick={openAddFieldEditor}
-            className="rounded-lg border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-1.5 text-xs font-bold text-[var(--app-text-muted)] transition hover:border-gray-400 hover:bg-[var(--app-panel-alt)]"
+            className="rounded-lg border border-dashed border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-1.5 text-xs font-bold text-[var(--app-text-muted)] transition hover:border-[var(--app-control-border)] hover:bg-[var(--app-panel-alt)]"
           >
             + Add field
           </button>
@@ -454,7 +454,7 @@ export default function AuctioneerSpecsEditor({
 
         {!damageEligible ? (
           <div
-            className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-amber-900"
+            className="mb-3 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-3 text-[var(--app-text)]"
             role="note"
           >
             <p className="text-xs font-black uppercase tracking-wide">
@@ -465,7 +465,7 @@ export default function AuctioneerSpecsEditor({
             </p>
           </div>
         ) : includeDamageAnalysis && onDamageAnalysisChange ? (
-          <div className="mb-3 rounded-lg border border-red-200 bg-[var(--app-panel)] p-3 text-[var(--app-text)]">
+          <div className="mb-3 rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] p-3 text-[var(--app-text)]">
             <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-wide text-red-700">
@@ -478,7 +478,7 @@ export default function AuctioneerSpecsEditor({
               <button
                 type="button"
                 onClick={() => openDamageEditor()}
-                className="w-fit rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100"
+                className="w-fit rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-3 py-1.5 text-xs font-bold text-[var(--app-danger)] transition hover:border-[var(--app-danger)]"
               >
                 Edit damage
               </button>
@@ -486,7 +486,7 @@ export default function AuctioneerSpecsEditor({
             <button
               type="button"
               onClick={() => openDamageEditor()}
-              className={`min-h-10 w-full rounded-md border border-red-100 bg-red-50/60 px-2.5 py-2 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-red-200 hover:bg-red-50 focus:border-transparent focus:ring-2 ${focusClass}`}
+              className={`min-h-10 w-full rounded-md border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] px-2.5 py-2 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-[var(--app-danger)] focus:border-transparent focus:ring-2 ${focusClass}`}
               title="Click to open large damage editor"
             >
               <span className="block whitespace-pre-wrap break-words">
@@ -514,7 +514,7 @@ export default function AuctioneerSpecsEditor({
                         event.stopPropagation();
                         onDelete(lotIndex, fieldName);
                       }}
-                      className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-red-200 bg-red-50 text-sm font-bold leading-none text-red-600 transition hover:bg-red-100"
+                      className="grid h-6 w-6 flex-shrink-0 place-items-center rounded-full border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] text-sm font-bold leading-none text-[var(--app-danger)] transition hover:brightness-95"
                       aria-label={`Remove ${fieldName}`}
                     >
                       x
@@ -529,7 +529,7 @@ export default function AuctioneerSpecsEditor({
                         openExpandedEditor(fieldName);
                       }
                     }}
-                    className={`min-h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2.5 py-1.5 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-gray-400 hover:bg-[var(--app-panel-alt)] focus:border-transparent focus:ring-2 ${focusClass}`}
+                    className={`min-h-9 w-full rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2.5 py-1.5 text-left text-xs text-[var(--app-text)] outline-none transition hover:border-[var(--app-control-border)] hover:bg-[var(--app-panel-alt)] focus:border-transparent focus:ring-2 ${focusClass}`}
                     title="Click to open large editor"
                   >
                     <span className="block truncate">

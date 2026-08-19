@@ -93,6 +93,7 @@ type Props = {
   resumeDraft?: ReportDraftRecord | null;
   restoreDraftOnMount?: boolean;
   resumeLocalDraftScopeId?: string;
+  initialSavedInput?: SavedInput | null;
 };
 
 export type AssetFormHandle = {
@@ -305,6 +306,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     resumeDraft = null,
     restoreDraftOnMount = false,
     resumeLocalDraftScopeId,
+    initialSavedInput = null,
   },
   ref
 ) {
@@ -1362,6 +1364,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   useImperativeHandle(ref, () => ({ loadSavedInput }));
+
+  const loadedInitialInputRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialSavedInput?._id) return;
+    if (loadedInitialInputRef.current === initialSavedInput._id) return;
+    loadedInitialInputRef.current = initialSavedInput._id;
+    loadSavedInput(initialSavedInput);
+  }, [initialSavedInput]);
 
   useEffect(() => {
     if (auctioneer) return;
