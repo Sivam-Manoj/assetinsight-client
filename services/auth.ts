@@ -66,6 +66,8 @@ export type AuthUser = {
   isReportApprover?: boolean;
   isReleaseManager?: boolean;
   proposalValuationEnabled?: boolean;
+  avatarUrl?: string;
+  avatarUploadedAt?: string;
   authProvider?: string;
   createdAt?: string;
   updatedAt?: string;

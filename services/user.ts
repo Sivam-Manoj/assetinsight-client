@@ -44,4 +44,16 @@ export const UserService = {
     const { data } = await API.delete<AuthUser>("/user/cv");
     return data;
   },
+
+  async uploadAvatar(file: File): Promise<AuthUser> {
+    const body = new FormData();
+    body.append("avatar", file);
+    const { data } = await API.post<AuthUser>("/user/avatar", body);
+    return data;
+  },
+
+  async deleteAvatar(): Promise<AuthUser> {
+    const { data } = await API.delete<AuthUser>("/user/avatar");
+    return data;
+  },
 };

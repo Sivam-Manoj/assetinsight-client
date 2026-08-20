@@ -439,10 +439,30 @@
 }
 
 .topbarIcon {
+  position: relative;
   width: 36px;
   height: 36px;
   flex: 0 0 auto;
   border: 1px solid transparent;
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--app-panel);
+  border-radius: 10px;
+  background: var(--app-accent);
+  padding: 0 3px;
+  color: var(--app-on-accent);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .topbarIcon:hover {
@@ -468,6 +488,7 @@ button.topbarIcon:disabled {
 
 .mobileMenuButton,
 .mobileIconButton {
+  position: relative;
   width: 36px;
   height: 36px;
   flex: 0 0 auto;

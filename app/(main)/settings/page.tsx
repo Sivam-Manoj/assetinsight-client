@@ -13,6 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
+import { UserAvatar } from "@/components/user/UserAvatar";
 import API from "@/lib/api";
 import { UserService } from "@/services/user";
 import { useAuthContext } from "@/context/AuthContext";
@@ -35,9 +36,11 @@ export default function SettingsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingCv, setUploadingCv] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isOutlookDialogOpen, setIsOutlookDialogOpen] = useState(false);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const {
     status: outlookStatus,
     loading: outlookLoading,
@@ -69,12 +72,6 @@ export default function SettingsPage() {
     }
   }, [isEditing, user]);
 
-  const initial = useMemo(() => {
-    const source =
-      (user as any)?.username || (user as any)?.name || user?.email || "?";
-    return String(source).trim().charAt(0).toUpperCase();
-  }, [user]);
-
   const needsPassword = (user as any)?.authProvider === "email";
   const memberSince = useMemo(() => {
     const value = (user as any)?.createdAt;
@@ -101,6 +98,43 @@ export default function SettingsPage() {
       return;
     }
     setCvFile(file);
+  };
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type)) {
+      toast.error("Choose a JPEG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Profile pictures must be 8 MB or smaller.");
+      return;
+    }
+    try {
+      setUploadingAvatar(true);
+      await UserService.uploadAvatar(file);
+      await refresh();
+      toast.success("Profile picture updated");
+    } catch (uploadError: any) {
+      toast.error(uploadError?.response?.data?.message || uploadError?.message || "Failed to upload profile picture");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleDeleteAvatar = async () => {
+    try {
+      setUploadingAvatar(true);
+      await UserService.deleteAvatar();
+      await refresh();
+      toast.success("Profile picture removed");
+    } catch (deleteError: any) {
+      toast.error(deleteError?.response?.data?.message || deleteError?.message || "Failed to remove profile picture");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleUploadCv = async () => {
@@ -264,12 +298,19 @@ export default function SettingsPage() {
           </div>
 
           <div className="p-4 sm:p-5">
-            <div className="flex items-center gap-3">
-              <div
-                className="grid size-14 shrink-0 place-items-center rounded-xl bg-[var(--app-accent)] text-xl font-bold text-[var(--app-on-accent)]"
-                aria-hidden="true"
-              >
-                {initial}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-3">
+                <UserAvatar user={user || { username: "User" }} size={72} />
+                <div className="flex flex-wrap gap-2 sm:hidden">
+                  <button type="button" className="min-h-9 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)]" onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
+                    {uploadingAvatar ? "Uploading..." : "Change photo"}
+                  </button>
+                  {(user as any)?.avatarUrl ? (
+                    <button type="button" className="min-h-9 rounded-lg border border-[var(--app-danger-border)] px-3 text-xs font-semibold text-[var(--app-danger)]" onClick={() => void handleDeleteAvatar()} disabled={uploadingAvatar}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="min-w-0">
                 <p className="break-words font-semibold text-[var(--app-text)]">
@@ -278,7 +319,18 @@ export default function SettingsPage() {
                 <p className="mt-0.5 text-xs text-[var(--app-text-muted)] sm:text-sm">
                   Member since {memberSince} · Last updated {lastUpdated}
                 </p>
+                <div className="mt-3 hidden flex-wrap gap-2 sm:flex">
+                  <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-border)] px-3 text-xs font-semibold text-[var(--app-text)] hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] disabled:opacity-50" onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}>
+                    <Upload className="size-3.5" /> {uploadingAvatar ? "Uploading..." : "Upload photo"}
+                  </button>
+                  {(user as any)?.avatarUrl ? (
+                    <button type="button" className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--app-danger-border)] px-3 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:opacity-50" onClick={() => void handleDeleteAvatar()} disabled={uploadingAvatar}>
+                      <Trash2 className="size-3.5" /> Remove
+                    </button>
+                  ) : null}
+                </div>
               </div>
+              <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => void handleAvatarChange(event)} />
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">

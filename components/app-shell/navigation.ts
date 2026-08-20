@@ -82,6 +82,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/releases": "Releases",
   "/support": "Support",
   "/settings": "Settings",
+  "/notifications": "Notifications",
   "/create/asset": "Asset Report",
   "/create/lot-listing": "Lot Listing",
 };

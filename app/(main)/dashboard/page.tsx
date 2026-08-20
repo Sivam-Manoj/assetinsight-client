@@ -4,16 +4,16 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   ArrowUpDown,
-  BarChart3,
   Building2,
   CarFront,
   ChevronRight,
   FilePlus2,
   FileText,
   Inbox,
-  Info,
+  Layers3,
   MoreHorizontal,
   Tag,
+  Trophy,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -25,6 +25,11 @@ import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
 import {
+  DashboardService,
+  type DashboardAnalytics,
+  type DashboardRange,
+} from "@/services/dashboard";
+import {
   draftKindForRecord,
   type ReportDraftRecord,
 } from "@/services/reportDrafts";
@@ -33,7 +38,6 @@ import type { SavedInput } from "@/services/savedInputs";
 import {
   ReportsService,
   type PdfReport,
-  type ReportStats,
 } from "@/services/reports";
 import styles from "./Dashboard.module.css";
 
@@ -45,6 +49,17 @@ const SalvageForm = dynamic(() => import("@/components/forms/SalvageForm"), {
   ssr: false,
   loading: () => <Loading message="Loading salvage workflow…" />,
 });
+const ActivityChart = dynamic(
+  () => import("@/components/dashboard/ActivityChart"),
+  {
+    ssr: false,
+    loading: () => <div className={styles.chartLoading}><span className="app-spinner" /></div>,
+  }
+);
+const LeaderboardModal = dynamic(
+  () => import("@/components/dashboard/LeaderboardModal"),
+  { ssr: false }
+);
 type DrawerType = "real-estate" | "salvage" | null;
 
 type IncomingSummary = {
@@ -80,13 +95,6 @@ const REPORT_ACTIONS = [
   },
 ] as const;
 
-const COMPACT_CURRENCY = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
 const REPORT_CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -100,20 +108,6 @@ const UPDATED_DATE = new Intl.DateTimeFormat("en-US", {
   month: "short",
   year: "numeric",
 });
-
-const METHOD_LABELS: Record<string, string> = {
-  fairmarketvalue: "FMV",
-  fairmarket: "FMV",
-  fmv: "FMV",
-  orderlyliquidationvalue: "OLV",
-  orderlyliquidation: "OLV",
-  olv: "OLV",
-  forcedliquidationvalue: "FLV",
-  forcedliquidation: "FLV",
-  flv: "FLV",
-  totalkeptvalue: "TKV",
-  tkv: "TKV",
-};
 
 function latestReports(values: PdfReport[] = []) {
   const grouped = new Map<string, PdfReport>();
@@ -203,11 +197,6 @@ function typeLabel(report: PdfReport) {
   return "Asset Report";
 }
 
-function methodLabel(value: string) {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return METHOD_LABELS[normalized] || value;
-}
-
 function Metric({
   label,
   value,
@@ -239,16 +228,18 @@ export default function DashboardPage() {
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
   const [greetingLabel] = useState(greeting);
+  const [range, setRange] = useState<DashboardRange>(31);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   const {
-    data: stats,
-    error: statsError,
-    isLoading: statsLoading,
-    mutate: mutateStats,
-  } = useSWR<ReportStats>(
-    requestOwner ? ["dashboard/report-stats", requestOwner] : null,
-    ReportsService.getReportStats,
-    { keepPreviousData: false }
+    data: analytics,
+    error: analyticsError,
+    isLoading: analyticsLoading,
+    mutate: mutateAnalytics,
+  } = useSWR<DashboardAnalytics>(
+    requestOwner ? ["dashboard/activity", requestOwner, range] : null,
+    () => DashboardService.getAnalytics(range),
+    { keepPreviousData: true, revalidateOnFocus: true }
   );
   const {
     data: allReports,
@@ -277,24 +268,10 @@ export default function DashboardPage() {
   );
 
   const recent = useMemo(() => latestReports(allReports), [allReports]);
-  const breakdown = useMemo(() => {
-    const entries = Object.entries(stats?.breakdown?.counts ?? {})
-      .filter(([, count]) => Number.isFinite(count) && count > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4);
-    const total = entries.reduce((sum, [, count]) => sum + count, 0);
-    const maximum = Math.max(1, ...entries.map(([, count]) => count));
-
-    return entries.map(([method, count]) => ({
-      method: methodLabel(method),
-      percentage: total ? Math.round((count / total) * 100) : 0,
-      relativeWidth: Math.round((count / maximum) * 90),
-    }));
-  }, [stats?.breakdown?.counts]);
 
   const refreshDashboard = useCallback(() => {
-    void Promise.all([mutateStats(), mutateReports()]);
-  }, [mutateReports, mutateStats]);
+    void Promise.all([mutateAnalytics(), mutateReports()]);
+  }, [mutateAnalytics, mutateReports]);
 
   useEffect(() => {
     window.addEventListener("cv:report-created", refreshDashboard);
@@ -376,7 +353,7 @@ export default function DashboardPage() {
     refreshDashboard();
   }, [refreshDashboard]);
 
-  const error = statsError || reportsError;
+  const error = analyticsError || reportsError;
   const displayName = user?.username || user?.email?.split("@")[0] || "there";
   const incomingCount = incomingSummary?.availableCount ?? 0;
 
@@ -450,18 +427,14 @@ export default function DashboardPage() {
         <div className={styles.summaryLeft}>
           <div className={styles.metricGrid}>
             <Metric
-              label="Total reports"
-              value={statsLoading ? "—" : stats?.totalReports ?? 0}
+              label={`Reports · ${range === 183 ? "6 months" : `${range} days`}`}
+              value={analyticsLoading ? "—" : analytics?.totals.reports ?? 0}
               icon={FileText}
             />
             <Metric
-              label="Portfolio value"
-              value={
-                statsLoading
-                  ? "—"
-                  : COMPACT_CURRENCY.format(stats?.totalFairMarketValue ?? 0)
-              }
-              icon={BarChart3}
+              label={`Lots · ${range === 183 ? "6 months" : `${range} days`}`}
+              value={analyticsLoading ? "—" : analytics?.totals.lots ?? 0}
+              icon={Layers3}
               emphasized
             />
           </div>
@@ -492,46 +465,52 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className={styles.distributionCard}>
-          <div className={styles.distributionHeader}>
-            <h2>Valuation method distribution</h2>
-            <span
-              className={styles.infoIcon}
-              title="Share of reports by valuation method"
-            >
-              <Info size={18} strokeWidth={1.8} aria-hidden />
-              <span className="sr-only">
-                Share of reports by valuation method
-              </span>
-            </span>
-          </div>
-
-          {statsLoading ? (
-            <div className={styles.distributionEmpty}>
-              <span className="app-spinner" aria-label="Loading distribution" />
+        <div className={styles.activityCard}>
+          <div className={styles.activityHeader}>
+            <div>
+              <p>Reporting activity</p>
+              <h2>Lots and reports by date</h2>
             </div>
-          ) : breakdown.length ? (
-            <div className={styles.distribution}>
-              {breakdown.map(({ method, percentage, relativeWidth }) => (
-                <div className={styles.distributionRow} key={method}>
-                  <span className={styles.distributionLabel}>{method}</span>
-                  <span className={styles.track} aria-hidden>
-                    <span
-                      className={styles.bar}
-                      style={{ width: `${Math.max(3, relativeWidth)}%` }}
-                    />
-                  </span>
-                  <span className={styles.percentage}>{percentage}%</span>
-                </div>
-              ))}
+            <div className={styles.activityControls}>
+              <div className={styles.rangeControl} aria-label="Activity range">
+                {([7, 31, 183] as DashboardRange[]).map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    data-active={range === days}
+                    onClick={() => setRange(days)}
+                  >
+                    {days === 183 ? "6M" : `${days}D`}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={styles.leaderboardButton}
+                onClick={() => setShowLeaderboard(true)}
+                title="Open team leaderboard"
+                aria-label="Open team leaderboard"
+              >
+                <Trophy size={18} aria-hidden />
+              </button>
+            </div>
+          </div>
+          {analyticsLoading && !analytics ? (
+            <div className={styles.chartLoading}>
+              <span className="app-spinner" aria-label="Loading activity" />
             </div>
           ) : (
-            <div className={styles.distributionEmpty}>
-              No valuation mix available yet.
-            </div>
+            <ActivityChart data={analytics?.series ?? []} />
           )}
         </div>
       </section>
+
+      {showLeaderboard && analytics ? (
+        <LeaderboardModal
+          data={analytics.leaderboard}
+          onClose={() => setShowLeaderboard(false)}
+        />
+      ) : null}
 
       <section className={styles.recentCard} aria-labelledby="recent-reports">
         <div className={styles.recentHeading}>

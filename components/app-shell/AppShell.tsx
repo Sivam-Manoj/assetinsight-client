@@ -21,8 +21,13 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import BrandLockup from "@/components/auth/BrandLockup";
 import { useColorMode } from "@/components/providers/ColorModeProvider";
+import { UserAvatar } from "@/components/user/UserAvatar";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
+import {
+  notificationCacheKey,
+  NotificationsService,
+} from "@/services/notifications";
 import {
   isNavItemActive,
   PAGE_TITLES,
@@ -34,6 +39,11 @@ import styles from "./AppShell.module.css";
 
 const InputsHistoryModal = dynamic(
   () => import("@/components/modals/InputsHistoryModal"),
+  { ssr: false }
+);
+
+const NotificationModal = dynamic(
+  () => import("@/components/notifications/NotificationModal"),
   { ssr: false }
 );
 
@@ -103,12 +113,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showDrafts, setShowDrafts] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const { data: summary } = useSWR(
     requestOwner ? ["auctioneer/navigation-summary", requestOwner] : null,
     navSummaryFetcher,
     {
       keepPreviousData: false,
+      refreshInterval: visibleRefreshInterval,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+      revalidateOnFocus: true,
+    }
+  );
+  const { data: notificationSummary } = useSWR(
+    requestOwner ? notificationCacheKey(1, 10) : null,
+    () => NotificationsService.list(1, 10),
+    {
       refreshInterval: visibleRefreshInterval,
       refreshWhenHidden: false,
       refreshWhenOffline: false,
@@ -168,12 +189,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       pathname.startsWith(prefix)
     )?.[1] ?? "Workspace";
   const userLabel = user?.username || user?.email || "Loading account";
-  const initials = userLabel
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
   const closeMobile = () => setMobileOpen(false);
   const toggleDesktopNavigation = () => setCollapsed((value) => !value);
 
@@ -300,9 +315,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             title={collapsed ? userLabel : undefined}
             onClick={closeMobile}
           >
-            <span className={styles.avatar} aria-hidden>
-              {initials}
-            </span>
+            <UserAvatar user={user || { username: userLabel }} size={38} />
             <span className={styles.profileCopy}>
               <span className={styles.profileName}>{userLabel}</span>
               <span className={styles.profileEmail}>{user?.email ?? "Secure workspace"}</span>
@@ -384,14 +397,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </form>
 
-            <Link
+            <button
+              type="button"
               className={styles.topbarIcon}
-              href={user?.isReportApprover ? "/approvals" : "/incoming"}
+              onClick={() => setShowNotifications(true)}
               aria-label="Open notifications"
               title="Notifications"
             >
               <Bell size={21} strokeWidth={1.8} aria-hidden />
-            </Link>
+              {(notificationSummary?.unreadCount || 0) > 0 ? (
+                <span className={styles.notificationBadge} aria-label={`${notificationSummary?.unreadCount} unread notifications`}>
+                  {(notificationSummary?.unreadCount || 0) > 99 ? "99+" : notificationSummary?.unreadCount}
+                </span>
+              ) : null}
+            </button>
             <Link
               className={styles.topbarIcon}
               href="/support"
@@ -426,6 +445,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className={styles.mobileTitle}>{title}</span>
           </div>
           <div className={styles.mobileActions}>
+            <button
+              type="button"
+              className={styles.mobileIconButton}
+              onClick={() => setShowNotifications(true)}
+              aria-label="Open notifications"
+            >
+              <Bell size={18} aria-hidden />
+              {(notificationSummary?.unreadCount || 0) > 0 ? (
+                <span className={styles.notificationBadge}>
+                  {(notificationSummary?.unreadCount || 0) > 99 ? "99+" : notificationSummary?.unreadCount}
+                </span>
+              ) : null}
+            </button>
             <Link
               className={styles.mobileIconButton}
               href="/reports"
@@ -457,6 +489,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           onClose={() => setShowDrafts(false)}
           onLoadInput={() => undefined}
         />
+      ) : null}
+      {showNotifications ? (
+        <NotificationModal onClose={() => setShowNotifications(false)} />
       ) : null}
     </div>
   );
