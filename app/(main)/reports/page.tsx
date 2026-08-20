@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
+import { useAuthContext } from "@/context/AuthContext";
 import { ReportsService, type PdfReport } from "@/services/reports";
 import { deleteAssetReport, getAssetReports, resubmitReport, type AssetReport } from "@/services/assets";
 import { deleteLotListing, getLotListings, resubmitLotListing, type LotListing } from "@/services/lotListing";
@@ -37,6 +38,10 @@ import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
+  { ssr: false }
+);
+const ProposalValuationDialog = dynamic(
+  () => import("@/components/reports/ProposalValuationDialog"),
   { ssr: false }
 );
 const AuctioneerDeliveryDialog = dynamic(
@@ -432,6 +437,7 @@ function GeneratingFilesProgress({
 
 export default function ReportsPage() {
   const router = useRouter();
+  const { user } = useAuthContext();
   const [reports, setReports] = useState<PdfReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -453,6 +459,9 @@ export default function ReportsPage() {
     AuctioneerDeliverySummary[]
   >([]);
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
+  const [proposalValuationReportId, setProposalValuationReportId] = useState<
+    string | null
+  >(null);
   const [deliveryDialogItem, setDeliveryDialogItem] =
     useState<AuctioneerDeliverySummary | null>(null);
   const loadingReportsRef = useRef(false);
@@ -1315,6 +1324,9 @@ export default function ReportsPage() {
     const previewPreparing =
       group.workflowStage === "preparing_preview" ||
       (!group.workflowStage && group.reportStatus === "processing");
+    const proposalValuationReady = ["approved", "pending_approval"].includes(
+      String(group.reportStatus || "").toLowerCase()
+    );
     const delivery = group.auctioneerDelivery;
     const lotListingDelivery = Boolean(
       delivery &&
@@ -1394,7 +1406,21 @@ export default function ReportsPage() {
             <span className="truncate">{deliveryLabel}</span>
           </button>
         ) : null}
-        {String(group.type || "").toLowerCase() === "asset" ? (
+        {normalizedType === "asset" &&
+        user?.proposalValuationEnabled === true &&
+        proposalValuationReady ? (
+          <button
+            type="button"
+            aria-label={`Open Proposal Valuation for ${previewTitle}`}
+            title="Review and edit Proposal Valuation"
+            className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-control-border)] bg-[var(--app-panel)] text-[var(--app-text)] hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)]`}
+            onClick={() => setProposalValuationReportId(group.key)}
+          >
+            <ChartNoAxesColumnIncreasing className="size-3.5 shrink-0 text-[var(--app-accent)]" />
+            PV
+          </button>
+        ) : null}
+        {normalizedType === "asset" ? (
           <button
             type="button"
             aria-label={`Merge reports for ${previewTitle}`}
@@ -1857,6 +1883,16 @@ export default function ReportsPage() {
             setMergeAnchorId(null);
             window.dispatchEvent(new Event("cv:report-created"));
             router.push("/previews");
+          }}
+        />
+      ) : null}
+      {proposalValuationReportId ? (
+        <ProposalValuationDialog
+          open
+          reportId={proposalValuationReportId}
+          onClose={() => setProposalValuationReportId(null)}
+          onSaved={() => {
+            void loadReports({ silent: true });
           }}
         />
       ) : null}
