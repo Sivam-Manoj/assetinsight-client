@@ -9,6 +9,17 @@ export type ReportDraftKind = "asset" | "lot-listing";
 export type ReportDraftApiType = "asset" | "lotListing";
 export type ReportDraftStorageMode = "local_media" | "r2_media" | "smart_upload";
 
+export const DUPLICATE_LOT_DETECTED = "DUPLICATE_LOT_DETECTED";
+
+export type DuplicateLotConflict = {
+  contractNo?: string;
+  lotNumber?: string;
+  sourceType?: string;
+  sourceId?: string;
+  ownerDisplay?: string;
+  message?: string;
+};
+
 export type ReportDraftMediaDescriptor = {
   clientFileId: string;
   localKey?: string;
@@ -87,6 +98,9 @@ export type ReportDraftRecord = {
   previewError?: string;
   previewRequestedAt?: string;
   previewReadyAt?: string;
+  duplicateLotConflicts?: DuplicateLotConflict[];
+  syncWarningCode?: string;
+  syncWarningMessage?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -331,6 +345,28 @@ function unwrap<T>(response: { data: { data: T } }) {
   return response.data.data;
 }
 
+export function getDuplicateLotWarning(value: unknown): string | null {
+  const source = value as {
+    syncWarningCode?: unknown;
+    syncWarningMessage?: unknown;
+    duplicateLotConflicts?: unknown;
+    response?: { data?: { code?: unknown; message?: unknown; conflicts?: unknown } };
+  } | null;
+  const response = source?.response?.data;
+  const code = String(source?.syncWarningCode || response?.code || "");
+  const conflicts = Array.isArray(source?.duplicateLotConflicts)
+    ? source.duplicateLotConflicts
+    : Array.isArray(response?.conflicts)
+      ? response.conflicts
+      : [];
+  if (code !== DUPLICATE_LOT_DETECTED && conflicts.length === 0) return null;
+  return String(
+    source?.syncWarningMessage ||
+      response?.message ||
+      "Duplicate Lot Detected. This lot number already exists under the same contract. Change the lot number before creating the preview."
+  );
+}
+
 function chunks<T>(items: T[], size: number) {
   const output: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -448,13 +484,23 @@ export const ReportDraftService = {
   },
 
   async upsert(input: UpsertReportDraftInput) {
-    return unwrap(
-      await API.post<{ data: ReportDraftRecord }>("/report-drafts", {
+    const response = await API.post<{
+      data: ReportDraftRecord;
+      code?: string;
+      message?: string;
+      conflicts?: DuplicateLotConflict[];
+    }>("/report-drafts", {
         ...input,
         type: apiTypeFor(input.kind),
         kind: undefined,
-      })
-    );
+      });
+    return {
+      ...response.data.data,
+      duplicateLotConflicts:
+        response.data.conflicts || response.data.data.duplicateLotConflicts || [],
+      syncWarningCode: response.data.code,
+      syncWarningMessage: response.data.code ? response.data.message : undefined,
+    };
   },
 
   async upsertWithMedia(
@@ -682,7 +728,13 @@ export const ReportDraftService = {
       );
     }
     emitProgress("complete", "Draft and photos saved", 100);
-    return saved;
+    return {
+      ...saved,
+      syncWarningCode: record.syncWarningCode,
+      syncWarningMessage: record.syncWarningMessage,
+      duplicateLotConflicts:
+        saved.duplicateLotConflicts || record.duplicateLotConflicts || [],
+    };
   },
 
   async restoreLots<T extends DraftMediaLot>(record: ReportDraftRecord): Promise<T[]> {

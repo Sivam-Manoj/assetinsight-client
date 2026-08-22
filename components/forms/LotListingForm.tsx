@@ -35,6 +35,7 @@ import {
 import {
   ReportDraftService,
   createReportDraftClientId,
+  getDuplicateLotWarning,
   getReportDraftDeviceId,
   type ReportDraftRecord,
   type ReportDraftSaveProgress,
@@ -217,6 +218,15 @@ async function hydrateLegacyDraft(envelope: LegacyLotListingDraftEnvelope) {
 }
 
 function draftFailureGuidance(error: unknown): DraftIssue {
+  const duplicateWarning = getDuplicateLotWarning(error);
+  if (duplicateWarning) {
+    return {
+      tone: "warning",
+      title: "Duplicate Lot Detected",
+      message: duplicateWarning,
+    };
+  }
+
   const name =
     error && typeof error === "object" && "name" in error
       ? String((error as { name?: unknown }).name || "")
@@ -480,9 +490,10 @@ export default function LotListingForm({
 
           const { lots: _lots, ...formData } = snapshot;
           let accountSyncError: unknown;
+          let savedDuplicateWarning: string | null = null;
           for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-              await ReportDraftService.upsertWithMedia(
+              const savedDraft = await ReportDraftService.upsertWithMedia(
                 {
                   clientDraftId: draftScopeId,
                   kind: "lot-listing",
@@ -499,6 +510,17 @@ export default function LotListingForm({
                   trackDraftSaveProgress(details);
                   reportDraftStatus("saving", message);
                 }
+              );
+              const duplicateWarning = getDuplicateLotWarning(savedDraft);
+              savedDuplicateWarning = duplicateWarning;
+              setDraftIssue(
+                duplicateWarning
+                  ? {
+                      tone: "warning",
+                      title: "Duplicate Lot Detected",
+                      message: duplicateWarning,
+                    }
+                  : null
               );
               accountSyncPendingRef.current = false;
               accountSyncError = undefined;
@@ -522,10 +544,13 @@ export default function LotListingForm({
             () => undefined
           );
           if (draftKey) localStorage.removeItem(draftKey);
-          setDraftIssue(null);
-
           if (revision === requestedRevisionRef.current) {
-            reportDraftStatus("saved", "Draft and photos saved to your account");
+            reportDraftStatus(
+              "saved",
+              savedDuplicateWarning
+                ? "Draft saved - duplicate lot number needs attention"
+                : "Draft and photos saved to your account"
+            );
           }
         } catch (saveError) {
           const issue = draftFailureGuidance(saveError);
@@ -997,12 +1022,17 @@ export default function LotListingForm({
         toast.success("Draft saved. Preview processing has started.");
       } catch (error) {
         const issue = draftFailureGuidance(error);
-        setDraftIssue({
-          tone: "warning",
-          title: "Draft saved, preview not started",
-          message: issue.message,
-        });
-        toast.error("Draft saved, but preview processing could not start.");
+        setDraftIssue(
+          issue.title === "Duplicate Lot Detected"
+            ? issue
+            : {
+                tone: "warning",
+                title: "Draft saved, preview not started",
+                message: issue.message,
+              }
+        );
+        if (issue.title === "Duplicate Lot Detected") toast.warning(issue.title);
+        else toast.error("Draft saved, but preview processing could not start.");
       }
     }
   }, [draftScopeId, flushDraft, reportDraftStatus]);

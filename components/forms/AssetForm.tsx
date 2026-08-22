@@ -26,6 +26,7 @@ import {
 import {
   ReportDraftService,
   createReportDraftClientId,
+  getDuplicateLotWarning,
   getReportDraftDeviceId,
   type ReportDraftRecord,
   type ReportDraftSaveProgress,
@@ -592,7 +593,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        await ReportDraftService.upsertWithMedia(
+        return await ReportDraftService.upsertWithMedia(
           {
             clientDraftId: draftScopeId,
             kind: "asset",
@@ -613,7 +614,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             }
           }
         );
-        return;
       } catch (error) {
         lastError = error;
       }
@@ -626,7 +626,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const snapshot = makeSnapshot(revision);
     publishDraftStatus("saving", "Saving draft…");
     try {
-      await saveServerTier(snapshot);
+      const savedDraft = await saveServerTier(snapshot);
+      const duplicateWarning = getDuplicateLotWarning(savedDraft);
       accountSyncPendingRef.current = false;
       committedRevisionRef.current = Math.max(
         committedRevisionRef.current,
@@ -644,8 +645,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         return;
       }
 
-      setDraftGuidance(null);
-      publishDraftStatus("saved", "Draft and photos saved to your account");
+      setDraftGuidance(
+        duplicateWarning ? { tone: "warning", message: duplicateWarning } : null
+      );
+      publishDraftStatus(
+        "saved",
+        duplicateWarning
+          ? "Draft saved - duplicate lot number needs attention"
+          : "Draft and photos saved to your account"
+      );
     } catch (error) {
       accountSyncPendingRef.current = true;
       if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
@@ -724,12 +732,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       );
       toast.success("Draft saved. Preview processing has started.");
     } catch (error) {
+      const duplicateWarning = getDuplicateLotWarning(error);
       const message =
-        error instanceof Error
+        duplicateWarning ||
+        (error instanceof Error
           ? error.message
-          : "The draft was saved, but preview processing could not start.";
-      setDraftGuidance({ tone: "error", message });
-      toast.error(message);
+          : "The draft was saved, but preview processing could not start.");
+      setDraftGuidance({ tone: duplicateWarning ? "warning" : "error", message });
+      if (duplicateWarning) toast.warning("Duplicate Lot Detected");
+      else toast.error(message);
     }
   };
 
