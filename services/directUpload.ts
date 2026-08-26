@@ -31,6 +31,7 @@ type UploadSession = {
 export const DIRECT_UPLOAD_CONCURRENCY = 4;
 const DIRECT_UPLOAD_RETRIES = 2;
 const SERVER_FALLBACK_RETRIES = 2;
+const COMPLETE_SESSION_RETRIES = 4;
 const DIRECT_UPLOAD_CIRCUIT_TTL_MS = 10 * 60 * 1000;
 const CLOUDFLARE_R2_HOST_SUFFIX = ".r2.cloudflarestorage.com";
 
@@ -114,6 +115,27 @@ const isRetryableServerUploadError = (error: unknown) => {
   const status = Number((error as any)?.response?.status || 0);
   return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
 };
+
+async function completeUploadSessionWithRetry(
+  endpoint: "/asset" | "/lot-listing",
+  sessionId: string,
+) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= COMPLETE_SESSION_RETRIES; attempt += 1) {
+    try {
+      return await API.post(`${endpoint}/upload-session/${sessionId}/complete`, {});
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableServerUploadError(error) || attempt === COMPLETE_SESSION_RETRIES) {
+        throw error;
+      }
+      // Completion is idempotent. Retrying this exact session is safer than
+      // resubmitting its files and prevents transient 503s creating duplicates.
+      await sleep(Math.min(6000, 750 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastError;
+}
 
 export function putFileWithProgress(
   url: string,
@@ -401,7 +423,10 @@ export async function uploadReportFilesDirectToR2(args: {
   }
 
   args.onUploadProgress?.(0.95);
-  const { data } = await API.post(`${args.endpoint}/upload-session/${session.sessionId}/complete`, {});
+  const { data } = await completeUploadSessionWithRetry(
+    args.endpoint,
+    session.sessionId,
+  );
   args.onUploadProgress?.(1);
   return data;
 }

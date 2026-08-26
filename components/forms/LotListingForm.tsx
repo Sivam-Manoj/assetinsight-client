@@ -41,6 +41,7 @@ import {
   type ReportDraftSaveProgress,
 } from "@/services/reportDrafts";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
+import DuplicateDraftDialog from "./DuplicateDraftDialog";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -328,6 +329,9 @@ export default function LotListingForm({
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeReportConflict, setActiveReportConflict] = useState(false);
+  const [duplicateDraftMessage, setDuplicateDraftMessage] = useState<
+    string | null
+  >(null);
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
 
   const [hasDraft, setHasDraft] = useState(false);
@@ -359,6 +363,18 @@ export default function LotListingForm({
   const retryAccountSyncRef = useRef<() => void>(() => undefined);
   const statusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
+  const shownDuplicateMessageRef = useRef<string | null>(null);
+
+  const syncDuplicateDraftDialog = useCallback((message: string | null) => {
+    const normalized = message?.trim() || null;
+    if (!normalized) {
+      shownDuplicateMessageRef.current = null;
+      return;
+    }
+    if (shownDuplicateMessageRef.current === normalized) return;
+    shownDuplicateMessageRef.current = normalized;
+    setDuplicateDraftMessage(normalized);
+  }, []);
 
   useEffect(() => {
     statusCallbackRef.current = onDraftStatusChange;
@@ -513,6 +529,7 @@ export default function LotListingForm({
               );
               const duplicateWarning = getDuplicateLotWarning(savedDraft);
               savedDuplicateWarning = duplicateWarning;
+              syncDuplicateDraftDialog(duplicateWarning);
               setDraftIssue(
                 duplicateWarning
                   ? {
@@ -554,6 +571,9 @@ export default function LotListingForm({
           }
         } catch (saveError) {
           const issue = draftFailureGuidance(saveError);
+          syncDuplicateDraftDialog(
+            issue.title === "Duplicate Lot Detected" ? issue.message : null
+          );
           setDraftSaveProgress(null);
           setDraftIssue(issue);
           reportDraftStatus(
@@ -577,6 +597,7 @@ export default function LotListingForm({
     draftKey,
     draftScopeId,
     reportDraftStatus,
+    syncDuplicateDraftDialog,
     trackDraftSaveProgress,
     userId,
   ]);
@@ -1022,6 +1043,9 @@ export default function LotListingForm({
         toast.success("Draft saved. Preview processing has started.");
       } catch (error) {
         const issue = draftFailureGuidance(error);
+        syncDuplicateDraftDialog(
+          issue.title === "Duplicate Lot Detected" ? issue.message : null
+        );
         setDraftIssue(
           issue.title === "Duplicate Lot Detected"
             ? issue
@@ -1031,11 +1055,12 @@ export default function LotListingForm({
                 message: issue.message,
               }
         );
-        if (issue.title === "Duplicate Lot Detected") toast.warning(issue.title);
-        else toast.error("Draft saved, but preview processing could not start.");
+        if (issue.title !== "Duplicate Lot Detected") {
+          toast.error("Draft saved, but preview processing could not start.");
+        }
       }
     }
-  }, [draftScopeId, flushDraft, reportDraftStatus]);
+  }, [draftScopeId, flushDraft, reportDraftStatus, syncDuplicateDraftDialog]);
 
   const validateForm = useCallback(
     ({ requireMedia = true }: { requireMedia?: boolean } = {}) => {
@@ -1892,6 +1917,16 @@ export default function LotListingForm({
                 Math.random().toString(36).slice(2, 9);
           forceNewSubmissionRef.current = true;
           window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
+
+      <DuplicateDraftDialog
+        open={Boolean(duplicateDraftMessage)}
+        message={duplicateDraftMessage || "A matching draft already exists."}
+        onClose={() => setDuplicateDraftMessage(null)}
+        onCheckDraft={() => {
+          setDuplicateDraftMessage(null);
+          window.location.assign("/previews?tab=drafts");
         }}
       />
 

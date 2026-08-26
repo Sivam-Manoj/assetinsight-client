@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -37,6 +38,7 @@ import {
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
+import DuplicateDraftDialog from "./DuplicateDraftDialog";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -397,6 +399,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   } | null>(null);
   const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const [activeReportConflict, setActiveReportConflict] = useState(false);
+  const [duplicateDraftMessage, setDuplicateDraftMessage] = useState<
+    string | null
+  >(null);
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -422,6 +427,18 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const retryAccountSyncRef = useRef<() => void>(() => undefined);
   const draftStatusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
+  const shownDuplicateMessageRef = useRef<string | null>(null);
+
+  const syncDuplicateDraftDialog = useCallback((message: string | null) => {
+    const normalized = message?.trim() || null;
+    if (!normalized) {
+      shownDuplicateMessageRef.current = null;
+      return;
+    }
+    if (shownDuplicateMessageRef.current === normalized) return;
+    shownDuplicateMessageRef.current = normalized;
+    setDuplicateDraftMessage(normalized);
+  }, []);
 
   useEffect(() => {
     draftStatusCallbackRef.current = onDraftStatusChange;
@@ -628,6 +645,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     try {
       const savedDraft = await saveServerTier(snapshot);
       const duplicateWarning = getDuplicateLotWarning(savedDraft);
+      syncDuplicateDraftDialog(duplicateWarning);
       accountSyncPendingRef.current = false;
       committedRevisionRef.current = Math.max(
         committedRevisionRef.current,
@@ -659,12 +677,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
         return;
       }
+      const duplicateWarning = getDuplicateLotWarning(error);
+      syncDuplicateDraftDialog(duplicateWarning);
       const message =
-        error instanceof Error
+        duplicateWarning ||
+        (error instanceof Error
           ? error.message
-          : "The draft could not be saved to your account. Keep this form open and try again.";
+          : "The draft could not be saved to your account. Keep this form open and try again.");
       setDraftSaveProgress(null);
-      setDraftGuidance({ tone: "error", message });
+      setDraftGuidance({ tone: duplicateWarning ? "warning" : "error", message });
       publishDraftStatus("error", "Draft not saved");
     }
   };
@@ -733,14 +754,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       toast.success("Draft saved. Preview processing has started.");
     } catch (error) {
       const duplicateWarning = getDuplicateLotWarning(error);
+      syncDuplicateDraftDialog(duplicateWarning);
       const message =
         duplicateWarning ||
         (error instanceof Error
           ? error.message
           : "The draft was saved, but preview processing could not start.");
       setDraftGuidance({ tone: duplicateWarning ? "warning" : "error", message });
-      if (duplicateWarning) toast.warning("Duplicate Lot Detected");
-      else toast.error(message);
+      if (!duplicateWarning) toast.error(message);
     }
   };
 
@@ -2314,6 +2335,16 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
           forceNewSubmissionRef.current = true;
           window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
+
+      <DuplicateDraftDialog
+        open={Boolean(duplicateDraftMessage)}
+        message={duplicateDraftMessage || "A matching draft already exists."}
+        onClose={() => setDuplicateDraftMessage(null)}
+        onCheckDraft={() => {
+          setDuplicateDraftMessage(null);
+          window.location.assign("/previews?tab=drafts");
         }}
       />
 

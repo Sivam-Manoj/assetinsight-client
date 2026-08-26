@@ -229,6 +229,17 @@ export default function PreviewsPage() {
   const [newReports, setNewReports] = useState<CombinedReport[]>([]);
   const [submittedReports, setSubmittedReports] = useState<CombinedReport[]>([]);
   const [draftReports, setDraftReports] = useState<ReportDraftRecord[]>([]);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (
+      requestedTab === "new" ||
+      requestedTab === "submitted" ||
+      requestedTab === "drafts"
+    ) {
+      setActiveTab(requestedTab);
+    }
+  }, []);
   const hasActiveJobs = useMemo(
     () =>
       [...newReports, ...submittedReports].some(isWorkflowActive) ||

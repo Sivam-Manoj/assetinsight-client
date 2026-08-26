@@ -614,7 +614,7 @@ export default function DashboardPage() {
         onClose={closeDrawer}
         title={drawerType ? DRAWER_TITLES[drawerType] : undefined}
         description="Complete the required details, attach supporting media, and save or submit when ready."
-        contentScrollable={false}
+        contentScrollable
       >
         {drawerType === "real-estate" ? (
           <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} />

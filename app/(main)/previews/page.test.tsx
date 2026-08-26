@@ -15,6 +15,18 @@ const mocks = vi.hoisted(() => ({
   deleteLotListing: vi.fn(),
   resubmitReport: vi.fn(),
   resubmitLotListing: vi.fn(),
+  routerPush: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mocks.routerPush,
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+  }),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -210,5 +222,15 @@ describe("Preview queue affordances", () => {
         name: /Asset preview editor/,
       })
     ).not.toBeInTheDocument();
+  });
+
+  it("opens Draft Previews from the duplicate recovery deep link", async () => {
+    window.history.replaceState({}, "", "/previews?tab=drafts");
+
+    render(<PreviewsPage />);
+
+    expect(
+      await screen.findByRole("tab", { name: /Draft Previews/i })
+    ).toHaveAttribute("aria-selected", "true");
   });
 });
