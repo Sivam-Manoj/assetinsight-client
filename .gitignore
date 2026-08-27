@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local AI/Codex memory and update notes
+/AGENTS.md
+/AGENTS.override.md
+/CLAUDE.md
+/updates.md
