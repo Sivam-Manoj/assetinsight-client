@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { Menu, MenuItem } from "@/components/ui/legacy";
 import { MoreHorizontal, Save, ScanLine } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -313,6 +314,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   },
   ref
 ) {
+  const router = useRouter();
   const { user } = useAuthContext();
   const userId = user?._id || "";
   const draftClientIdRef = useRef(
@@ -2344,7 +2346,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         onClose={() => setDuplicateDraftMessage(null)}
         onCheckDraft={() => {
           setDuplicateDraftMessage(null);
-          window.location.assign("/previews?tab=drafts");
+          router.push("/previews?tab=drafts");
         }}
       />
 

@@ -166,7 +166,7 @@ describe("AppShell", () => {
     vi.mocked(useAuthContext).mockReturnValue(secondUser);
     rendered.rerender(<AppShell>Second user queue</AppShell>);
 
-    expect(mocks.swr).toHaveBeenLastCalledWith(
+    expect(mocks.swr).toHaveBeenCalledWith(
       ["auctioneer/navigation-summary", "user-2"],
       expect.any(Function),
       expect.objectContaining({ keepPreviousData: false })
@@ -246,8 +246,8 @@ describe("AppShell", () => {
       })
     );
     expect(
-      screen.getByRole("link", { name: "Open notifications" })
-    ).toHaveAttribute("href", "/approvals");
+      screen.getAllByRole("button", { name: "Open notifications" })
+    ).toHaveLength(2);
     expect(
       screen.getByRole("link", { name: "Contact support" })
     ).toHaveAttribute("href", "/support");

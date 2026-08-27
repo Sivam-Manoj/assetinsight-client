@@ -42,6 +42,15 @@ vi.mock("next/dynamic", () => ({
   },
 }));
 
+vi.mock("@/context/AuthContext", () => ({
+  useAuthContext: () => ({
+    user: {
+      _id: "user-1",
+      proposalValuationEnabled: false,
+    },
+  }),
+}));
+
 vi.mock("@/components/ui/toast", () => ({
   toast: {
     success: vi.fn(),

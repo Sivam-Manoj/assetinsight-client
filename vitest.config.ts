@@ -1,4 +1,3 @@
-import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
@@ -26,11 +25,14 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
-      { find: "@", replacement: path.resolve(__dirname) },
+      { find: "@", replacement: import.meta.dirname },
     ],
   },
   test: {
     environment: "jsdom",
+    // Node 26 exposes process-level Web Storage globals. VM workers keep
+    // jsdom's isolated localStorage/sessionStorage authoritative in tests.
+    pool: "vmThreads",
     setupFiles: ["./tests/setup.ts"],
     restoreMocks: true,
     css: false,

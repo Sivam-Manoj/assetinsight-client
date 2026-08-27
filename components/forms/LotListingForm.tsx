@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   ListItemIcon,
   ListItemText,
@@ -276,6 +277,7 @@ export default function LotListingForm({
   resumeDraft = null,
   resumeLocalDraftScopeId,
 }: Props) {
+  const router = useRouter();
   const { user } = useAuthContext();
   const userId = user?._id || null;
   const draftClientIdRef = useRef(
@@ -1926,7 +1928,7 @@ export default function LotListingForm({
         onClose={() => setDuplicateDraftMessage(null)}
         onCheckDraft={() => {
           setDuplicateDraftMessage(null);
-          window.location.assign("/previews?tab=drafts");
+          router.push("/previews?tab=drafts");
         }}
       />
 

@@ -12,10 +12,6 @@ import {
 
 const USER_ID = "smart-upload-storage-test-user";
 
-Object.defineProperty(globalThis, "window", {
-  configurable: true,
-  value: globalThis,
-});
 Object.defineProperty(globalThis, "File", {
   configurable: true,
   value: NodeFile,

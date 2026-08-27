@@ -40,33 +40,6 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("next/dynamic", () => ({
-  default: () => {
-    function DeferredReportForm() {
-      return <div data-testid="deferred-report-form">Report form loaded</div>;
-    }
-    return DeferredReportForm;
-  },
-}));
-
-vi.mock("@/components/BottomDrawer", () => ({
-  default: ({
-    open,
-    title,
-    children,
-  }: {
-    open: boolean;
-    title?: React.ReactNode;
-    children: React.ReactNode;
-  }) =>
-    open ? (
-      <div role="dialog" aria-label="Report workflow">
-        <h2>{title}</h2>
-        {children}
-      </div>
-    ) : null,
-}));
-
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     user: mocks.authUser,
@@ -182,6 +155,7 @@ describe("Incoming", () => {
     mocks.getSetup.mockReset();
     mocks.releaseClaim.mockReset();
     mocks.routerPush.mockReset();
+    window.sessionStorage.clear();
     mocks.authUser = {
       _id: "user-1",
       email: "appraiser@example.com",
@@ -348,10 +322,19 @@ describe("Incoming", () => {
     await waitFor(() =>
       expect(mocks.claim).toHaveBeenCalledWith("cycle-100", "lotListing")
     );
+    await waitFor(() =>
+      expect(mocks.routerPush).toHaveBeenCalledWith("/create/lot-listing")
+    );
     expect(
-      await screen.findByRole("dialog", { name: "Report workflow" })
-    ).toHaveTextContent("Lot listing");
-    expect(screen.getByTestId("deferred-report-form")).toBeInTheDocument();
+      JSON.parse(
+        window.sessionStorage.getItem("cv:report-form-handoff:v1") || "null"
+      )
+    ).toMatchObject({
+      version: 1,
+      kind: "lot-listing",
+      returnTo: "/incoming",
+      auctioneer: { reportType: "lotListing" },
+    });
   });
 
   it("refreshes the queue and explains a claim conflict", async () => {
@@ -385,9 +368,17 @@ describe("Incoming", () => {
     await waitFor(() =>
       expect(mocks.getSetup).toHaveBeenCalledWith("work-claimed")
     );
+    expect(mocks.routerPush).toHaveBeenCalledWith("/create/asset");
     expect(
-      await screen.findByRole("dialog", { name: "Report workflow" })
-    ).toHaveTextContent("Asset report");
+      JSON.parse(
+        window.sessionStorage.getItem("cv:report-form-handoff:v1") || "null"
+      )
+    ).toMatchObject({
+      version: 1,
+      kind: "asset",
+      returnTo: "/incoming",
+      auctioneer: { reportType: "asset" },
+    });
   });
 
   it("releases a claimed work item and immediately refreshes", async () => {
