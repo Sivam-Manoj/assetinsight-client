@@ -229,6 +229,39 @@ describe("Incoming", () => {
     expect(mocks.getStatus).not.toHaveBeenCalled();
   });
 
+  it("renders every proposal row returned by the incoming items contract", async () => {
+    mocks.getIncoming.mockResolvedValue([
+      {
+        ...availableItem,
+        cycleKey: "proposal:825291",
+        contractId: "contract-825291",
+        contractNo: "825291",
+        eventTitle: "ProposalInAssetInsight",
+        kind: "unknown",
+        lotCount: 0,
+      },
+      {
+        ...availableItem,
+        cycleKey: "proposal:825295",
+        contractId: "contract-825295",
+        contractNo: "825295",
+        eventTitle: "ProposalInAssetInsight",
+        kind: "scheduleA",
+      },
+    ]);
+
+    renderIncoming();
+
+    expect(
+      await screen.findByRole("button", { name: "Review 825291" })
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Review 825295" })
+    ).toBeVisible();
+    expect(screen.getAllByText("ProposalInAssetInsight")).toHaveLength(2);
+    expect(mocks.getIncoming).toHaveBeenCalledWith();
+  });
+
   it("drops the previous user's rows while the next user's queue loads", async () => {
     let resolveSecondUser!: (items: AuctioneerIncomingItem[]) => void;
     mocks.getIncoming
