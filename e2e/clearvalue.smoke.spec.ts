@@ -69,6 +69,22 @@ async function mockAuthenticatedApi(
     const path = url.pathname;
     let body: unknown;
 
+    if (path.endsWith("/proposal-valuation/export")) {
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-expose-headers": "Content-Disposition",
+          "content-disposition":
+            "attachment; filename*=UTF-8''E2E%20Proposal%20Valuation.xlsx",
+          "content-type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+        body: "mock xlsx workbook",
+      });
+      return;
+    }
+
     if (path.endsWith("/api/user/me")) {
       body = {
         _id: "e2e-user",
@@ -92,6 +108,22 @@ async function mockAuthenticatedApi(
       };
     } else if (path.endsWith("/api/reports/myreports")) {
       body = [];
+    } else if (path.endsWith("/api/asset/proposal-valuations")) {
+      body = {
+        items: [
+          {
+            reportId: "e2e-pv",
+            title: "E2E collaborative valuation",
+            contractNo: "PV-E2E-100",
+            status: "approved",
+            role: "owner",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+            revision: 7,
+            participantCount: 1,
+            currencyCode: "CAD",
+          },
+        ],
+      };
     } else if (path.endsWith("/api/asset/e2e-pv/proposal-valuation")) {
       body = {
         reportId: "e2e-pv",
@@ -895,7 +927,7 @@ test("authenticated workspace route matrix renders cleanly", async ({
   }
 });
 
-test("Proposal Valuations list is a responsive file-free workspace route", async ({
+test("Proposal Valuations list offers a responsive Excel export", async ({
   page,
 }) => {
   await initializeTheme(page, "light");
@@ -905,7 +937,14 @@ test("Proposal Valuations list is a responsive file-free workspace route", async
   await expect(
     page.getByRole("heading", { level: 1, name: "Proposal Valuations" })
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
+  const exportButton = page.getByRole("button", {
+    name: "Export E2E collaborative valuation to Excel",
+  });
+  await expect(exportButton).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await exportButton.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("E2E Proposal Valuation.xlsx");
   await expectTheme(page, "light");
 });
 
@@ -922,6 +961,11 @@ test("Proposal Valuation opens as a compact full-page responsive workspace", asy
   await expect(
     page.getByRole("button", { name: "Close Proposal Valuation" })
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: "Export E2E collaborative valuation to Excel",
+    })
+  ).toBeVisible();
   await expect(page.getByText("1–1 of 1")).toBeVisible();
 
   await page.getByRole("button", { name: "File summary" }).click();

@@ -26,7 +26,7 @@ import {
   type ProposalValuationEvent,
 } from "./proposalValuation";
 
-describe("ProposalValuationService live events", () => {
+describe("ProposalValuationService", () => {
   beforeEach(() => {
     mocks.apiGet.mockReset().mockResolvedValue({ data: { id: "user-1" } });
     mocks.getAccessToken.mockReset().mockReturnValue("token");
@@ -35,6 +35,45 @@ describe("ProposalValuationService live events", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("downloads an XLSX export and prefers the encoded response filename", async () => {
+    const blob = new Blob(["workbook"], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    mocks.apiGet.mockResolvedValueOnce({
+      data: blob,
+      headers: {
+        "content-disposition":
+          "attachment; filename=proposal.xlsx; filename*=UTF-8''McDougall%20PV%20Summary.xlsx",
+      },
+    });
+
+    await expect(
+      ProposalValuationService.exportExcel("report / 1")
+    ).resolves.toEqual({
+      blob,
+      filename: "McDougall PV Summary.xlsx",
+    });
+    expect(mocks.apiGet).toHaveBeenCalledWith(
+      "/asset/report%20%2F%201/proposal-valuation/export",
+      { responseType: "blob" }
+    );
+  });
+
+  it("parses a quoted filename and removes any supplied path", async () => {
+    const blob = new Blob(["workbook"]);
+    mocks.apiGet.mockResolvedValueOnce({
+      data: blob,
+      headers: {
+        get: vi.fn(() => 'attachment; filename="unsafe\\\\path\\\\PV Export.xlsx"'),
+      },
+    });
+
+    await expect(ProposalValuationService.exportExcel("report-1")).resolves.toEqual({
+      blob,
+      filename: "PV Export.xlsx",
+    });
   });
 
   it("uses the coalesced API refresh path once after a stream 401", async () => {

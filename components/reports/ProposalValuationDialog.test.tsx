@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   patchChanges: vi.fn(),
   updateEvaluators: vi.fn(),
   evaluatorOptions: vi.fn(),
+  exportExcel: vi.fn(),
   regenerate: vi.fn(),
   streamEvents: vi.fn(),
   toastSuccess: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("@/services/proposalValuation", () => ({
     patchChanges: mocks.patchChanges,
     updateEvaluators: mocks.updateEvaluators,
     evaluatorOptions: mocks.evaluatorOptions,
+    exportExcel: mocks.exportExcel,
     regenerate: mocks.regenerate,
     streamEvents: mocks.streamEvents,
     newMutationId: vi.fn(() => `mutation-${++mocks.mutationCounter}`),
@@ -137,6 +139,7 @@ describe("ProposalValuationDialog", () => {
     mocks.patchChanges.mockReset();
     mocks.updateEvaluators.mockReset();
     mocks.evaluatorOptions.mockReset();
+    mocks.exportExcel.mockReset();
     mocks.regenerate.mockReset();
     mocks.streamEvents.mockReset();
     mocks.toastSuccess.mockReset();
@@ -146,6 +149,10 @@ describe("ProposalValuationDialog", () => {
     mocks.patchChanges.mockResolvedValue({ ...payload, revision: 8 });
     mocks.updateEvaluators.mockResolvedValue({ ...payload, revision: 8 });
     mocks.evaluatorOptions.mockResolvedValue([]);
+    mocks.exportExcel.mockResolvedValue({
+      blob: new Blob(["workbook"]),
+      filename: "proposal-valuation.xlsx",
+    });
     mocks.regenerate.mockResolvedValue({ queued: true, coalesced: false, revision: 8 });
     mocks.streamEvents.mockImplementation(
       async (_reportId: string, _since: number, signal: AbortSignal) =>
@@ -197,6 +204,11 @@ describe("ProposalValuationDialog", () => {
     for (const evaluator of ["Riley", "Jay", "Chad", "Femi"]) {
       expect(screen.getByRole("columnheader", { name: evaluator })).toBeInTheDocument();
     }
+    expect(
+      screen.getByRole("button", {
+        name: "Export McDougall Auctioneering Inc. to Excel",
+      })
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "File summary" }));
     expect(screen.getByRole("spinbutton", { name: "Total risk-weighted value" })).toHaveValue(38000);

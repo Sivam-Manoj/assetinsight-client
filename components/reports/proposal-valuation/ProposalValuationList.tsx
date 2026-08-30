@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BarChart3, RefreshCw, Search, Users } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ProposalValuationService } from "@/services/proposalValuation";
+import ProposalValuationExcelButton from "./ProposalValuationExcelButton";
 import type { ProposalValuationListItem } from "./types";
 
 function formatDate(value: string) {
@@ -102,34 +103,45 @@ export default function ProposalValuationList() {
       ) : filtered.length ? (
         <div className="grid gap-2">
           {filtered.map((item) => (
-            <Link
+            <article
               key={item.reportId}
-              href={`/proposal-valuations/${encodeURIComponent(item.reportId)}`}
               className="app-surface group flex min-w-0 flex-col gap-3 p-4 transition-colors hover:border-[var(--app-accent)] sm:flex-row sm:items-center"
             >
-              <span className="grid size-10 shrink-0 place-items-center rounded-md bg-[var(--app-accent-soft)] text-[var(--app-accent)]">
-                <BarChart3 className="size-5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-bold text-[var(--app-text-strong)]">
-                  {item.title || "Asset report"}
+              <Link
+                href={`/proposal-valuations/${encodeURIComponent(item.reportId)}`}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent-ring)]"
+              >
+                <span className="grid size-10 shrink-0 place-items-center rounded-md bg-[var(--app-accent-soft)] text-[var(--app-accent)]">
+                  <BarChart3 className="size-5" />
                 </span>
-                <span className="mt-0.5 block truncate text-xs text-[var(--app-text-muted)]">
-                  {[item.contractNo, item.status, formatDate(item.updatedAt)]
-                    .filter(Boolean)
-                    .join(" · ")}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-bold text-[var(--app-text-strong)]">
+                    {item.title || "Asset report"}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-[var(--app-text-muted)]">
+                    {[item.contractNo, item.status, formatDate(item.updatedAt)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
                 </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2 text-xs font-semibold">
-                <span className="app-chip capitalize">{item.role}</span>
-                <span className="inline-flex items-center gap-1 text-[var(--app-text-muted)]">
-                  <Users className="size-3.5" /> {item.participantCount}
-                </span>
-                <span className="text-[var(--app-accent)] group-hover:underline">
+                <span className="hidden shrink-0 text-xs font-semibold text-[var(--app-accent)] group-hover:underline md:inline">
                   Open PV
                 </span>
-              </span>
-            </Link>
+              </Link>
+              <div className="flex shrink-0 items-center justify-between gap-2 pl-[52px] sm:justify-end sm:pl-0">
+                <span className="flex items-center gap-2 text-xs font-semibold">
+                  <span className="app-chip capitalize">{item.role}</span>
+                  <span className="inline-flex items-center gap-1 text-[var(--app-text-muted)]">
+                    <Users className="size-3.5" /> {item.participantCount}
+                  </span>
+                </span>
+                <ProposalValuationExcelButton
+                  compact
+                  reportId={item.reportId}
+                  title={item.title || item.contractNo || "Proposal Valuation"}
+                />
+              </div>
+            </article>
           ))}
         </div>
       ) : (

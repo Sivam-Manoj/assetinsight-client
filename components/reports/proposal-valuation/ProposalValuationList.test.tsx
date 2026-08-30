@@ -2,10 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProposalValuationList from "./ProposalValuationList";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), exportExcel: vi.fn() }));
 
 vi.mock("@/services/proposalValuation", () => ({
-  ProposalValuationService: { list: mocks.list },
+  ProposalValuationService: {
+    list: mocks.list,
+    exportExcel: mocks.exportExcel,
+  },
 }));
 
 describe("ProposalValuationList", () => {
@@ -36,7 +39,7 @@ describe("ProposalValuationList", () => {
     ]);
   });
 
-  it("links owned and assigned reports to full-page workspaces without file controls", async () => {
+  it("links owned and assigned reports and offers an Excel export for each", async () => {
     render(<ProposalValuationList />);
 
     expect(await screen.findByRole("link", { name: /Owned valuation/ })).toHaveAttribute(
@@ -47,7 +50,12 @@ describe("ProposalValuationList", () => {
       "href",
       "/proposal-valuations/assigned-report"
     );
-    expect(screen.queryByRole("button", { name: /download/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export Owned valuation to Excel" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export Assigned valuation to Excel" })
+    ).toBeInTheDocument();
     expect(screen.getByText("owner")).toBeInTheDocument();
     expect(screen.getByText("evaluator")).toBeInTheDocument();
   });

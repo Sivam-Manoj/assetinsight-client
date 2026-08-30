@@ -14,6 +14,53 @@ type RevisionMutation = {
   clientMutationId: string;
 };
 
+function safeDispositionFilename(value: string | undefined) {
+  if (!value) return undefined;
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .split(/[\\/]/)
+    .pop()
+    ?.trim();
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : undefined;
+}
+
+export function contentDispositionFilename(disposition: string | undefined) {
+  if (!disposition) return undefined;
+
+  const encodedMatch = /filename\*\s*=\s*([^;]+)/i.exec(disposition);
+  if (encodedMatch?.[1]) {
+    const encoded = encodedMatch[1]
+      .trim()
+      .replace(/^['"]|['"]$/g, "")
+      .replace(/^[^']*'[^']*'/, "");
+    try {
+      const decoded = safeDispositionFilename(decodeURIComponent(encoded));
+      if (decoded) return decoded;
+    } catch {
+      // Fall through to the plain filename parameter when encoding is invalid.
+    }
+  }
+
+  const plainMatch = /filename\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^;]*))/i.exec(
+    disposition
+  );
+  const plain = (plainMatch?.[1] || plainMatch?.[2] || "")
+    .replace(/\\(["\\])/g, "$1")
+    .trim();
+  return safeDispositionFilename(plain);
+}
+
+function headerValue(headers: unknown, name: string) {
+  const candidate = headers as
+    | { get?: (key: string) => unknown; [key: string]: unknown }
+    | undefined;
+  const viaGetter = candidate?.get?.(name);
+  if (typeof viaGetter === "string") return viaGetter;
+  const direct = candidate?.[name] ?? candidate?.[name.toLowerCase()];
+  return typeof direct === "string" ? direct : undefined;
+}
+
 export type ProposalValuationEvent = {
   type: "ready" | "pv-revision" | "resync";
   reportId: string;
@@ -160,6 +207,27 @@ export const ProposalValuationService = {
       return data;
     } catch (error) {
       throw new Error(errorMessage(error, "Unable to load Proposal Valuation."));
+    }
+  },
+
+  async exportExcel(reportId: string) {
+    try {
+      const response = await API.get<Blob>(
+        `/asset/${encodeURIComponent(reportId)}/proposal-valuation/export`,
+        { responseType: "blob" as const }
+      );
+      return {
+        blob: response.data,
+        filename: contentDispositionFilename(
+          headerValue(response.headers, "content-disposition")
+        ),
+      };
+    } catch (error) {
+      const message = errorMessage(
+        error,
+        "Unable to export this Proposal Valuation to Excel."
+      );
+      throw new Error(message);
     }
   },
 

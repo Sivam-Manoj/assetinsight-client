@@ -44,6 +44,7 @@ import {
 } from "./proposal-valuation/calculations";
 import EvaluatorPicker from "./proposal-valuation/EvaluatorPicker";
 import FormulaDetailsDialog from "./proposal-valuation/FormulaDetailsDialog";
+import ProposalValuationExcelButton from "./proposal-valuation/ProposalValuationExcelButton";
 import type {
   ProposalValuationCalculation,
   ProposalValuationCandidate,
@@ -1602,6 +1603,21 @@ export default function ProposalValuationDialog({
                 {terminalMessage || liveStatus !== "live" ? <WifiOff className="size-3.5" /> : <Wifi className="size-3.5" />}
                 {terminalMessage ? "Access ended" : syncing ? "Saving…" : liveStatus === "live" ? "Live" : "Reconnecting"}
               </span>
+            ) : null}
+            {pageMode ? (
+              <ProposalValuationExcelButton
+                reportId={reportId}
+                title={payload?.title || "Proposal Valuation"}
+                disabled={
+                  !sheet ||
+                  loading ||
+                  saving ||
+                  syncing ||
+                  dirty ||
+                  saveBlocked ||
+                  Boolean(terminalMessage)
+                }
+              />
             ) : null}
             {permissions.canRegenerateFiles ? (
               <button
