@@ -43,4 +43,36 @@ describe("mergeSubmittedPreviewData", () => {
       "Edited first",
     ]);
   });
+
+  it("keeps sibling edits distinct when generated lots share an internal id", () => {
+    const result = mergeSubmittedPreviewData(
+      {
+        lots: [
+          { lot_id: "duplicate-ai-id", lot_number: "1", description: "Server first" },
+          { lot_id: "duplicate-ai-id", lot_number: "2", description: "Server second" },
+        ],
+      },
+      {
+        lots: [
+          {
+            lot_id: "duplicate-ai-id",
+            lot_number: "825291",
+            description: "First line\nFirst continuation",
+          },
+          {
+            lot_id: "duplicate-ai-id",
+            lot_number: "825295",
+            description: "Second line\nSecond continuation",
+          },
+        ],
+      }
+    );
+
+    expect(
+      result.lots.map((lot: any) => [lot.lot_number, lot.description])
+    ).toEqual([
+      ["825291", "First line\nFirst continuation"],
+      ["825295", "Second line\nSecond continuation"],
+    ]);
+  });
 });

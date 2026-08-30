@@ -19,13 +19,22 @@ export function mergeSubmittedPreviewData(
 
   const submittedLots = Array.isArray(submittedPreview?.lots) ? submittedPreview.lots : [];
   const serverLots = Array.isArray(serverPreview?.lots) ? serverPreview.lots : [];
-  const submittedByKey = new Map(
-    submittedLots.map((lot: PreviewRecord, index: number) => [getLotKey(lot, index), lot])
-  );
+  const submittedByKey = new Map<string, PreviewRecord[]>();
+  submittedLots.forEach((lot: PreviewRecord, index: number) => {
+    const key = getLotKey(lot, index);
+    submittedByKey.set(key, [...(submittedByKey.get(key) || []), lot]);
+  });
+  const consumedByKey = new Map<string, number>();
 
   const mergedLots = (serverLots.length > 0 ? serverLots : submittedLots).map(
     (serverLot: PreviewRecord, index: number) => {
-      const submittedLot = submittedByKey.get(getLotKey(serverLot, index)) || submittedLots[index];
+      const key = getLotKey(serverLot, index);
+      const candidates = submittedByKey.get(key) || [];
+      const candidateIndex = consumedByKey.get(key) || 0;
+      const submittedLot =
+        candidates[candidateIndex] ||
+        (candidates.length === 0 ? submittedLots[index] : undefined);
+      if (candidates[candidateIndex]) consumedByKey.set(key, candidateIndex + 1);
       return submittedLot ? { ...serverLot, ...submittedLot } : serverLot;
     }
   );
