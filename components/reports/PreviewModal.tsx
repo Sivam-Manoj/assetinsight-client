@@ -35,6 +35,11 @@ import {
   isPrimarySerialField,
 } from "@/lib/previewSerialNumber";
 import { getPreviewLotPhotoEntries } from "@/lib/previewLotPhotos";
+import {
+  buildLotValuationLines,
+  formatLotValuationValue,
+  type LotValuationLine,
+} from "@/components/reports/lotValuationMethods";
 
 interface PreviewModalProps {
   reportId: string;
@@ -122,6 +127,63 @@ const getLotDisplayNumber = (lot: any, index: number) => {
   }
   return String(index + 1);
 };
+
+function SelectedValuationMethods({
+  lines,
+  lotLabel,
+}: {
+  lines: LotValuationLine[];
+  lotLabel: string;
+}) {
+  if (!lines.length) {
+    return <span className="text-xs text-[var(--app-text-muted)]">None selected</span>;
+  }
+
+  return (
+    <ul className="space-y-1.5" aria-label={`Selected valuation methods for lot ${lotLabel}`}>
+      {lines.map((line) => (
+        <li key={line.method} className="min-w-0">
+          <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-2 py-1 text-[11px] font-bold text-[var(--app-text)]">
+            <span>{line.method}</span>
+            {line.percentage !== null ? (
+              <span className="font-medium text-[var(--app-text-muted)]">
+                {line.percentage}%
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-0.5 block truncate text-[10px] text-[var(--app-text-muted)]" title={line.fullName}>
+            {line.fullName}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LotValuationValues({
+  lines,
+  currency,
+  lotLabel,
+}: {
+  lines: LotValuationLine[];
+  currency: unknown;
+  lotLabel: string;
+}) {
+  if (!lines.length) return null;
+
+  return (
+    <dl className="mt-2 space-y-1.5 border-t border-[var(--app-border)] pt-2" aria-label={`Valuation method values for lot ${lotLabel}`}>
+      {lines.map((line) => (
+        <div key={line.method} className="flex items-center justify-between gap-2 text-xs">
+          <dt className="font-bold text-[var(--app-text-muted)]">{line.method}</dt>
+          <dd className="text-right font-semibold tabular-nums text-[var(--app-text)]">
+            {formatLotValuationValue(line.value, currency)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 type SignaturePadProps = {
   value?: string;
@@ -1691,7 +1753,14 @@ export default function PreviewModal({
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
                       <div className="space-y-3">
-                        {group.items.map(({ lot, idx }) => (
+                        {group.items.map(({ lot, idx }) => {
+                          const lotLabel = getLotDisplayNumber(lot, idx);
+                          const valuationLines = buildLotValuationLines(
+                            lot.estimated_value,
+                            previewData?.valuation_methods,
+                            previewData?.valuation_data?.methods
+                          );
+                          return (
                           <div key={idx} className="rounded-[1.25rem] border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-3 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <div className="text-sm font-semibold text-[var(--app-text)]">Lot {getLotDisplayNumber(lot, idx)}</div>
@@ -1858,21 +1927,32 @@ export default function PreviewModal({
                               />
                               <div>
                                 <div className="mb-1 flex items-center justify-between gap-2">
-                                  <label className="block text-xs text-[var(--app-text-muted)]">Value</label>
+                                  <label className="block text-xs text-[var(--app-text-muted)]">Base market value</label>
                                   {renderFieldEditorButton(idx, "estimated_value", "mobile")}
                                 </div>
                                 <input
                                   type="text"
+                                  aria-label={`Base market value for lot ${lotLabel}`}
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-mobile`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
                                   className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
+                                <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3">
+                                  <p className="mb-2 text-xs font-bold text-[var(--app-text)]">Selected valuation methods</p>
+                                  <SelectedValuationMethods lines={valuationLines} lotLabel={lotLabel} />
+                                  <LotValuationValues
+                                    lines={valuationLines}
+                                    currency={previewData?.currency || "CAD"}
+                                    lotLabel={lotLabel}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
@@ -1892,16 +1972,22 @@ export default function PreviewModal({
                             <th className="w-[13%] px-2 py-2 text-left">Photos</th>
                             <th className="w-[12%] px-2 py-2 text-left">Title</th>
                             <th className="w-[13%] px-2 py-2 text-left">Category</th>
-                            <th className="w-[16%] px-2 py-2 text-left">Description</th>
-                            <th className="w-[15%] px-2 py-2 text-left">Specs</th>
-                            <th className="w-[13%] px-2 py-2 text-left">Selections</th>
-                            <th className="w-[7%] px-2 py-2 text-left">Value</th>
+                            <th className="w-[15%] px-2 py-2 text-left">Description</th>
+                            <th className="w-[14%] px-2 py-2 text-left">Specs</th>
+                            <th className="w-[11%] px-2 py-2 text-left">Selections</th>
+                            <th className="w-[11%] px-2 py-2 text-left">Value</th>
                             <th className="w-[4%] px-2 py-2 text-left">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {group.items.map(({ lot, idx }, i) => {
                             const lotImages = getLotPhotoEntries(lot);
+                            const lotLabel = getLotDisplayNumber(lot, idx);
+                            const valuationLines = buildLotValuationLines(
+                              lot.estimated_value,
+                              previewData?.valuation_methods,
+                              previewData?.valuation_data?.methods
+                            );
                             const lotUploadKey = getLotUploadKey(lot, idx);
                             const uploadInputId = `asset-preview-upload-${idx}-desktop`;
                             const openLotGallery = (startIdx: number) => {
@@ -2031,10 +2117,15 @@ export default function PreviewModal({
                                 {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
                               </td>
                               <td className="px-2 py-2 align-top">
+                                <SelectedValuationMethods lines={valuationLines} lotLabel={lotLabel} />
                               </td>
                               <td className="px-2 py-2 align-top">
+                                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
+                                  Base FMV
+                                </label>
                                 <input
                                   type="text"
+                                  aria-label={`Base market value for lot ${lotLabel}`}
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-desktop`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
@@ -2042,6 +2133,11 @@ export default function PreviewModal({
                                   placeholder="e.g., $25,000"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "estimated_value", "desktop")}</div>
+                                <LotValuationValues
+                                  lines={valuationLines}
+                                  currency={previewData?.currency || "CAD"}
+                                  lotLabel={lotLabel}
+                                />
                               </td>
                               <td className="px-2 py-2 align-top">
                                 <button
