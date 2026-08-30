@@ -1,19 +1,48 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ProposalValuationAccessLost,
+  ProposalValuationRevisionConflict,
+} from "@/services/proposalValuation";
 import type { ProposalValuationPayload } from "./proposal-valuation/types";
 import ProposalValuationDialog from "./ProposalValuationDialog";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
-  save: vi.fn(),
+  patchChanges: vi.fn(),
+  updateEvaluators: vi.fn(),
+  evaluatorOptions: vi.fn(),
+  regenerate: vi.fn(),
+  streamEvents: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  mutationCounter: 0,
 }));
 
 vi.mock("@/services/proposalValuation", () => ({
+  ProposalValuationAccessLost: class ProposalValuationAccessLost extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+  ProposalValuationRevisionConflict: class ProposalValuationRevisionConflict extends Error {
+    currentRevision: number;
+    constructor(message: string, currentRevision: number) {
+      super(message);
+      this.currentRevision = currentRevision;
+    }
+  },
+  ProposalValuationStreamAuthenticationError: class ProposalValuationStreamAuthenticationError extends Error {},
   ProposalValuationService: {
     get: mocks.get,
-    save: mocks.save,
+    patchChanges: mocks.patchChanges,
+    updateEvaluators: mocks.updateEvaluators,
+    evaluatorOptions: mocks.evaluatorOptions,
+    regenerate: mocks.regenerate,
+    streamEvents: mocks.streamEvents,
+    newMutationId: vi.fn(() => `mutation-${++mocks.mutationCounter}`),
   },
 }));
 
@@ -29,6 +58,13 @@ function makePayload(): ProposalValuationPayload {
     reportId: "report-1",
     title: "McDougall Auctioneering Inc.",
     currencyCode: "USD",
+    revision: 7,
+    permissions: {
+      canManageEvaluators: true,
+      canEditAll: true,
+      evaluatorColumnId: null,
+      canRegenerateFiles: true,
+    },
     assetScheduleSheet: {
       evaluator_columns: [
         { id: "riley", name: "Riley" },
@@ -98,21 +134,32 @@ describe("ProposalValuationDialog", () => {
   beforeEach(() => {
     const payload = makePayload();
     mocks.get.mockReset();
-    mocks.save.mockReset();
+    mocks.patchChanges.mockReset();
+    mocks.updateEvaluators.mockReset();
+    mocks.evaluatorOptions.mockReset();
+    mocks.regenerate.mockReset();
+    mocks.streamEvents.mockReset();
     mocks.toastSuccess.mockReset();
     mocks.toastError.mockReset();
+    mocks.mutationCounter = 0;
     mocks.get.mockResolvedValue(payload);
-    mocks.save.mockImplementation(async (_reportId, sheet) => ({
-      ...payload,
-      assetScheduleSheet: structuredClone(sheet),
-      files_regeneration_queued: true,
-    }));
+    mocks.patchChanges.mockResolvedValue({ ...payload, revision: 8 });
+    mocks.updateEvaluators.mockResolvedValue({ ...payload, revision: 8 });
+    mocks.evaluatorOptions.mockResolvedValue([]);
+    mocks.regenerate.mockResolvedValue({ queued: true, coalesced: false, revision: 8 });
+    mocks.streamEvents.mockImplementation(
+      async (_reportId: string, _since: number, signal: AbortSignal) =>
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        })
+    );
   });
 
   it("shows the complete Schedule A field set and every saved evaluator", async () => {
     render(
       <ProposalValuationDialog
         open
+        pageMode
         reportId="report-1"
         onClose={vi.fn()}
       />
@@ -154,12 +201,16 @@ describe("ProposalValuationDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "File summary" }));
     expect(screen.getByRole("spinbutton", { name: "Total risk-weighted value" })).toHaveValue(38000);
     expect(screen.getByRole("spinbutton", { name: "File risk multiplier" })).toHaveValue(0.9);
+    expect(
+      screen.getAllByTitle("Reference only; not used in calculated totals.")
+    ).toHaveLength(3);
   });
 
   it("opens the user picture gallery from the shared Schedule A row", async () => {
     render(
       <ProposalValuationDialog
         open
+        pageMode
         reportId="report-1"
         onClose={vi.fn()}
       />
@@ -202,6 +253,7 @@ describe("ProposalValuationDialog", () => {
     render(
       <ProposalValuationDialog
         open
+        pageMode
         reportId="report-1"
         onClose={vi.fn()}
       />
@@ -221,10 +273,11 @@ describe("ProposalValuationDialog", () => {
     });
   });
 
-  it("saves edited user fields without dropping the shared Schedule A data", async () => {
+  it("autosaves edited fields as narrow revisioned changes", async () => {
     render(
       <ProposalValuationDialog
         open
+        pageMode
         reportId="report-1"
         onClose={vi.fn()}
       />
@@ -237,36 +290,549 @@ describe("ProposalValuationDialog", () => {
     fireEvent.change(categoryFields[0], { target: { value: "Emergency Vehicles" } });
     fireEvent.change(notesFields[0], { target: { value: "User-reviewed note" } });
     fireEvent.change(lienFields[0], { target: { value: "75" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save & update files" }));
 
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
-    const [reportId, savedSheet] = mocks.save.mock.calls[0];
-
-    expect(reportId).toBe("report-1");
-    expect(savedSheet.rows[0]).toMatchObject({
-      asset_category: "Emergency Vehicles",
-      notes: "User-reviewed note",
-      lien_search: 75,
-      serial_number: "1FTFW1E57LKE217",
-      picture_urls: [
-        "https://example.test/asset.jpg",
-        "https://example.test/asset-rear.jpg",
-      ],
-      evaluator_values: {
-        riley: 40000,
-        jay: 42000,
-        chad: 41000,
-        femi: 43000,
-      },
-      market_check: {
-        notes: "Stable regional demand",
-      },
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(1), {
+      timeout: 1500,
     });
-    expect(savedSheet.evaluator_columns.map((column: { name: string }) => column.name)).toEqual([
-      "Riley",
-      "Jay",
-      "Chad",
-      "Femi",
+    expect(mocks.patchChanges).toHaveBeenCalledWith(
+      "report-1",
+      expect.arrayContaining([
+        { lotId: "lot-13", field: "asset_category", value: "Emergency Vehicles" },
+        { lotId: "lot-13", field: "notes", value: "User-reviewed note" },
+        { lotId: "lot-13", field: "lien_search", value: 75 },
+      ]),
+      { baseRevision: 7, clientMutationId: "mutation-1" }
+    );
+  });
+
+  it("lets an invited evaluator edit only their linked column", async () => {
+    const payload = makePayload();
+    payload.permissions = {
+      canManageEvaluators: false,
+      canEditAll: false,
+      evaluatorColumnId: "femi",
+      canRegenerateFiles: false,
+    };
+    mocks.get.mockResolvedValue(payload);
+
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    const categoryFields = await screen.findAllByLabelText("Asset category for 13");
+    const rileyFields = screen.getAllByLabelText("Riley valuation for 13");
+    const femiFields = screen.getAllByLabelText("Femi valuation for 13");
+    expect(categoryFields.every((field) => field.hasAttribute("disabled"))).toBe(true);
+    expect(rileyFields.every((field) => field.hasAttribute("disabled"))).toBe(true);
+    expect(femiFields.every((field) => !field.hasAttribute("disabled"))).toBe(true);
+    expect(screen.queryByRole("button", { name: "Update report files" })).not.toBeInTheDocument();
+  });
+
+  it("assigns evaluator accounts from the searchable dropdown", async () => {
+    mocks.evaluatorOptions.mockResolvedValue([
+      {
+        id: "user-2",
+        username: "Alex Morgan",
+        companyName: "Prairie Appraisals",
+        email: "alex@example.test",
+      },
     ]);
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add evaluator" }));
+    fireEvent.change(screen.getByPlaceholderText("Search users by name or email"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(await screen.findByRole("option", { name: /Alex Morgan/i }));
+
+    await waitFor(() =>
+      expect(mocks.updateEvaluators).toHaveBeenCalledWith(
+        "report-1",
+        ["user-2"],
+        { baseRevision: 7, clientMutationId: "mutation-1" }
+      )
+    );
+  });
+
+  it("keeps evaluator assignment disabled while a draft retry is unresolved", async () => {
+    mocks.patchChanges.mockRejectedValue(
+      new Error("connection reset after the draft may have committed")
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Retain this local draft" } });
+
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(1), {
+      timeout: 1500,
+    });
+    const addEvaluator = screen.getByRole("button", { name: "Add evaluator" });
+    expect(addEvaluator).toBeDisabled();
+    fireEvent.click(addEvaluator);
+    expect(mocks.updateEvaluators).not.toHaveBeenCalled();
+    expect(screen.getByText("Draft queued")).toBeInTheDocument();
+  });
+
+  it("does not let a delayed evaluator response regress a newer live revision", async () => {
+    let emit:
+      | ((event: {
+          type: "pv-revision";
+          reportId: string;
+          revision: number;
+        }) => void)
+      | undefined;
+    let resolveAssignment:
+      | ((payload: ProposalValuationPayload) => void)
+      | undefined;
+    const remote = makePayload();
+    remote.revision = 9;
+    remote.title = "Newest evaluator workspace";
+    const stale = makePayload();
+    stale.revision = 8;
+    stale.title = "Stale evaluator response";
+    mocks.get.mockReset().mockResolvedValueOnce(makePayload()).mockResolvedValue(remote);
+    mocks.evaluatorOptions.mockResolvedValue([
+      {
+        id: "user-2",
+        username: "Alex Morgan",
+        companyName: "Prairie Appraisals",
+        email: "alex@example.test",
+      },
+    ]);
+    mocks.updateEvaluators.mockReturnValueOnce(
+      new Promise<ProposalValuationPayload>((resolve) => {
+        resolveAssignment = resolve;
+      })
+    );
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: typeof emit
+      ) => {
+        emit = onEvent;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add evaluator" }));
+    fireEvent.click(await screen.findByRole("option", { name: /Alex Morgan/i }));
+    await waitFor(() => expect(mocks.updateEvaluators).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 9 });
+    });
+    expect(await screen.findByText("Newest evaluator workspace")).toBeInTheDocument();
+
+    act(() => resolveAssignment?.(stale));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalled());
+    expect(screen.queryByText("Stale evaluator response")).not.toBeInTheDocument();
+    expect(screen.getByText("Newest evaluator workspace")).toBeInTheDocument();
+    expect(screen.getByText("Saved · revision 9")).toBeInTheDocument();
+  });
+
+  it("opens accessible formula details for calculated final values", async () => {
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "File summary" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "How Total Asset Value is calculated" })
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Total asset value" });
+    expect(dialog).toHaveTextContent("Sum of each lot's evaluator average");
+    expect(dialog).toHaveTextContent("US$41,500");
+    expect(screen.getByRole("button", { name: "Close calculation details" })).toHaveFocus();
+  });
+
+  it("paginates filtered assets in 25, 50, or 100 row pages", async () => {
+    const payload = makePayload();
+    const source = payload.assetScheduleSheet.rows[0];
+    payload.assetScheduleSheet.rows = Array.from({ length: 26 }, (_, index) => ({
+      ...structuredClone(source),
+      lot_id: `lot-${index + 1}`,
+      asset_id: String(index + 1),
+    }));
+    mocks.get.mockResolvedValue(payload);
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    expect(await screen.findByText("1–25 of 26")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next assets page" }));
+    expect(await screen.findByText("26–26 of 26")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Rows per page" })).toHaveValue("25");
+  });
+
+  it("refetches, rebases, and retries one pending draft after a revision conflict", async () => {
+    const initial = makePayload();
+    const remote = { ...makePayload(), revision: 8 };
+    const accepted = makePayload();
+    accepted.revision = 9;
+    accepted.assetScheduleSheet.rows[0].notes = "Locally rebased note";
+    mocks.get
+      .mockReset()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue(remote);
+    mocks.patchChanges
+      .mockReset()
+      .mockRejectedValueOnce(
+        new ProposalValuationRevisionConflict("Changed remotely", 8)
+      )
+      .mockResolvedValueOnce(accepted);
+
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Locally rebased note" } });
+
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(2), {
+      timeout: 2500,
+    });
+    expect(mocks.patchChanges.mock.calls[0][2]).toMatchObject({ baseRevision: 7 });
+    expect(mocks.patchChanges.mock.calls[1]).toEqual([
+      "report-1",
+      [{ lotId: "lot-13", field: "notes", value: "Locally rebased note" }],
+      { baseRevision: 8, clientMutationId: "mutation-2" },
+    ]);
+  });
+
+  it("resyncs when the live stream reports a newer ready revision", async () => {
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: (event: { type: "ready"; reportId: string; revision: number }) => void
+      ) => {
+        await Promise.resolve();
+        onEvent({ type: "ready", reportId: "report-1", revision: 8 });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    await screen.findByText("McDougall Auctioneering Inc.");
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+    expect(mocks.streamEvents).toHaveBeenCalledWith(
+      "report-1",
+      7,
+      expect.any(AbortSignal),
+      expect.any(Function)
+    );
+  });
+
+  it("stops autosave and retains the visible draft when evaluator access is removed", async () => {
+    mocks.patchChanges.mockRejectedValue(
+      new ProposalValuationAccessLost(
+        "Your evaluator access to this Proposal Valuation was removed.",
+        404
+      )
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Keep this unsaved draft" } });
+
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(1), {
+      timeout: 1500,
+    });
+    expect(
+      await screen.findByText("Proposal Valuation access ended")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/current draft remains visible/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByLabelText("Notes for 13").every((field) =>
+        field.hasAttribute("disabled") &&
+        (field as HTMLTextAreaElement).value === "Keep this unsaved draft"
+      )
+    ).toBe(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 750));
+    expect(mocks.patchChanges).toHaveBeenCalledTimes(1);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it("treats an access-changed resync event as terminal without refetching", async () => {
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: (event: {
+          type: "resync";
+          reportId: string;
+          reason: string;
+        }) => void
+      ) => {
+        onEvent({
+          type: "resync",
+          reportId: "report-1",
+          reason: "access-changed",
+        });
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    expect(
+      await screen.findByText("Proposal Valuation access ended")
+    ).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(mocks.streamEvents).toHaveBeenCalledTimes(1);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it("serializes live resyncs and refuses to apply an older revision last", async () => {
+    let emit:
+      | ((event: {
+          type: "pv-revision";
+          reportId: string;
+          revision: number;
+        }) => void)
+      | undefined;
+    const newest = makePayload();
+    newest.revision = 9;
+    newest.title = "Newest collaborative revision";
+    const stale = makePayload();
+    stale.revision = 8;
+    stale.title = "Stale collaborative revision";
+    mocks.get
+      .mockReset()
+      .mockResolvedValueOnce(makePayload())
+      .mockResolvedValueOnce(newest)
+      .mockResolvedValueOnce(stale);
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: typeof emit
+      ) => {
+        emit = onEvent;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+
+    act(() => {
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 8 });
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 9 });
+    });
+
+    expect(await screen.findByText("Newest collaborative revision")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(3));
+    expect(screen.queryByText("Stale collaborative revision")).not.toBeInTheDocument();
+    expect(screen.getByText("Saved · revision 9")).toBeInTheDocument();
+  });
+
+  it("keeps the workspace and pending draft visible when live refresh fails", async () => {
+    let emit:
+      | ((event: {
+          type: "pv-revision";
+          reportId: string;
+          revision: number;
+        }) => void)
+      | undefined;
+    const remote = makePayload();
+    remote.revision = 9;
+    remote.title = "Recovered collaborative workspace";
+    mocks.get
+      .mockReset()
+      .mockResolvedValueOnce(makePayload())
+      .mockRejectedValueOnce(new Error("temporary refresh outage"));
+    mocks.patchChanges
+      .mockReset()
+      .mockRejectedValueOnce(new Error("draft response was lost"));
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: typeof emit
+      ) => {
+        emit = onEvent;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Draft that must survive" } });
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(1), {
+      timeout: 1500,
+    });
+
+    act(() => {
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 8 });
+    });
+    const refreshNotice = await screen.findByRole("status");
+    expect(refreshNotice).toHaveTextContent("temporary refresh outage");
+    expect(screen.getByText("McDougall Auctioneering Inc.")).toBeInTheDocument();
+    expect(
+      screen.getAllByLabelText("Notes for 13").every(
+        (field) => (field as HTMLTextAreaElement).value === "Draft that must survive"
+      )
+    ).toBe(true);
+    expect(
+      screen.queryByRole("button", { name: /^Retry$/ })
+    ).not.toBeInTheDocument();
+
+    mocks.get.mockResolvedValue(remote);
+    fireEvent.click(screen.getByRole("button", { name: "Retry live refresh" }));
+    expect(
+      await screen.findByText("Recovered collaborative workspace")
+    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(
+      screen.getAllByLabelText("Notes for 13").every(
+        (field) => (field as HTMLTextAreaElement).value === "Draft that must survive"
+      )
+    ).toBe(true);
+    expect(screen.getByText("Draft queued")).toBeInTheDocument();
+  });
+
+  it("retries an ambiguous lost response with the exact mutation envelope", async () => {
+    const accepted = makePayload();
+    accepted.revision = 8;
+    accepted.assetScheduleSheet.rows[0].notes = "Idempotent note";
+    mocks.patchChanges
+      .mockReset()
+      .mockRejectedValueOnce(new Error("connection reset after commit"))
+      .mockResolvedValueOnce(accepted);
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Idempotent note" } });
+
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(2), {
+      timeout: 5000,
+    });
+    expect(mocks.patchChanges.mock.calls[1]).toEqual(
+      mocks.patchChanges.mock.calls[0]
+    );
+    expect(mocks.patchChanges.mock.calls[1][2]).toEqual({
+      baseRevision: 7,
+      clientMutationId: "mutation-1",
+    });
+  });
+
+  it("drains a newer live revision that arrives while a local patch is in flight", async () => {
+    let emit:
+      | ((event: {
+          type: "pv-revision";
+          reportId: string;
+          revision: number;
+        }) => void)
+      | undefined;
+    let resolvePatch: ((payload: ProposalValuationPayload) => void) | undefined;
+    const localResponse = makePayload();
+    localResponse.revision = 8;
+    localResponse.assetScheduleSheet.rows[0].notes = "Local note";
+    const remoteResponse = makePayload();
+    remoteResponse.revision = 9;
+    remoteResponse.title = "Remote revision nine";
+    remoteResponse.assetScheduleSheet.rows[0].notes = "Local note";
+    mocks.get
+      .mockReset()
+      .mockResolvedValueOnce(makePayload())
+      .mockResolvedValueOnce(remoteResponse);
+    mocks.patchChanges.mockReset().mockReturnValueOnce(
+      new Promise<ProposalValuationPayload>((resolve) => {
+        resolvePatch = resolve;
+      })
+    );
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: typeof emit
+      ) => {
+        emit = onEvent;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+    const notes = await screen.findAllByLabelText("Notes for 13");
+    fireEvent.change(notes[0], { target: { value: "Local note" } });
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(1), {
+      timeout: 1500,
+    });
+
+    act(() => {
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 9 });
+      resolvePatch?.(localResponse);
+    });
+
+    expect(await screen.findByText("Remote revision nine")).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Saved · revision 9")).toBeInTheDocument();
+  });
+
+  it("does not lower the live revision when file regeneration responds late", async () => {
+    let emit:
+      | ((event: {
+          type: "pv-revision";
+          reportId: string;
+          revision: number;
+        }) => void)
+      | undefined;
+    let resolveRegeneration:
+      | ((response: {
+          queued: boolean;
+          coalesced: boolean;
+          revision: number;
+        }) => void)
+      | undefined;
+    const remote = makePayload();
+    remote.revision = 9;
+    remote.title = "Newest file workspace";
+    mocks.get.mockReset().mockResolvedValueOnce(makePayload()).mockResolvedValue(remote);
+    mocks.regenerate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRegeneration = resolve;
+      })
+    );
+    mocks.streamEvents.mockImplementation(
+      async (
+        _reportId: string,
+        _since: number,
+        signal: AbortSignal,
+        onEvent: typeof emit
+      ) => {
+        emit = onEvent;
+        await new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+    );
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Update report files" }));
+    await waitFor(() => expect(mocks.regenerate).toHaveBeenCalledTimes(1));
+    act(() => {
+      emit?.({ type: "pv-revision", reportId: "report-1", revision: 9 });
+    });
+    expect(await screen.findByText("Newest file workspace")).toBeInTheDocument();
+
+    act(() =>
+      resolveRegeneration?.({ queued: true, coalesced: false, revision: 8 })
+    );
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalled());
+    expect(screen.getByText("Newest file workspace")).toBeInTheDocument();
+    expect(screen.getByText("Saved · revision 9")).toBeInTheDocument();
   });
 });

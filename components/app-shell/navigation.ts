@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  ChartNoAxesColumnIncreasing,
   ClipboardCheck,
   FileCheck2,
   FileText,
@@ -34,6 +35,12 @@ export const PRIMARY_NAVIGATION: readonly NavItem[] = [
     label: "My Reports",
     href: "/reports",
     icon: FileText,
+  },
+  {
+    label: "Proposal Valuations",
+    href: "/proposal-valuations",
+    icon: ChartNoAxesColumnIncreasing,
+    visible: (user) => Boolean(user?.proposalValuationEnabled),
   },
   {
     label: "Previews",
@@ -77,6 +84,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/incoming": "Incoming",
   "/reports": "My Reports",
+  "/proposal-valuations": "Proposal Valuation",
   "/previews": "Previews",
   "/approvals": "Approvals",
   "/releases": "Releases",

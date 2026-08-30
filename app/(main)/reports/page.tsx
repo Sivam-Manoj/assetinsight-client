@@ -40,10 +40,6 @@ const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
   { ssr: false }
 );
-const ProposalValuationDialog = dynamic(
-  () => import("@/components/reports/ProposalValuationDialog"),
-  { ssr: false }
-);
 const AuctioneerDeliveryDialog = dynamic(
   () => import("@/components/reports/AuctioneerDeliveryDialog"),
   { ssr: false }
@@ -459,9 +455,6 @@ export default function ReportsPage() {
     AuctioneerDeliverySummary[]
   >([]);
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
-  const [proposalValuationReportId, setProposalValuationReportId] = useState<
-    string | null
-  >(null);
   const [deliveryDialogItem, setDeliveryDialogItem] =
     useState<AuctioneerDeliverySummary | null>(null);
   const loadingReportsRef = useRef(false);
@@ -1414,7 +1407,11 @@ export default function ReportsPage() {
             aria-label={`Open Proposal Valuation for ${previewTitle}`}
             title="Review and edit Proposal Valuation"
             className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-control-border)] bg-[var(--app-panel)] text-[var(--app-text)] hover:border-[var(--app-control-border-hover)] hover:bg-[var(--app-panel-alt)]`}
-            onClick={() => setProposalValuationReportId(group.key)}
+            onClick={() =>
+              router.push(
+                `/proposal-valuations/${encodeURIComponent(group.key)}`
+              )
+            }
           >
             <ChartNoAxesColumnIncreasing className="size-3.5 shrink-0 text-[var(--app-accent)]" />
             PV
@@ -1883,16 +1880,6 @@ export default function ReportsPage() {
             setMergeAnchorId(null);
             window.dispatchEvent(new Event("cv:report-created"));
             router.push("/previews");
-          }}
-        />
-      ) : null}
-      {proposalValuationReportId ? (
-        <ProposalValuationDialog
-          open
-          reportId={proposalValuationReportId}
-          onClose={() => setProposalValuationReportId(null)}
-          onSaved={() => {
-            void loadReports({ silent: true });
           }}
         />
       ) : null}

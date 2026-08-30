@@ -76,6 +76,7 @@ async function mockAuthenticatedApi(
         username: "Alex Morgan",
         isReportApprover: approver,
         isReleaseManager: releaseManager,
+        proposalValuationEnabled: true,
       };
     } else if (path.endsWith("/api/reports/stats")) {
       body = {
@@ -91,6 +92,79 @@ async function mockAuthenticatedApi(
       };
     } else if (path.endsWith("/api/reports/myreports")) {
       body = [];
+    } else if (path.endsWith("/api/asset/e2e-pv/proposal-valuation")) {
+      body = {
+        reportId: "e2e-pv",
+        title: "E2E collaborative valuation",
+        variant: "assetScheduleSheet",
+        currencyCode: "CAD",
+        revision: 7,
+        permissions: {
+          canManageEvaluators: true,
+          canEditAll: true,
+          evaluatorColumnId: null,
+          canRegenerateFiles: true,
+        },
+        participants: [],
+        calculationVersion: "asset-pv-v1",
+        calculations: [],
+        assetScheduleSheet: {
+          evaluator_columns: [
+            {
+              id: "femi-column",
+              name: "Femi John",
+              user_id: "e2e-user",
+              email: "alex.morgan@example.com",
+            },
+          ],
+          rows: [
+            {
+              lot_id: "lot-13",
+              asset_id: "13",
+              asset_category: "Light Duty Pickup Truck",
+              year: "2023",
+              make: "Ford",
+              model: "F-150",
+              serial_number: "E2E-SERIAL-13",
+              cr_details: "SuperCrew pickup with 4WD",
+              condition_score: "4",
+              location: "Regina, SK",
+              pictures: 0,
+              picture_urls: [],
+              market_check: {
+                comparable_count: "Moderate",
+                avg_retail_asking_price: "Moderate",
+                market_saturation: "Low",
+                market_velocity: "Normal",
+                regional_demand: "Strong",
+                notes: "",
+              },
+              asset_insight: "CA$42,000",
+              evaluator_values: { "femi-column": 42000 },
+              low_est_sale_value: 42000,
+              high_est_sale_value: 42000,
+              buyer_premium_percent: 15,
+              buyer_premium_amount: 2000,
+              total_expected_gross: 44000,
+              allocated_value: 44000,
+              notes: "",
+              cleaning: 420,
+              lien_search: 50,
+              video_cost: 100,
+              lotting_fee: 420,
+              advertising: 420,
+            },
+          ],
+          file_summary: {
+            buyers_premium_basis: "uncapped",
+            total_risk_weighted_value: 38000,
+            file_risk_multiplier: 0.9,
+            commission_percent_no_guarantee: 12,
+            offer2_nmg_percent: 0.785,
+            capped_threshold_percent: 0.1,
+          },
+        },
+      };
     } else if (path.endsWith("/api/asset")) {
       body = {
         message: "ok",
@@ -805,6 +879,7 @@ test("authenticated workspace route matrix renders cleanly", async ({
     { path: "/dashboard", heading: /Alex Morgan/ },
     { path: "/incoming", heading: "Incoming" },
     { path: "/reports", heading: "My reports" },
+    { path: "/proposal-valuations", heading: "Proposal Valuations" },
     { path: "/previews", heading: "Report previews" },
     { path: "/approvals", heading: "Assigned approvals" },
     { path: "/releases", heading: "Assigned releases" },
@@ -818,6 +893,46 @@ test("authenticated workspace route matrix renders cleanly", async ({
     ).toBeVisible();
     await expectTheme(page, "light");
   }
+});
+
+test("Proposal Valuations list is a responsive file-free workspace route", async ({
+  page,
+}) => {
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+
+  await page.goto("/proposal-valuations");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Proposal Valuations" })
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /download/i })).toHaveCount(0);
+  await expectTheme(page, "light");
+});
+
+test("Proposal Valuation opens as a compact full-page responsive workspace", async ({
+  page,
+}) => {
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+
+  await page.goto("/proposal-valuations/e2e-pv");
+  await expect(
+    page.getByRole("heading", { name: "Proposal Valuation" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Close Proposal Valuation" })
+  ).toHaveCount(0);
+  await expect(page.getByText("1–1 of 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "File summary" }).click();
+  await page
+    .getByRole("button", { name: "How Total Asset Value is calculated" })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Total asset value" })
+  ).toBeVisible();
+  await expect(page.getByText("Calculation steps")).toBeVisible();
+  await expectTheme(page, "light");
 });
 
 test("Incoming claim opens the selected report workflow", async ({ page }) => {

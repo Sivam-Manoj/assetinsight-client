@@ -46,7 +46,7 @@ vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     user: {
       _id: "user-1",
-      proposalValuationEnabled: false,
+      proposalValuationEnabled: true,
     },
   }),
 }));
@@ -313,6 +313,19 @@ describe("My Reports thumbnails", () => {
     fireEvent.click(lotActions[0]);
     expect(mocks.routerPush).toHaveBeenLastCalledWith(
       "/previews?reportId=lot-preview-ready&reportType=lotListing"
+    );
+  });
+
+  it("opens Proposal Valuation in its dedicated full-page route", async () => {
+    render(<ReportsPage />);
+
+    const actions = await screen.findAllByRole("button", {
+      name: /Open Proposal Valuation for Asset .* CV-THUMB-100/i,
+    });
+    fireEvent.click(actions[0]);
+
+    expect(mocks.routerPush).toHaveBeenLastCalledWith(
+      "/proposal-valuations/asset-thumbnail"
     );
   });
 

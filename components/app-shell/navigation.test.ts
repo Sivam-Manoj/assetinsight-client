@@ -64,6 +64,13 @@ describe("centralized app navigation", () => {
     ).not.toContain("Approvals");
   });
 
+  it("shows Proposal Valuations only for enabled accounts", () => {
+    expect(visibleLabels(basicUser)).not.toContain("Proposal Valuations");
+    expect(
+      visibleLabels({ ...basicUser, proposalValuationEnabled: true })
+    ).toContain("Proposal Valuations");
+  });
+
   it("matches nested routes without activating similarly named routes", () => {
     const incoming = PRIMARY_NAVIGATION.find(
       (item) => item.href === "/incoming"
@@ -71,12 +78,19 @@ describe("centralized app navigation", () => {
     const reports = PRIMARY_NAVIGATION.find(
       (item) => item.href === "/reports"
     );
+    const proposalValuations = PRIMARY_NAVIGATION.find(
+      (item) => item.href === "/proposal-valuations"
+    );
 
     expect(incoming).toBeDefined();
     expect(reports).toBeDefined();
+    expect(proposalValuations).toBeDefined();
     expect(isNavItemActive(incoming!, "/incoming")).toBe(true);
     expect(isNavItemActive(incoming!, "/incoming/work-item-1")).toBe(true);
     expect(isNavItemActive(incoming!, "/incoming-archive")).toBe(false);
     expect(isNavItemActive(reports!, "/reports/report-1")).toBe(true);
+    expect(
+      isNavItemActive(proposalValuations!, "/proposal-valuations/report-1")
+    ).toBe(true);
   });
 });
