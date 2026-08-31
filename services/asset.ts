@@ -82,6 +82,7 @@ export type AssetCreateResponse = {
 
 export type CreateOptions = {
   onUploadProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
 };
 
 export type AssetProgress = {
@@ -138,8 +139,10 @@ export const AssetService = {
         details,
         files: directFiles,
         onUploadProgress: options?.onUploadProgress,
+        signal: options?.signal,
       });
     } catch (error: any) {
+      if (options?.signal?.aborted) throw options.signal.reason || error;
       const status = Number(error?.response?.status || 0);
       if (![404, 405, 501].includes(status)) throw error;
       console.warn("[AssetService] Direct upload is unsupported; using legacy multipart upload.");
@@ -165,6 +168,7 @@ export const AssetService = {
         }
         options.onUploadProgress(Math.max(0, Math.min(1, fraction)));
       },
+      signal: options?.signal,
     });
     return data;
   },

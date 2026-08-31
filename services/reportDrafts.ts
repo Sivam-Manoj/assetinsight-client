@@ -382,9 +382,11 @@ async function uploadMultipartFallback(
     batch: DraftMediaEntry[],
     uploadedBytes: number,
     totalBytes: number
-  ) => void
+  ) => void,
+  signal?: AbortSignal
 ) {
   for (const batch of chunks(entries, FALLBACK_BATCH_SIZE)) {
+    signal?.throwIfAborted();
     const totalBytes = batch.reduce(
       (sum, item) => sum + Math.max(0, item.file.size),
       0
@@ -400,6 +402,7 @@ async function uploadMultipartFallback(
     // would produce the same "Unexpected end of form" failure as APK uploads.
     await API.post(`/report-drafts/${draftId}/media`, body, {
       timeout: 30 * 60 * 1000,
+      signal,
       onUploadProgress: (event) => {
         onBatchProgress?.(
           batch,
@@ -460,9 +463,11 @@ export const ReportDraftService = {
     );
   },
 
-  async get(id: string) {
+  async get(id: string, signal?: AbortSignal) {
     return unwrap(
-      await API.get<{ data: ReportDraftRecord }>(`/report-drafts/${id}`)
+      await API.get<{ data: ReportDraftRecord }>(`/report-drafts/${id}`, {
+        signal,
+      })
     );
   },
 
@@ -483,17 +488,21 @@ export const ReportDraftService = {
     );
   },
 
-  async upsert(input: UpsertReportDraftInput) {
+  async upsert(input: UpsertReportDraftInput, signal?: AbortSignal) {
     const response = await API.post<{
       data: ReportDraftRecord;
       code?: string;
       message?: string;
       conflicts?: DuplicateLotConflict[];
-    }>("/report-drafts", {
+    }>(
+      "/report-drafts",
+      {
         ...input,
         type: apiTypeFor(input.kind),
         kind: undefined,
-      });
+      },
+      { signal }
+    );
     return {
       ...response.data.data,
       duplicateLotConflicts:
@@ -506,8 +515,10 @@ export const ReportDraftService = {
   async upsertWithMedia(
     input: Omit<UpsertReportDraftInput, "lots" | "media" | "storageMode">,
     lots: DraftMediaLot[],
-    onProgress?: ReportDraftProgressCallback
+    onProgress?: ReportDraftProgressCallback,
+    signal?: AbortSignal
   ) {
+    signal?.throwIfAborted();
     const entries = buildReportDraftMediaEntries(lots);
     const totalFiles = entries.length;
     const totalBytes = entries.reduce(
@@ -588,12 +599,15 @@ export const ReportDraftService = {
         ? `Preparing ${totalFiles} draft media file${totalFiles === 1 ? "" : "s"}`
         : "Saving draft details"
     );
-    const record = await this.upsert({
-      ...input,
-      storageMode: "r2_media",
-      lots: serializeReportDraftLots(lots),
-      media: entries.map((item) => item.descriptor),
-    });
+    const record = await this.upsert(
+      {
+        ...input,
+        storageMode: "r2_media",
+        lots: serializeReportDraftLots(lots),
+        media: entries.map((item) => item.descriptor),
+      },
+      signal
+    );
     const draftId = record.id || record._id;
     if (!draftId || entries.length === 0) {
       emitProgress("complete", "Draft saved", 100);
@@ -628,10 +642,12 @@ export const ReportDraftService = {
     );
 
     for (const batch of chunks(pendingEntries, TARGET_BATCH_SIZE)) {
+      signal?.throwIfAborted();
       const targets = unwrap(
         await API.post<{ data: DraftUploadTarget[] }>(
           `/report-drafts/${draftId}/media/targets`,
-          { media: batch.map((item) => item.descriptor) }
+          { media: batch.map((item) => item.descriptor) },
+          { signal }
         )
       );
       const targetById = new Map(
@@ -643,6 +659,7 @@ export const ReportDraftService = {
       await mapWithConcurrency(
         batch,
         async (entry) => {
+          signal?.throwIfAborted();
           const target = targetById.get(entry.descriptor.clientFileId);
           if (!target) throw new Error(`No R2 target was returned for ${entry.file.name}.`);
           if (target.alreadyUploaded) {
@@ -673,23 +690,30 @@ export const ReportDraftService = {
                   "uploading",
                   `Uploading ${entry.file.name}`
                 );
-              }
+              },
+              undefined,
+              signal
             );
             directIds.push(entry.descriptor.clientFileId);
             markEntryUploaded(entry);
-          } catch {
+          } catch (error) {
+            if (signal?.aborted) throw error;
             directUploadsAvailable = false;
             fallback.push(entry);
           }
         },
-        4
+        4,
+        signal
       );
 
       for (const idBatch of chunks(directIds, TARGET_BATCH_SIZE)) {
         if (!idBatch.length) continue;
-        await API.post(`/report-drafts/${draftId}/media/confirm`, {
-          clientFileIds: idBatch,
-        });
+        signal?.throwIfAborted();
+        await API.post(
+          `/report-drafts/${draftId}/media/confirm`,
+          { clientFileIds: idBatch },
+          { signal }
+        );
       }
       if (fallback.length) {
         await uploadMultipartFallback(
@@ -707,14 +731,16 @@ export const ReportDraftService = {
               "uploading",
               `Uploading draft photos through the secure server`
             );
-          }
+          },
+          signal
         );
         fallback.forEach(markEntryUploaded);
       }
     }
 
     emitProgress("verifying", "Verifying saved draft media", 98);
-    const saved = await this.get(draftId);
+    signal?.throwIfAborted();
+    const saved = await this.get(draftId, signal);
     const savedById = new Map(
       (saved.media || []).map((item) => [item.clientFileId, item])
     );

@@ -4,6 +4,7 @@ import {
   putFileWithProgress,
   resetDirectUploadCircuitBreakerForTests,
   uploadFileToReportSession,
+  uploadReportFilesDirectToR2,
 } from "./directUpload";
 
 const originalXmlHttpRequest = globalThis.XMLHttpRequest;
@@ -43,15 +44,100 @@ class SuccessfulDirectUploadRequest {
   }
 }
 
+class PendingDirectUploadRequest {
+  static abortCount = 0;
+  static sendCount = 0;
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
+  status = 0;
+  responseText = "";
+  onload?: () => void;
+  onerror?: () => void;
+  onabort?: () => void;
+
+  open() {}
+  setRequestHeader() {}
+
+  send() {
+    PendingDirectUploadRequest.sendCount += 1;
+  }
+
+  abort() {
+    PendingDirectUploadRequest.abortCount += 1;
+    this.onabort?.();
+  }
+}
+
+class UnexpectedAbortDirectUploadRequest {
+  static instance: UnexpectedAbortDirectUploadRequest | null = null;
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
+  status = 0;
+  responseText = "";
+  onload?: () => void;
+  onerror?: () => void;
+  onabort?: () => void;
+
+  constructor() {
+    UnexpectedAbortDirectUploadRequest.instance = this;
+  }
+
+  open() {}
+  setRequestHeader() {}
+  send() {}
+
+  interrupt() {
+    this.onabort?.();
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
   globalThis.XMLHttpRequest = originalXmlHttpRequest;
   FailingDirectUploadRequest.sendCount = 0;
   SuccessfulDirectUploadRequest.headers.clear();
+  PendingDirectUploadRequest.abortCount = 0;
+  PendingDirectUploadRequest.sendCount = 0;
+  UnexpectedAbortDirectUploadRequest.instance = null;
   resetDirectUploadCircuitBreakerForTests();
 });
 
 describe("report-session upload transport", () => {
+  it("includes file lastModified in the upload-session manifest", async () => {
+    const apiPost = vi.spyOn(API, "post").mockResolvedValueOnce({
+      data: {
+        data: {
+          sessionId: "session-manifest",
+          jobId: "job-manifest",
+          reportId: "report-manifest",
+          alreadyQueued: true,
+          files: [],
+        },
+      },
+    });
+    const file = new File(["jpeg-content"], "photo.jpg", {
+      type: "image/jpeg",
+      lastModified: 1_725_000_123_456,
+    });
+
+    await uploadReportFilesDirectToR2({
+      endpoint: "/asset",
+      details: { client_submission_id: "submission-manifest" },
+      files: [{ file, fieldname: "images", imageIndex: 0 }],
+    });
+
+    expect(apiPost).toHaveBeenCalledWith(
+      "/asset/upload-session",
+      expect.objectContaining({
+        files: [
+          expect.objectContaining({
+            name: "photo.jpg",
+            size: file.size,
+            lastModified: 1_725_000_123_456,
+          }),
+        ],
+      })
+    );
+  });
+
   it("forwards every signed upload header verbatim", async () => {
     globalThis.XMLHttpRequest =
       SuccessfulDirectUploadRequest as unknown as typeof XMLHttpRequest;
@@ -76,6 +162,96 @@ describe("report-session upload transport", () => {
       "If-None-Match": "*",
       "X-Signed-Metadata": "support-attachment",
     });
+  });
+
+  it("aborts an active browser PUT with the signal reason", async () => {
+    globalThis.XMLHttpRequest =
+      PendingDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const controller = new AbortController();
+    const file = new File(["jpeg-content"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+
+    const upload = putFileWithProgress(
+      "https://uploads.example.test/photo",
+      file,
+      "image/jpeg",
+      undefined,
+      undefined,
+      controller.signal
+    );
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(PendingDirectUploadRequest.sendCount).toBe(1);
+    expect(PendingDirectUploadRequest.abortCount).toBe(1);
+  });
+
+  it("treats an unexpected xhr abort as an interrupted upload, not a user cancellation", async () => {
+    globalThis.XMLHttpRequest =
+      UnexpectedAbortDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const controller = new AbortController();
+    const file = new File(["jpeg-content"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+
+    const upload = putFileWithProgress(
+      "https://uploads.example.test/photo",
+      file,
+      "image/jpeg",
+      undefined,
+      undefined,
+      controller.signal
+    );
+    UnexpectedAbortDirectUploadRequest.instance?.interrupt();
+
+    await expect(upload).rejects.toThrow(
+      "R2 upload was interrupted for photo.jpg"
+    );
+    await expect(upload).rejects.not.toMatchObject({ name: "AbortError" });
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it("does not verify, fall back, or complete a session after abort", async () => {
+    globalThis.XMLHttpRequest =
+      PendingDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const controller = new AbortController();
+    const file = new File(["jpeg-content"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    const apiPost = vi.spyOn(API, "post").mockResolvedValueOnce({
+      data: {
+        data: {
+          sessionId: "session-abort",
+          jobId: "job-abort",
+          files: [
+            {
+              fileId: "images-0",
+              uploadUrl: "https://uploads.example.test/photo",
+              method: "PUT",
+              contentType: "image/jpeg",
+            },
+          ],
+        },
+      },
+    });
+
+    const upload = uploadReportFilesDirectToR2({
+      endpoint: "/asset",
+      details: { client_submission_id: "submission-abort" },
+      files: [{ file, fieldname: "images", imageIndex: 0 }],
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => {
+      expect(PendingDirectUploadRequest.sendCount).toBe(1);
+    });
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+    expect(apiPost.mock.calls.map(([url]) => url)).toEqual([
+      "/asset/upload-session",
+    ]);
+    expect(PendingDirectUploadRequest.abortCount).toBe(1);
   });
 
   it("never sends a browser PUT to the standard R2 endpoint", async () => {

@@ -11,6 +11,7 @@ import {
   DraftStatusIndicator,
   FormField,
   FormSection,
+  FormTransferProgressScreen,
 } from "./FormUI";
 
 function MultiSectionHarness() {
@@ -179,5 +180,145 @@ describe("shared form semantics", () => {
       .toHaveAttribute("aria-valuenow", "42");
     expect(screen.getByText(/4 of 10 files/i)).toBeInTheDocument();
     expect(screen.getByText(/keep this form open/i)).toBeInTheDocument();
+  });
+
+  it("shows a responsive draft-save-only screen with recoverability guidance", () => {
+    const onCancel = vi.fn();
+    render(
+      <FormTransferProgressScreen
+        mode="draft-save"
+        percent={42}
+        message="Saving draft media 4 of 10"
+        totalFiles={10}
+        transferredFiles={4}
+        totalBytes={10 * 1024 * 1024}
+        transferredBytes={4 * 1024 * 1024}
+        onCancel={onCancel}
+      />
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Saving your draft" })
+    ).toHaveAttribute("aria-modal", "true");
+    expect(
+      screen.getByRole("progressbar", { name: "Draft save progress" })
+    ).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Saving draft media 4 of 10"
+    );
+    expect(screen.getByText("4 of 10")).toBeInTheDocument();
+    expect(screen.getByText("4.0 MB of 10.0 MB")).toBeInTheDocument();
+    expect(
+      screen.getByText(/if you leave before saving finishes/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel save" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("supports report upload totals and an accessible stopping state", () => {
+    const onCancel = vi.fn();
+    render(
+      <FormTransferProgressScreen
+        mode="report-upload"
+        percent={140}
+        message="Uploading listing media"
+        totalFiles={8}
+        totalBytes={2 * 1024 * 1024}
+        cancelling
+        onCancel={onCancel}
+      />
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Uploading your report" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Report upload progress" })
+    ).toHaveAttribute("aria-valuenow", "100");
+    expect(screen.getByRole("status")).toHaveTextContent("Stopping upload");
+    expect(screen.getByText("8 total")).toBeInTheDocument();
+    expect(screen.getByText("2.0 MB")).toBeInTheDocument();
+    expect(
+      screen.getByText(/leaving before the upload finishes/i)
+    ).toBeInTheDocument();
+
+    const stopButton = screen.getByRole("button", { name: "Stopping upload…" });
+    expect(stopButton).toBeDisabled();
+    fireEvent.click(stopButton);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("traps focus, cancels with Escape, disables cancellation while finalizing, and restores focus", async () => {
+    const previouslyFocused = document.createElement("button");
+    previouslyFocused.textContent = "Open transfer";
+    document.body.appendChild(previouslyFocused);
+    previouslyFocused.focus();
+    const onCancel = vi.fn();
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+    const cancelAnimationFrame = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation(() => undefined);
+    const transfer = render(
+      <FormTransferProgressScreen
+        mode="report-upload"
+        percent={55}
+        message="Uploading report media"
+        onCancel={onCancel}
+      />
+    );
+    let unmounted = false;
+
+    try {
+      const cancelButton = screen.getByRole("button", { name: "Stop upload" });
+      await waitFor(() => expect(cancelButton).toHaveFocus());
+
+      previouslyFocused.focus();
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(cancelButton).toHaveFocus();
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onCancel).toHaveBeenCalledOnce();
+      onCancel.mockClear();
+
+      transfer.rerender(
+        <FormTransferProgressScreen
+          mode="report-upload"
+          percent={100}
+          message="Upload accepted"
+          finalizing
+          onCancel={onCancel}
+        />
+      );
+
+      const dialog = screen.getByRole("dialog", {
+        name: "Uploading your report",
+      });
+      await waitFor(() => expect(dialog).toHaveFocus());
+      expect(
+        screen.queryByRole("button", { name: /stop upload/i })
+      ).not.toBeInTheDocument();
+      expect(screen.getAllByText("Report accepted · finalizing…")).not.toHaveLength(0);
+
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onCancel).not.toHaveBeenCalled();
+      previouslyFocused.focus();
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(dialog).toHaveFocus();
+
+      transfer.unmount();
+      unmounted = true;
+      expect(previouslyFocused).toHaveFocus();
+    } finally {
+      if (!unmounted) transfer.unmount();
+      requestAnimationFrame.mockRestore();
+      cancelAnimationFrame.mockRestore();
+      previouslyFocused.remove();
+    }
   });
 });

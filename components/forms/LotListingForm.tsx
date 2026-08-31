@@ -25,7 +25,10 @@ import {
 import { toast } from "@/components/ui/toast";
 import API from "@/lib/api";
 import {
-  CURRENT_BROWSER_LOCATION_LABEL,
+  FRESH_HIGH_ACCURACY_POSITION_OPTIONS,
+  formatBrowserAccuracyStatus,
+  formatBrowserCoordinates,
+  hasUsableReportLocation,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 import { useAuthContext } from "@/context/AuthContext";
@@ -73,6 +76,7 @@ import {
   FormField,
   FormSection,
   FormSwitch,
+  FormTransferProgressScreen,
   formClassNames,
   formControlClass,
   formSelectClass,
@@ -298,7 +302,7 @@ export default function LotListingForm({
   const importedSalesDate =
     auctioneerDateOnly(auctioneer?.contract.eventDate) || isoDate(new Date());
   const importedLocation =
-    auctioneer?.contract.location || CURRENT_BROWSER_LOCATION_LABEL;
+    auctioneer?.contract.location || "";
 
   const [mixedLots, setMixedLots] = useState<MixedLot[]>(() =>
     buildAuctioneerSeedLots(auctioneer)
@@ -323,6 +327,7 @@ export default function LotListingForm({
     media: true,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [submissionFinalizing, setSubmissionFinalizing] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
@@ -335,6 +340,8 @@ export default function LotListingForm({
   const [duplicateDraftMessage, setDuplicateDraftMessage] = useState<
     string | null
   >(null);
+  const [submissionManifestConflict, setSubmissionManifestConflict] =
+    useState(false);
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
 
   const [hasDraft, setHasDraft] = useState(false);
@@ -342,6 +349,7 @@ export default function LotListingForm({
   const [draftIssue, setDraftIssue] = useState<DraftIssue | null>(null);
   const [draftSaveProgress, setDraftSaveProgress] =
     useState<ReportDraftSaveProgress | null>(null);
+  const [draftSaveActive, setDraftSaveActive] = useState(false);
   const [restoringDraft, setRestoringDraft] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     "clear" | "discard" | null
@@ -351,10 +359,10 @@ export default function LotListingForm({
   const jobIdRef = useRef<string | null>(
     draftClientIdRef.current
   );
+  const supersededSubmissionIdRef = useRef<string | null>(null);
   const forceNewSubmissionRef = useRef(false);
   const submitLockRef = useRef(false);
   const reportEventSentRef = useRef(false);
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftProgressClearTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveBlockedRef = useRef(false);
@@ -363,10 +371,21 @@ export default function LotListingForm({
   const saveFlightRef = useRef<Promise<boolean> | null>(null);
   const snapshotRef = useRef<DraftSnapshot | null>(null);
   const accountSyncPendingRef = useRef(false);
-  const retryAccountSyncRef = useRef<() => void>(() => undefined);
+  const draftSaveAbortRef = useRef<AbortController | null>(null);
+  const submitAbortRef = useRef<AbortController | null>(null);
+  const locationRequestGenerationRef = useRef(0);
+  const [cancellingOperation, setCancellingOperation] = useState(false);
   const statusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
   const shownDuplicateMessageRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      draftSaveAbortRef.current?.abort();
+      submitAbortRef.current?.abort();
+    },
+    []
+  );
 
   const syncDuplicateDraftDialog = useCallback((message: string | null) => {
     const normalized = message?.trim() || null;
@@ -397,12 +416,6 @@ export default function LotListingForm({
         draftProgressClearTimerRef.current = null;
       }
       setDraftSaveProgress(progress);
-      if (progress.phase === "complete") {
-        draftProgressClearTimerRef.current = setTimeout(() => {
-          setDraftSaveProgress(null);
-          draftProgressClearTimerRef.current = null;
-        }, 2500);
-      }
     },
     []
   );
@@ -422,8 +435,7 @@ export default function LotListingForm({
   };
 
   const requestCurrentLocation = useCallback(() => {
-    setLatitude(null);
-    setLongitude(null);
+    const requestGeneration = ++locationRequestGenerationRef.current;
 
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setLocationStatus("Browser location access is unavailable");
@@ -435,24 +447,42 @@ export default function LotListingForm({
       (position) => {
         const nextLatitude = position.coords?.latitude;
         const nextLongitude = position.coords?.longitude;
-        if (
-          !Number.isFinite(nextLatitude) ||
-          !Number.isFinite(nextLongitude)
-        ) {
-          setLocationStatus("Latitude/Longitude not detected");
+        if (!isValidBrowserCoordinates(nextLatitude, nextLongitude)) {
+          if (
+            requestGeneration === locationRequestGenerationRef.current
+          ) {
+            setLocationStatus("Latitude/Longitude not detected");
+          }
           return;
         }
-        setLatitude(nextLatitude);
-        setLongitude(nextLongitude);
-        setLocation(CURRENT_BROWSER_LOCATION_LABEL);
-        setLocationStatus("Current location detected");
+        if (requestGeneration !== locationRequestGenerationRef.current) return;
+        const normalizedLatitude = Number(nextLatitude);
+        const normalizedLongitude = Number(nextLongitude);
+        setLatitude(normalizedLatitude);
+        setLongitude(normalizedLongitude);
+        setLocation(
+          formatBrowserCoordinates(normalizedLatitude, normalizedLongitude)
+        );
+        setLocationStatus(
+          formatBrowserAccuracyStatus(position.coords?.accuracy)
+        );
+        setErrors((current) => {
+          if (!current.location) return current;
+          const next = { ...current };
+          delete next.location;
+          return next;
+        });
+        requestedRevisionRef.current += 1;
+        reportDraftStatus("dirty", "Unsaved changes");
       },
       () => {
-        setLocationStatus("Browser location access denied or unavailable");
+        if (requestGeneration === locationRequestGenerationRef.current) {
+          setLocationStatus("Browser location access denied or unavailable");
+        }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+      FRESH_HIGH_ACCURACY_POSITION_OPTIONS
     );
-  }, []);
+  }, [reportDraftStatus]);
 
   useEffect(() => {
     if (auctioneer) return;
@@ -487,19 +517,21 @@ export default function LotListingForm({
     [userId]
   );
 
-  const flushDraft = useCallback(async (): Promise<boolean> => {
+  const flushDraft = useCallback(async (signal?: AbortSignal): Promise<boolean> => {
     if (!draftKey || !userId || autosaveBlockedRef.current) return false;
     if (saveFlightRef.current) return saveFlightRef.current;
 
     let task: Promise<boolean>;
     task = (async () => {
       let committed = false;
+      const targetRevision = requestedRevisionRef.current;
 
       while (
         !autosaveBlockedRef.current &&
-        committedRevisionRef.current < requestedRevisionRef.current
+        committedRevisionRef.current < targetRevision
       ) {
-        const revision = requestedRevisionRef.current;
+        signal?.throwIfAborted();
+        const revision = targetRevision;
         const snapshot = snapshotRef.current;
         if (!snapshot) break;
 
@@ -511,6 +543,7 @@ export default function LotListingForm({
           let accountSyncError: unknown;
           let savedDuplicateWarning: string | null = null;
           for (let attempt = 0; attempt < 2; attempt += 1) {
+            signal?.throwIfAborted();
             try {
               const savedDraft = await ReportDraftService.upsertWithMedia(
                 {
@@ -528,7 +561,8 @@ export default function LotListingForm({
                 (_progress, message, details) => {
                   trackDraftSaveProgress(details);
                   reportDraftStatus("saving", message);
-                }
+                },
+                signal
               );
               const duplicateWarning = getDuplicateLotWarning(savedDraft);
               savedDuplicateWarning = duplicateWarning;
@@ -546,6 +580,7 @@ export default function LotListingForm({
               accountSyncError = undefined;
               break;
             } catch (syncError) {
+              if (signal?.aborted) throw syncError;
               accountSyncPendingRef.current = true;
               accountSyncError = syncError;
             }
@@ -573,6 +608,19 @@ export default function LotListingForm({
             );
           }
         } catch (saveError) {
+          if (signal?.aborted) {
+            accountSyncPendingRef.current = false;
+            setDraftSaveProgress(null);
+            setDraftIssue({
+              tone: "warning",
+              title: "Draft save cancelled",
+              message:
+                "Your listing and selected media are still open, but these changes are not safely stored yet.",
+            });
+            reportDraftStatus("dirty", "Save cancelled · unsaved changes");
+            toast.info("Draft save cancelled. Your unsaved listing is still open.");
+            break;
+          }
           const issue = draftFailureGuidance(saveError);
           syncDuplicateDraftDialog(
             issue.title === "Duplicate Lot Detected" ? issue.message : null
@@ -587,7 +635,11 @@ export default function LotListingForm({
         }
       }
 
-      return committed;
+      return (
+        committed &&
+        !signal?.aborted &&
+        committedRevisionRef.current >= requestedRevisionRef.current
+      );
     })();
 
     saveFlightRef.current = task;
@@ -609,36 +661,10 @@ export default function LotListingForm({
     if (autosaveBlockedRef.current) return;
     requestedRevisionRef.current += 1;
     reportDraftStatus("dirty");
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null;
-      void flushDraft();
-    }, 2000);
-  }, [flushDraft, reportDraftStatus]);
-
-  retryAccountSyncRef.current = () => {
-    if (
-      !accountSyncPendingRef.current ||
-      autosaveBlockedRef.current ||
-      !snapshotRef.current
-    ) {
-      return;
-    }
-    requestedRevisionRef.current =
-      Math.max(requestedRevisionRef.current, committedRevisionRef.current) + 1;
-    reportDraftStatus("saving", "Connection restored - syncing draft...");
-    void flushDraft();
-  };
-
-  useEffect(() => {
-    const handleOnline = () => retryAccountSyncRef.current();
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, []);
+  }, [reportDraftStatus]);
 
   useEffect(
     () => () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
       if (draftProgressClearTimerRef.current) {
         clearTimeout(draftProgressClearTimerRef.current);
       }
@@ -648,18 +674,33 @@ export default function LotListingForm({
 
   const applyRestoredDraft = useCallback(
     (data: DraftSnapshot, revision: number, missingMediaCount: number) => {
+      const hasStoredCoordinates = isValidBrowserCoordinates(
+        data.latitude,
+        data.longitude
+      );
+      const hasStoredLocation = hasUsableReportLocation(data.location);
+      if (hasStoredCoordinates || hasStoredLocation) {
+        locationRequestGenerationRef.current += 1;
+      }
       setContractNo(data.contractNo || "");
       setSalesDate(data.salesDate || isoDate(new Date()));
-      setLocation(data.location || CURRENT_BROWSER_LOCATION_LABEL);
-      if (isValidBrowserCoordinates(data.latitude, data.longitude)) {
+      if (hasStoredCoordinates) {
         setLatitude(Number(data.latitude));
         setLongitude(Number(data.longitude));
+        setLocation(
+          formatBrowserCoordinates(data.latitude, data.longitude)
+        );
         setLocationStatus("Current location restored from draft");
       } else {
         setLatitude(null);
         setLongitude(null);
+        setLocation(
+          hasUsableReportLocation(data.location) ? data.location : ""
+        );
         if (auctioneer) {
           setLocationStatus("Imported from Auctioneer");
+        } else if (hasStoredLocation) {
+          setLocationStatus("Inspection location restored from draft");
         } else {
           requestCurrentLocation();
         }
@@ -857,9 +898,7 @@ export default function LotListingForm({
       salesDate: String(
         formData.salesDate || formData.sales_date || isoDate(new Date())
       ),
-      location: String(
-        formData.location || CURRENT_BROWSER_LOCATION_LABEL
-      ),
+      location: String(formData.location || ""),
       latitude:
         typeof formData.latitude === "number" ? formData.latitude : null,
       longitude:
@@ -958,10 +997,6 @@ export default function LotListingForm({
 
   const deleteStoredDraft = useCallback(async () => {
     autosaveBlockedRef.current = true;
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
-    }
     await saveFlightRef.current;
     await deleteDraftStorage();
     requestedRevisionRef.current = 0;
@@ -994,6 +1029,7 @@ export default function LotListingForm({
       auctioneer?.clientSubmissionId ||
       (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null);
     forceNewSubmissionRef.current = false;
+    supersededSubmissionIdRef.current = null;
     if (!auctioneer) requestCurrentLocation();
   }, [
     auctioneer,
@@ -1030,12 +1066,44 @@ export default function LotListingForm({
   ]);
 
   const handleSaveDraft = useCallback(async () => {
+    if (
+      submitting ||
+      restoringDraft ||
+      draftSaveAbortRef.current ||
+      saveFlightRef.current
+    ) {
+      return;
+    }
     requestedRevisionRef.current += 1;
-    await saveManualDraftOnly(flushDraft, () => {
-      reportDraftStatus("saved", "Draft and photos saved to your account");
-      toast.success("Draft and photos saved.");
-    });
-  }, [flushDraft, reportDraftStatus]);
+    const controller = new AbortController();
+    draftSaveAbortRef.current = controller;
+    if (draftProgressClearTimerRef.current) {
+      clearTimeout(draftProgressClearTimerRef.current);
+      draftProgressClearTimerRef.current = null;
+    }
+    setDraftSaveProgress(null);
+    setDraftSaveActive(true);
+    setCancellingOperation(false);
+    try {
+      await saveManualDraftOnly(() => flushDraft(controller.signal), () => {
+        reportDraftStatus("saved", "Draft and photos saved to your account");
+        toast.success("Draft and photos saved.");
+      });
+    } finally {
+      if (draftSaveAbortRef.current === controller) {
+        draftSaveAbortRef.current = null;
+      }
+      setDraftSaveActive(false);
+      setCancellingOperation(false);
+      if (draftProgressClearTimerRef.current) {
+        clearTimeout(draftProgressClearTimerRef.current);
+      }
+      draftProgressClearTimerRef.current = setTimeout(() => {
+        setDraftSaveProgress(null);
+        draftProgressClearTimerRef.current = null;
+      }, 2500);
+    }
+  }, [flushDraft, reportDraftStatus, restoringDraft, submitting]);
 
   const validateForm = useCallback(
     ({ requireMedia = true }: { requireMedia?: boolean } = {}) => {
@@ -1045,6 +1113,10 @@ export default function LotListingForm({
       }
       if (!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())) {
         nextErrors.currency = "Use a three-letter currency code such as CAD.";
+      }
+      if (!hasUsableReportLocation(location)) {
+        nextErrors.location =
+          "Wait for browser location detection or enter the inspection location.";
       }
 
       if (requireMedia) {
@@ -1070,21 +1142,11 @@ export default function LotListingForm({
 
       return Object.keys(nextErrors).length === 0;
     },
-    [contractNo, currency, mixedLots]
+    [contractNo, currency, location, mixedLots]
   );
-
-  const resumeDraftAfterFailure = useCallback(async () => {
-    autosaveBlockedRef.current = false;
-    requestedRevisionRef.current += 1;
-    await flushDraft();
-  }, [flushDraft]);
 
   const clearAcceptedDraft = useCallback(async (): Promise<unknown | null> => {
     autosaveBlockedRef.current = true;
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
-    }
 
     let cleanupError: unknown | null = null;
     try {
@@ -1118,7 +1180,7 @@ export default function LotListingForm({
       grouping_mode: "mixed",
       contract_no: contractNo.trim(),
       sales_date: salesDate,
-      location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+      location: location.trim(),
       ...(isValidBrowserCoordinates(latitude, longitude)
         ? {
             latitude: Number(latitude),
@@ -1175,6 +1237,7 @@ export default function LotListingForm({
     reportEventSentRef.current = false;
     const cleanupError = await clearAcceptedDraft();
     forceNewSubmissionRef.current = false;
+    supersededSubmissionIdRef.current = null;
     dispatchReportCreated();
     toast.success(accepted);
     if (cleanupError) {
@@ -1201,10 +1264,10 @@ export default function LotListingForm({
       submitLockRef.current = true;
       reportEventSentRef.current = false;
       autosaveBlockedRef.current = true;
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current);
-        autosaveTimerRef.current = null;
-      }
+      const controller = new AbortController();
+      submitAbortRef.current = controller;
+      setCancellingOperation(false);
+      setSubmissionFinalizing(false);
 
       const lotsForSubmission = mixedLots;
       const filesToSend = lotsForSubmission.flatMap((lot) => [
@@ -1240,7 +1303,7 @@ export default function LotListingForm({
       const details = {
         contract_no: contractNo.trim(),
         sales_date: salesDate,
-        location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+        location: location.trim(),
         ...(isValidBrowserCoordinates(latitude, longitude)
           ? {
               latitude: Number(latitude),
@@ -1256,6 +1319,12 @@ export default function LotListingForm({
         progress_id: jobId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
+        ...(supersededSubmissionIdRef.current
+          ? {
+              supersedes_client_submission_id:
+                supersededSubmissionIdRef.current,
+            }
+          : {}),
         ...(auctioneer && {
           auctioneer_work_item_id: auctioneer.workItemId,
         }),
@@ -1331,6 +1400,7 @@ export default function LotListingForm({
             details,
             files: directFiles,
             onUploadProgress: updateUploadProgress,
+            signal: controller.signal,
           });
         } catch (directError: any) {
           const status = Number(directError?.response?.status || 0);
@@ -1342,6 +1412,7 @@ export default function LotListingForm({
           formData.append("details", JSON.stringify(details));
           const response = await API.post("/lot-listing", formData, {
             headers: { "Content-Type": "multipart/form-data" },
+            signal: controller.signal,
             onUploadProgress: (progressEvent: {
               loaded: number;
               total?: number;
@@ -1356,11 +1427,14 @@ export default function LotListingForm({
           responseData = response.data;
         }
 
+        if (submitAbortRef.current === controller) submitAbortRef.current = null;
+        setSubmissionFinalizing(true);
         updateUploadProgress(1);
         const acceptedMessage =
           "Submission accepted — processing continues in My Reports.";
         const cleanupError = await clearAcceptedDraft();
         forceNewSubmissionRef.current = false;
+        supersededSubmissionIdRef.current = null;
         dispatchReportCreated();
         toast.success(acceptedMessage);
         if (cleanupError) {
@@ -1374,12 +1448,42 @@ export default function LotListingForm({
         const isConflict =
           submitError?.response?.status === 409 &&
           submitError?.response?.data?.code === "ACTIVE_REPORT_EXISTS";
+        const isManifestConflict =
+          submitError?.response?.status === 409 &&
+          submitError?.response?.data?.code === "SUBMISSION_MANIFEST_CHANGED";
+        autosaveBlockedRef.current = false;
         setSubmitting(false);
         submitLockRef.current = false;
-        await resumeDraftAfterFailure();
+        if (submitAbortRef.current === controller) submitAbortRef.current = null;
+        setCancellingOperation(false);
+        setSubmissionFinalizing(false);
+
+        if (controller.signal.aborted) {
+          const message =
+            "Upload stopped. Your listing details and selected media are still here and have not been cleared.";
+          setError(message);
+          reportDraftStatus("dirty", "Upload stopped · unsaved changes");
+          toast.info(message);
+          return;
+        }
 
         if (isConflict) {
           setActiveReportConflict(true);
+          return;
+        }
+
+        if (isManifestConflict) {
+          if (auctioneer) {
+            setError(
+              "This Auctioneer upload was started with different media. Restore the original media selection and retry; a replacement upload cannot safely reuse this contract's submission identity."
+            );
+          } else {
+            setSubmissionManifestConflict(true);
+            setError(
+              "The selected media changed after the previous upload attempt. Start a new upload to submit the current listing safely."
+            );
+          }
+          reportDraftStatus("dirty", "New upload identity required");
           return;
         }
 
@@ -1388,12 +1492,16 @@ export default function LotListingForm({
           submitError?.message ||
           "Failed to create lot listing.";
         setError(message);
+        reportDraftStatus("dirty", "Submission failed · unsaved changes");
         toast.error(message);
         return;
       }
 
       setSubmitting(false);
       submitLockRef.current = false;
+      if (submitAbortRef.current === controller) submitAbortRef.current = null;
+      setCancellingOperation(false);
+      setSubmissionFinalizing(false);
     },
     [
       auctioneer,
@@ -1408,7 +1516,7 @@ export default function LotListingForm({
       longitude,
       mixedLots,
       onSuccess,
-      resumeDraftAfterFailure,
+      reportDraftStatus,
       salesDate,
       watermarkImages,
       validateForm,
@@ -1431,23 +1539,44 @@ export default function LotListingForm({
         (mixedLots.length === 1 ? "lot" : "lots") +
         " · " +
         (totalMainPhotos + totalExtraPhotos) +
-        " photos";
+        ((totalMainPhotos + totalExtraPhotos) === 1 ? " photo" : " photos");
   const detailsComplete =
-    Boolean(contractNo.trim()) && /^[A-Z]{3}$/.test(currency.trim());
+    Boolean(contractNo.trim()) &&
+    /^[A-Z]{3}$/.test(currency.trim()) &&
+    hasUsableReportLocation(location);
   const mediaComplete =
     mixedLots.length > 0 &&
     mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
-  const fieldErrorCount = [errors.contractNo, errors.currency].filter(
-    Boolean
-  ).length;
+  const fieldErrorCount = [
+    errors.contractNo,
+    errors.currency,
+    errors.location,
+  ].filter(Boolean).length;
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
-  const draftSaving =
-    draftSaveProgress !== null && draftSaveProgress.phase !== "complete";
+  const draftSaving = draftSaveActive;
+  const transferActive = draftSaving || submitting;
+
+  const cancelActiveOperation = () => {
+    const controller = draftSaveAbortRef.current || submitAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    setCancellingOperation(true);
+    controller.abort();
+  };
+
+  useEffect(() => {
+    if (!draftSaving && !submitting) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [draftSaving, submitting]);
 
   return (
     <form
@@ -1456,7 +1585,41 @@ export default function LotListingForm({
       aria-busy={submitting || draftSaving}
       noValidate
     >
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
+      {draftSaving ? (
+        <FormTransferProgressScreen
+          mode="draft-save"
+          percent={draftSaveProgress?.percent ?? 0}
+          message={draftSaveProgress?.message ?? "Preparing your draft for secure upload…"}
+          totalFiles={draftSaveProgress?.totalFiles}
+          transferredFiles={draftSaveProgress?.uploadedFiles}
+          totalBytes={draftSaveProgress?.totalBytes}
+          transferredBytes={draftSaveProgress?.uploadedBytes}
+          cancelling={cancellingOperation}
+          finalizing={draftSaveProgress?.phase === "complete"}
+          onCancel={cancelActiveOperation}
+        />
+      ) : null}
+      {submitting && uploadStats ? (
+        <FormTransferProgressScreen
+          mode="report-upload"
+          percent={uploadPercent}
+          message={`Uploading ${uploadStats.totalFiles} file${
+            uploadStats.totalFiles === 1 ? "" : "s"
+          }`}
+          totalFiles={uploadStats.totalFiles}
+          totalBytes={uploadStats.totalSize}
+          transferredBytes={uploadStats.uploadedBytes}
+          cancelling={cancellingOperation}
+          finalizing={submissionFinalizing}
+          onCancel={cancelActiveOperation}
+        />
+      ) : null}
+      <div
+        className="contents"
+        inert={transferActive ? true : undefined}
+        aria-hidden={transferActive ? true : undefined}
+      >
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto grid w-full max-w-[920px] gap-4 sm:gap-5">
           {error ? (
             <FormAlert tone="error" title="The listing needs attention">
@@ -1634,6 +1797,45 @@ export default function LotListingForm({
                 />
               </FormField>
 
+              <FormField
+                id="lot-location"
+                label="Current inspection location"
+                required
+                hint={locationStatus}
+                error={errors.location}
+                className="sm:col-span-2"
+                labelAction={
+                  <button
+                    type="button"
+                    className="font-semibold text-[var(--app-accent)] hover:underline"
+                    onClick={() => {
+                      requestCurrentLocation();
+                      markDirty();
+                    }}
+                  >
+                    Re-detect
+                  </button>
+                }
+              >
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(event) => {
+                    locationRequestGenerationRef.current += 1;
+                    setLocation(event.target.value);
+                    setLatitude(null);
+                    setLongitude(null);
+                    setLocationStatus("Manually entered inspection location");
+                    clearFieldError("location");
+                    markDirty();
+                  }}
+                  placeholder="Detecting browser location…"
+                  autoComplete="off"
+                  disabled={submitting}
+                  className={formControlClass}
+                />
+              </FormField>
+
               <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-4 py-3">
                 <FormSwitch
                   id="lot-bank-photos"
@@ -1662,9 +1864,6 @@ export default function LotListingForm({
                 />
               </div>
             </div>
-            <p className="sr-only" aria-live="polite">
-              {locationStatus}
-            </p>
           </FormSection>
 
           <FormSection
@@ -1813,7 +2012,8 @@ export default function LotListingForm({
             {submitting ? "Uploading..." : "Create Lot Listing"}
           </button>
         </span>
-      </FormActionBar>
+        </FormActionBar>
+      </div>
 
       <Menu
         anchorEl={moreAnchor}
@@ -1883,6 +2083,7 @@ export default function LotListingForm({
         }}
         onCreateSeparate={() => {
           setActiveReportConflict(false);
+          supersededSubmissionIdRef.current = null;
           jobIdRef.current =
             typeof crypto !== "undefined" && crypto.randomUUID
               ? crypto.randomUUID()
@@ -1895,8 +2096,31 @@ export default function LotListingForm({
         }}
       />
 
+      <ConfirmDialog
+        open={submissionManifestConflict && !auctioneer}
+        title="Start a new upload?"
+        description="The photos changed after the previous upload was stopped, so that upload identity cannot be reused safely. Start a new upload with the current listing and media, or keep editing without submitting."
+        confirmLabel="Start new upload"
+        cancelLabel="Keep editing"
+        onCancel={() => setSubmissionManifestConflict(false)}
+        onConfirm={() => {
+          setSubmissionManifestConflict(false);
+          setError(null);
+          supersededSubmissionIdRef.current = jobIdRef.current;
+          jobIdRef.current =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : "ll-" +
+                Date.now() +
+                "-" +
+                Math.random().toString(36).slice(2, 9);
+          forceNewSubmissionRef.current = false;
+          window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
+
       <DuplicateDraftDialog
-        open={Boolean(duplicateDraftMessage)}
+        open={Boolean(duplicateDraftMessage) && !transferActive}
         message={duplicateDraftMessage || "A matching draft already exists."}
         onClose={() => setDuplicateDraftMessage(null)}
         onCheckDraft={() => {

@@ -35,7 +35,10 @@ import {
 } from "@/services/reportDrafts";
 import { useAuthContext } from "@/context/AuthContext";
 import {
-  CURRENT_BROWSER_LOCATION_LABEL,
+  FRESH_HIGH_ACCURACY_POSITION_OPTIONS,
+  formatBrowserAccuracyStatus,
+  formatBrowserCoordinates,
+  hasUsableReportLocation,
   isValidBrowserCoordinates,
 } from "@/lib/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
@@ -68,6 +71,7 @@ import {
   FormActionBar,
   FormAlert,
   DraftSaveProgressPanel,
+  FormTransferProgressScreen,
   FormField,
   FormSection,
   FormSwitch,
@@ -333,7 +337,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const importedEventDate =
     auctioneerDateOnly(auctioneer?.contract.eventDate) || isoDate(new Date());
   const importedLocation =
-    auctioneer?.contract.location || CURRENT_BROWSER_LOCATION_LABEL;
+    auctioneer?.contract.location || "";
 
   const [clientName, setClientName] = useState(
     () => auctioneer?.contract.customerName || ""
@@ -392,7 +396,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   } | null>(null);
   const [draftSaveProgress, setDraftSaveProgress] =
     useState<ReportDraftSaveProgress | null>(null);
+  const [draftSaveActive, setDraftSaveActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submissionFinalizing, setSubmissionFinalizing] = useState(false);
   const submitLockRef = useRef(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
@@ -403,6 +409,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   } | null>(null);
   const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const [activeReportConflict, setActiveReportConflict] = useState(false);
+  const [submissionManifestConflict, setSubmissionManifestConflict] =
+    useState(false);
   const [duplicateDraftMessage, setDuplicateDraftMessage] = useState<
     string | null
   >(null);
@@ -416,22 +424,32 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const jobIdRef = useRef<string | null>(
     draftClientIdRef.current
   );
+  const supersededSubmissionIdRef = useRef<string | null>(null);
   const forceNewSubmissionRef = useRef(false);
   const createdEventDispatchedRef = useRef(false);
   const autoSaveBlockedRef = useRef(false);
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftProgressClearTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveRevisionRef = useRef(0);
   const committedRevisionRef = useRef(0);
-  const queuedRevisionRef = useRef(0);
   const saveInFlightRef = useRef<Promise<void> | null>(null);
   const lastFingerprintRef = useRef<string | null>(null);
   const accountSyncPendingRef = useRef(false);
-  const retryAccountSyncRef = useRef<() => void>(() => undefined);
+  const draftSaveAbortRef = useRef<AbortController | null>(null);
+  const submitAbortRef = useRef<AbortController | null>(null);
+  const locationRequestGenerationRef = useRef(0);
+  const [cancellingOperation, setCancellingOperation] = useState(false);
   const draftStatusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
   const shownDuplicateMessageRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      draftSaveAbortRef.current?.abort();
+      submitAbortRef.current?.abort();
+    },
+    []
+  );
 
   const syncDuplicateDraftDialog = useCallback((message: string | null) => {
     const normalized = message?.trim() || null;
@@ -458,12 +476,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       draftProgressClearTimerRef.current = null;
     }
     setDraftSaveProgress(progress);
-    if (progress.phase === "complete") {
-      draftProgressClearTimerRef.current = setTimeout(() => {
-        setDraftSaveProgress(null);
-        draftProgressClearTimerRef.current = null;
-      }, 2500);
-    }
   };
 
   useEffect(
@@ -608,11 +620,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     };
   };
 
-  const saveServerTier = async (snapshot: DraftSnapshot) => {
+  const saveServerTier = async (
+    snapshot: DraftSnapshot,
+    signal?: AbortSignal
+  ) => {
     // Saved means Mongo has the lot structure and every media object is
     // confirmed in R2. Stable file IDs avoid re-uploading unchanged photos.
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      signal?.throwIfAborted();
       try {
         return await ReportDraftService.upsertWithMedia(
           {
@@ -633,21 +649,23 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             if (snapshot.revision === saveRevisionRef.current) {
               publishDraftStatus("saving", message);
             }
-          }
+          },
+          signal
         );
       } catch (error) {
+        if (signal?.aborted) throw error;
         lastError = error;
       }
     }
     throw lastError;
   };
 
-  const saveRevision = async (revision: number) => {
+  const saveRevision = async (revision: number, signal?: AbortSignal) => {
     if (autoSaveBlockedRef.current || !userId) return;
     const snapshot = makeSnapshot(revision);
     publishDraftStatus("saving", "Saving draft…");
     try {
-      const savedDraft = await saveServerTier(snapshot);
+      const savedDraft = await saveServerTier(snapshot, signal);
       const duplicateWarning = getDuplicateLotWarning(savedDraft);
       syncDuplicateDraftDialog(duplicateWarning);
       accountSyncPendingRef.current = false;
@@ -677,6 +695,18 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           : "Draft and photos saved to your account"
       );
     } catch (error) {
+      if (signal?.aborted) {
+        accountSyncPendingRef.current = false;
+        setDraftSaveProgress(null);
+        setDraftGuidance({
+          tone: "warning",
+          message:
+            "Draft saving was cancelled. Your form and selected media are still open, but these changes are not safely stored yet.",
+        });
+        publishDraftStatus("dirty", "Save cancelled · unsaved changes");
+        toast.info("Draft save cancelled. Your unsaved form is still open.");
+        return;
+      }
       accountSyncPendingRef.current = true;
       if (revision !== saveRevisionRef.current || autoSaveBlockedRef.current) {
         return;
@@ -694,81 +724,67 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     }
   };
 
-  const requestDraftSave = (revision: number) => {
+  const requestDraftSave = (revision: number, signal?: AbortSignal) => {
     if (autoSaveBlockedRef.current || !userId) return Promise.resolve();
-    if (saveInFlightRef.current) {
-      queuedRevisionRef.current = Math.max(queuedRevisionRef.current, revision);
-      return saveInFlightRef.current;
-    }
+    if (saveInFlightRef.current) return saveInFlightRef.current;
 
-    const run = async () => {
-      let target = revision;
-      while (target > 0 && !autoSaveBlockedRef.current) {
-        queuedRevisionRef.current = 0;
-        await saveRevision(target);
-        const queued = queuedRevisionRef.current;
-        if (!queued || queued <= target) break;
-        target = queued;
-      }
-    };
-    const promise = run().finally(() => {
+    const promise = saveRevision(revision, signal).finally(() => {
       saveInFlightRef.current = null;
-      const queued = queuedRevisionRef.current;
-      if (
-        queued > committedRevisionRef.current &&
-        !autoSaveBlockedRef.current
-      ) {
-        void requestDraftSave(queued);
-      }
     });
     saveInFlightRef.current = promise;
     return promise;
   };
 
-  const scheduleDraftSave = (revision: number) => {
-    if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSaveTimeoutRef.current = null;
-      void requestDraftSave(revision);
-    }, 2000);
-  };
-
   const saveDraftNow = async () => {
-    if (submitting || !userId) return;
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
-    const revision = Math.max(saveRevisionRef.current + 1, 1);
-    saveRevisionRef.current = revision;
-    publishDraftStatus("dirty", "Unsaved changes");
-    await saveManualDraftOnly(
-      async () => {
-        await requestDraftSave(revision);
-        return committedRevisionRef.current >= revision;
-      },
-      () => {
-        publishDraftStatus("saved", "Draft and photos saved to your account");
-        toast.success("Draft and photos saved.");
-      }
-    );
-  };
-
-  retryAccountSyncRef.current = () => {
-    if (!accountSyncPendingRef.current || autoSaveBlockedRef.current || !userId) {
+    if (
+      submitting ||
+      !userId ||
+      draftSaveAbortRef.current ||
+      saveInFlightRef.current
+    ) {
       return;
     }
     const revision = Math.max(saveRevisionRef.current + 1, 1);
     saveRevisionRef.current = revision;
-    publishDraftStatus("saving", "Connection restored - syncing draft...");
-    void requestDraftSave(revision);
+    publishDraftStatus("dirty", "Unsaved changes");
+    const controller = new AbortController();
+    draftSaveAbortRef.current = controller;
+    if (draftProgressClearTimerRef.current) {
+      clearTimeout(draftProgressClearTimerRef.current);
+      draftProgressClearTimerRef.current = null;
+    }
+    setDraftSaveProgress(null);
+    setDraftSaveActive(true);
+    setCancellingOperation(false);
+    try {
+      await saveManualDraftOnly(
+        async () => {
+          await requestDraftSave(revision, controller.signal);
+          return (
+            !controller.signal.aborted &&
+            committedRevisionRef.current >= saveRevisionRef.current
+          );
+        },
+        () => {
+          publishDraftStatus("saved", "Draft and photos saved to your account");
+          toast.success("Draft and photos saved.");
+        }
+      );
+    } finally {
+      if (draftSaveAbortRef.current === controller) {
+        draftSaveAbortRef.current = null;
+      }
+      setDraftSaveActive(false);
+      setCancellingOperation(false);
+      if (draftProgressClearTimerRef.current) {
+        clearTimeout(draftProgressClearTimerRef.current);
+      }
+      draftProgressClearTimerRef.current = setTimeout(() => {
+        setDraftSaveProgress(null);
+        draftProgressClearTimerRef.current = null;
+      }, 2500);
+    }
   };
-
-  useEffect(() => {
-    const handleOnline = () => retryAccountSyncRef.current();
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, []);
 
   useEffect(() => {
     if (!draftHydrated || autoSaveBlockedRef.current || !userId) return;
@@ -781,15 +797,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const revision = saveRevisionRef.current + 1;
     saveRevisionRef.current = revision;
     publishDraftStatus("dirty", "Unsaved changes");
-    scheduleDraftSave(revision);
   }, [draftFingerprint, draftHydrated, userId]);
-
-  useEffect(
-    () => () => {
-      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
-    },
-    []
-  );
 
   const restoreFormFields = (formData: Partial<AssetDraftFormData>) => {
     if (typeof formData.clientSubmissionId === "string" && formData.clientSubmissionId) {
@@ -803,14 +811,31 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (typeof formData.appraisalCompany === "string") setAppraisalCompany(formData.appraisalCompany);
     if (typeof formData.industry === "string") setIndustry(formData.industry);
     if (typeof formData.inspectionDate === "string") setInspectionDate(formData.inspectionDate);
-    if (typeof formData.location === "string") setLocation(formData.location);
-    if (isValidBrowserCoordinates(formData.latitude, formData.longitude)) {
+    const hasStoredCoordinates = isValidBrowserCoordinates(
+      formData.latitude,
+      formData.longitude
+    );
+    const hasStoredLocation = hasUsableReportLocation(formData.location);
+    if (hasStoredCoordinates || hasStoredLocation) {
+      locationRequestGenerationRef.current += 1;
+    }
+    if (hasStoredCoordinates) {
       setLatitude(Number(formData.latitude));
       setLongitude(Number(formData.longitude));
-      setLocationStatus("Current location detected");
+      setLocation(
+        formatBrowserCoordinates(formData.latitude, formData.longitude)
+      );
+      setLocationStatus("Current location restored from draft");
     } else {
       setLatitude(null);
       setLongitude(null);
+      if (typeof formData.location === "string") {
+        setLocation(
+          hasUsableReportLocation(formData.location)
+            ? formData.location
+            : ""
+        );
+      }
     }
     if (typeof formData.contractNo === "string") setContractNo(formData.contractNo);
     if (formData.language === "en" || formData.language === "fr" || formData.language === "es") {
@@ -1125,18 +1150,43 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (!currencyTouched) setCurrency((current) => current || currencies[region] || "CAD");
   };
 
-  const applyCurrentPosition = (position: GeolocationPosition) => {
+  const applyCurrentPosition = (
+    position: GeolocationPosition,
+    requestGeneration?: number
+  ) => {
     const nextLatitude = position.coords?.latitude;
     const nextLongitude = position.coords?.longitude;
-    if (!Number.isFinite(nextLatitude) || !Number.isFinite(nextLongitude)) {
-      setLocationStatus("Latitude and longitude could not be detected");
+    if (!isValidBrowserCoordinates(nextLatitude, nextLongitude)) {
+      if (
+        requestGeneration === undefined ||
+        requestGeneration === locationRequestGenerationRef.current
+      ) {
+        setLocationStatus("Latitude and longitude could not be detected");
+      }
       return null;
     }
-    setLatitude(nextLatitude);
-    setLongitude(nextLongitude);
-    setLocation(CURRENT_BROWSER_LOCATION_LABEL);
-    setLocationStatus("Current location detected");
-    return { latitude: nextLatitude, longitude: nextLongitude };
+    const coordinates = {
+      latitude: Number(nextLatitude),
+      longitude: Number(nextLongitude),
+    };
+    if (
+      requestGeneration !== undefined &&
+      requestGeneration !== locationRequestGenerationRef.current
+    ) {
+      return coordinates;
+    }
+    setLatitude(coordinates.latitude);
+    setLongitude(coordinates.longitude);
+    setLocation(
+      formatBrowserCoordinates(coordinates.latitude, coordinates.longitude)
+    );
+    setLocationStatus(formatBrowserAccuracyStatus(position.coords?.accuracy));
+    clearFieldError("location");
+    if (draftSaveAbortRef.current) {
+      saveRevisionRef.current += 1;
+      publishDraftStatus("dirty", "Location updated · save again");
+    }
+    return coordinates;
   };
 
   const requestCurrentLocation = () => {
@@ -1144,11 +1194,18 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setLocationStatus("Browser location access is unavailable");
       return;
     }
+    const requestGeneration = ++locationRequestGenerationRef.current;
     setLocationStatus("Detecting current location…");
     navigator.geolocation.getCurrentPosition(
-      applyCurrentPosition,
-      () => setLocationStatus("Browser location access was denied or is unavailable"),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+      (position) => applyCurrentPosition(position, requestGeneration),
+      () => {
+        if (requestGeneration === locationRequestGenerationRef.current) {
+          setLocationStatus(
+            "Browser location access was denied or is unavailable"
+          );
+        }
+      },
+      FRESH_HIGH_ACCURACY_POSITION_OPTIONS
     );
   };
 
@@ -1165,10 +1222,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setCurrencyLoading(false);
       return;
     }
+    const requestGeneration = ++locationRequestGenerationRef.current;
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
-          const coordinates = applyCurrentPosition(position);
+          const coordinates = applyCurrentPosition(
+            position,
+            requestGeneration
+          );
           if (!coordinates) return applyLocaleFallbackCurrency();
           const response = await fetch("/api/ai/currency", {
             method: "POST",
@@ -1193,11 +1254,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }
       },
       () => {
-        setLocationStatus("Browser location access was denied or is unavailable");
+        if (requestGeneration === locationRequestGenerationRef.current) {
+          setLocationStatus(
+            "Browser location access was denied or is unavailable"
+          );
+        }
         applyLocaleFallbackCurrency();
         setCurrencyLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+      FRESH_HIGH_ACCURACY_POSITION_OPTIONS
     );
   }, [auctioneer, currencyTouched]);
 
@@ -1242,6 +1307,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       auctioneer?.clientSubmissionId ||
       (auctioneer ? `auctioneer-${auctioneer.workItemId}` : null);
     forceNewSubmissionRef.current = false;
+    supersededSubmissionIdRef.current = null;
   };
 
   const clearDraftStorage = async () => {
@@ -1269,7 +1335,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const discardDraft = async () => {
     setDiscarding(true);
     autoSaveBlockedRef.current = true;
-    if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
     if (saveInFlightRef.current) await saveInFlightRef.current;
     try {
       saveRevisionRef.current += 1;
@@ -1417,6 +1482,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (!appraisalPurpose.trim()) nextErrors.appraisalPurpose = "Appraisal purpose is required.";
     if (!appraiser.trim()) nextErrors.appraiser = "Appraiser is required.";
     if (!/^[A-Z]{3}$/.test(currency)) nextErrors.currency = "Enter a three-letter ISO code, such as CAD.";
+    if (!hasUsableReportLocation(location)) {
+      nextErrors.location =
+        "Wait for browser location detection or enter the inspection location.";
+    }
     if (includeValuationTable && selectedValuationMethods.length === 0) {
       nextErrors.valuationMethods = "Select at least one valuation method.";
     }
@@ -1447,6 +1516,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       "appraisalPurpose",
       "appraiser",
       "currency",
+      "location",
       "valuationMethods",
       "media",
     ].find((key) => nextErrors[key]);
@@ -1490,7 +1560,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       }),
       ...(industry.trim() && { industry: industry.trim() }),
       ...(inspectionDate && { inspection_date: inspectionDate }),
-      location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+      location: location.trim(),
       ...(isValidBrowserCoordinates(latitude, longitude)
         ? { latitude: Number(latitude), longitude: Number(longitude) }
         : {}),
@@ -1573,10 +1643,6 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     setAcceptedMessage(accepted);
     toast.success(accepted);
     autoSaveBlockedRef.current = true;
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
     if (saveInFlightRef.current) await saveInFlightRef.current;
     saveRevisionRef.current += 1;
     const cleanupError = await clearDraftStorage()
@@ -1588,6 +1654,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     resetForm();
     setAcceptedMessage(null);
     forceNewSubmissionRef.current = false;
+    supersededSubmissionIdRef.current = null;
     publishDraftStatus("saved", "Smart Upload accepted");
     if (cleanupError) {
       toast.warning(
@@ -1624,13 +1691,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     event?.preventDefault();
     if (submitLockRef.current || submitting || !validateForm()) return;
     submitLockRef.current = true;
+    const controller = new AbortController();
+    submitAbortRef.current = controller;
+    setCancellingOperation(false);
+    setSubmissionFinalizing(false);
 
     let keepDraftSavingBlocked = false;
     try {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-        autoSaveTimeoutRef.current = null;
-      }
       autoSaveBlockedRef.current = true;
       if (saveInFlightRef.current) await saveInFlightRef.current;
 
@@ -1655,7 +1722,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }),
         ...(industry.trim() && { industry: industry.trim() }),
         ...(inspectionDate && { inspection_date: inspectionDate }),
-        location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+        location: location.trim(),
         ...(isValidBrowserCoordinates(latitude, longitude)
           ? { latitude: Number(latitude), longitude: Number(longitude) }
           : {}),
@@ -1672,6 +1739,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         progress_id: jobId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
+        ...(supersededSubmissionIdRef.current
+          ? {
+              supersedes_client_submission_id:
+                supersededSubmissionIdRef.current,
+            }
+          : {}),
         ...(auctioneer && {
           auctioneer_work_item_id: auctioneer.workItemId,
         }),
@@ -1731,8 +1804,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               : current
           );
         },
+        signal: controller.signal,
       });
 
+      if (submitAbortRef.current === controller) submitAbortRef.current = null;
+      setSubmissionFinalizing(true);
       setUploadProgress(100);
       const accepted =
         "Submission accepted — processing continues in My Reports.";
@@ -1747,6 +1823,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       resetForm();
       setAcceptedMessage(null);
       forceNewSubmissionRef.current = false;
+      supersededSubmissionIdRef.current = null;
       publishDraftStatus("saved", "Submission accepted");
       if (cleanupError) {
         toast.warning(
@@ -1763,11 +1840,32 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       onSuccess?.(accepted);
     } catch (submitError: any) {
       autoSaveBlockedRef.current = false;
-      if (
+      if (controller.signal.aborted) {
+        const message =
+          "Upload stopped. Your report details and selected media are still here and have not been cleared.";
+        setError(message);
+        publishDraftStatus("dirty", "Upload stopped · unsaved changes");
+        toast.info(message);
+      } else if (
         submitError?.response?.status === 409 &&
         submitError?.response?.data?.code === "ACTIVE_REPORT_EXISTS"
       ) {
         setActiveReportConflict(true);
+      } else if (
+        submitError?.response?.status === 409 &&
+        submitError?.response?.data?.code === "SUBMISSION_MANIFEST_CHANGED"
+      ) {
+        if (auctioneer) {
+          setError(
+            "This Auctioneer upload was started with different media. Restore the original media selection and retry; a replacement upload cannot safely reuse this contract's submission identity."
+          );
+        } else {
+          setSubmissionManifestConflict(true);
+          setError(
+            "The selected media changed after the previous upload attempt. Start a new upload to submit the current form safely."
+          );
+        }
+        publishDraftStatus("dirty", "New upload identity required");
       } else {
         const message =
           submitError?.response?.data?.message ||
@@ -1775,14 +1873,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
           "Failed to create asset report";
         setError(message);
         toast.error(message);
+        publishDraftStatus("dirty", "Submission failed · unsaved changes");
       }
-      const revision = saveRevisionRef.current + 1;
-      saveRevisionRef.current = revision;
-      publishDraftStatus("dirty", "Submission failed · saving draft");
-      await requestDraftSave(revision);
     } finally {
       setSubmitting(false);
       submitLockRef.current = false;
+      if (submitAbortRef.current === controller) submitAbortRef.current = null;
+      setCancellingOperation(false);
+      setSubmissionFinalizing(false);
       if (!keepDraftSavingBlocked) autoSaveBlockedRef.current = false;
     }
   }
@@ -1793,6 +1891,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     "appraisalPurpose",
     "appraiser",
     "currency",
+    "location",
   ].filter((key) => errors[key]).length;
   const requiredComplete = [
     clientName.trim(),
@@ -1800,6 +1899,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     appraisalPurpose.trim(),
     appraiser.trim(),
     /^[A-Z]{3}$/.test(currency) ? currency : "",
+    hasUsableReportLocation(location) ? location : "",
   ].filter(Boolean).length;
   const mediaTotals = mixedLots.reduce(
     (totals, lot) => ({
@@ -1808,8 +1908,25 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     }),
     { photos: 0, videos: 0 }
   );
-  const draftSaving =
-    draftSaveProgress !== null && draftSaveProgress.phase !== "complete";
+  const draftSaving = draftSaveActive;
+  const transferActive = draftSaving || submitting;
+
+  const cancelActiveOperation = () => {
+    const controller = draftSaveAbortRef.current || submitAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    setCancellingOperation(true);
+    controller.abort();
+  };
+
+  useEffect(() => {
+    if (!draftSaving && !submitting) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [draftSaving, submitting]);
 
   return (
     <form
@@ -1818,7 +1935,41 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       aria-busy={submitting || draftSaving}
       noValidate
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
+      {draftSaving ? (
+        <FormTransferProgressScreen
+          mode="draft-save"
+          percent={draftSaveProgress?.percent ?? 0}
+          message={draftSaveProgress?.message ?? "Preparing your draft for secure upload…"}
+          totalFiles={draftSaveProgress?.totalFiles}
+          transferredFiles={draftSaveProgress?.uploadedFiles}
+          totalBytes={draftSaveProgress?.totalBytes}
+          transferredBytes={draftSaveProgress?.uploadedBytes}
+          cancelling={cancellingOperation}
+          finalizing={draftSaveProgress?.phase === "complete"}
+          onCancel={cancelActiveOperation}
+        />
+      ) : null}
+      {submitting && uploadStats ? (
+        <FormTransferProgressScreen
+          mode="report-upload"
+          percent={uploadProgress}
+          message={`Uploading ${uploadStats.totalFiles} file${
+            uploadStats.totalFiles === 1 ? "" : "s"
+          } · ${uploadTimeRemaining()}`}
+          totalFiles={uploadStats.totalFiles}
+          totalBytes={uploadStats.totalSize}
+          transferredBytes={uploadStats.uploadedBytes}
+          cancelling={cancellingOperation}
+          finalizing={submissionFinalizing}
+          onCancel={cancelActiveOperation}
+        />
+      ) : null}
+      <div
+        className="contents"
+        inert={transferActive ? true : undefined}
+        aria-hidden={transferActive ? true : undefined}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
         <div className="mx-auto grid w-full max-w-5xl gap-4">
           {error ? (
             <FormAlert tone="error" title="Report needs attention" onDismiss={() => setError(null)}>
@@ -1882,9 +2033,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               sectionNumber={1}
               title="Report Details"
               description="Core information used on the report cover and throughout the appraisal."
-              summary={`${requiredComplete} of 5 required fields complete`}
+              summary={`${requiredComplete} of 6 required fields complete`}
               errorSummary={reportErrorCount ? `${reportErrorCount} field${reportErrorCount === 1 ? "" : "s"} need attention` : undefined}
-              status={reportErrorCount ? "error" : requiredComplete === 5 ? "complete" : "incomplete"}
+              status={reportErrorCount ? "error" : requiredComplete === 6 ? "complete" : "incomplete"}
               open={openSections.has("report")}
               onOpenChange={(open) => toggleSection("report", open)}
             >
@@ -2024,7 +2175,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                 <FormField
                   id="asset-location"
                   label="Inspection location"
+                  required
                   hint={locationStatus}
+                  error={errors.location}
                   className="sm:col-span-2"
                   labelAction={
                     <button type="button" className="font-semibold text-[var(--app-accent)] hover:underline" onClick={requestCurrentLocation}>
@@ -2035,7 +2188,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   <input
                     className={formControlClass}
                     value={location}
-                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Detecting browser location…"
+                    onChange={(event) => {
+                      locationRequestGenerationRef.current += 1;
+                      setLocation(event.target.value);
+                      setLatitude(null);
+                      setLongitude(null);
+                      setLocationStatus("Manually entered inspection location");
+                      clearFieldError("location");
+                    }}
                   />
                 </FormField>
                 <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-3.5 py-3">
@@ -2283,7 +2444,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             {submitting ? "Uploading…" : "Create report"}
           </button>
         </div>
-      </FormActionBar>
+        </FormActionBar>
+      </div>
 
       <Menu
         anchorEl={moreAnchor}
@@ -2336,6 +2498,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }}
         onCreateSeparate={() => {
           setActiveReportConflict(false);
+          supersededSubmissionIdRef.current = null;
           jobIdRef.current =
             typeof crypto !== "undefined" && crypto.randomUUID
               ? crypto.randomUUID()
@@ -2345,8 +2508,28 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }}
       />
 
+      <ConfirmDialog
+        open={submissionManifestConflict && !auctioneer}
+        title="Start a new upload?"
+        description="The photos changed after the previous upload was stopped, so that upload identity cannot be reused safely. Start a new upload with the current form and media, or keep editing without submitting."
+        confirmLabel="Start new upload"
+        cancelLabel="Keep editing"
+        onCancel={() => setSubmissionManifestConflict(false)}
+        onConfirm={() => {
+          setSubmissionManifestConflict(false);
+          setError(null);
+          supersededSubmissionIdRef.current = jobIdRef.current;
+          jobIdRef.current =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          forceNewSubmissionRef.current = false;
+          window.setTimeout(() => void onSubmit(), 0);
+        }}
+      />
+
       <DuplicateDraftDialog
-        open={Boolean(duplicateDraftMessage)}
+        open={Boolean(duplicateDraftMessage) && !transferActive}
         message={duplicateDraftMessage || "A matching draft already exists."}
         onClose={() => setDuplicateDraftMessage(null)}
         onCheckDraft={() => {

@@ -1794,7 +1794,7 @@ export default function MixedSection({
             >
               {lots.map((lot, index) => (
                 <option key={lot.id} value={index}>
-                  {lotLabel(lot, index)} · {getModeLabel(lot.mode)} · {getLotPhotoCount(lot)} photos
+                  {lotLabel(lot, index)} · {getModeLabel(lot.mode)} · {getLotPhotoCount(lot)} {getLotPhotoCount(lot) === 1 ? "photo" : "photos"}
                 </option>
               ))}
             </select>

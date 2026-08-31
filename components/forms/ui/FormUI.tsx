@@ -18,8 +18,10 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  CloudUpload,
   Info,
   LoaderCircle,
+  Save,
   X,
 } from "lucide-react";
 
@@ -668,6 +670,304 @@ export function DraftSaveProgressPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+export type FormTransferMode = "draft-save" | "report-upload";
+
+export type FormTransferProgressScreenProps = {
+  mode: FormTransferMode;
+  percent: number;
+  message: string;
+  totalFiles?: number;
+  transferredFiles?: number;
+  totalBytes?: number;
+  transferredBytes?: number;
+  cancelling?: boolean;
+  finalizing?: boolean;
+  onCancel: () => void;
+  className?: string;
+};
+
+const transferScreenConfig: Record<
+  FormTransferMode,
+  {
+    eyebrow: string;
+    title: string;
+    progressLabel: string;
+    cancelLabel: string;
+    cancellingLabel: string;
+    warning: string;
+    finalizingLabel: string;
+    finalizingWarning: string;
+  }
+> = {
+  "draft-save": {
+    eyebrow: "Draft transfer",
+    title: "Saving your draft",
+    progressLabel: "Draft save progress",
+    cancelLabel: "Cancel save",
+    cancellingLabel: "Cancelling save…",
+    warning:
+      "Please wait and keep this page open. If you leave before saving finishes, your latest details and photos cannot be recovered.",
+    finalizingLabel: "Finalizing saved draft…",
+    finalizingWarning:
+      "Your draft was saved. Keep this page open while the workspace finishes updating.",
+  },
+  "report-upload": {
+    eyebrow: "Report submission",
+    title: "Uploading your report",
+    progressLabel: "Report upload progress",
+    cancelLabel: "Stop upload",
+    cancellingLabel: "Stopping upload…",
+    warning:
+      "Please wait and keep this page open. Leaving before the upload finishes can interrupt this submission, and unsaved changes may not be recoverable.",
+    finalizingLabel: "Report accepted · finalizing…",
+    finalizingWarning:
+      "Your report was accepted and can no longer be cancelled. Keep this page open while the workspace is finalized.",
+  },
+};
+
+function normalizedTransferCount(value: number | undefined) {
+  if (!Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.floor(Number(value)));
+}
+
+/**
+ * Full-viewport, progress-only surface for an in-flight draft save or report
+ * upload. The caller owns cancellation and should keep the same draft/upload
+ * identity when the user retries a safely interrupted transfer.
+ */
+export function FormTransferProgressScreen({
+  mode,
+  percent,
+  message,
+  totalFiles,
+  transferredFiles,
+  totalBytes,
+  transferredBytes,
+  cancelling = false,
+  finalizing = false,
+  onCancel,
+  className,
+}: FormTransferProgressScreenProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const onCancelRef = useRef(onCancel);
+  const canCancelRef = useRef(!cancelling && !finalizing);
+  const generatedId = useId();
+  const titleId = `form-transfer-title-${generatedId}`;
+  const descriptionId = `form-transfer-description-${generatedId}`;
+  const warningId = `form-transfer-warning-${generatedId}`;
+  const config = transferScreenConfig[mode];
+  const safePercent = Math.max(
+    0,
+    Math.min(100, Number.isFinite(percent) ? Math.round(percent) : 0)
+  );
+  const safeTotalFiles = normalizedTransferCount(totalFiles);
+  const safeTransferredFiles = normalizedTransferCount(transferredFiles);
+  const safeTotalBytes = normalizedTransferCount(totalBytes);
+  const safeTransferredBytes = normalizedTransferCount(transferredBytes);
+  const showFileStats = safeTotalFiles !== undefined && safeTotalFiles > 0;
+  const showByteStats = safeTotalBytes !== undefined && safeTotalBytes > 0;
+  const TransferIcon = mode === "draft-save" ? Save : CloudUpload;
+
+  onCancelRef.current = onCancel;
+  canCancelRef.current = !cancelling && !finalizing;
+
+  useEffect(() => {
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const focusTransferControl = () => {
+      const cancelButton = cancelButtonRef.current;
+      if (canCancelRef.current && cancelButton && !cancelButton.disabled) {
+        cancelButton.focus();
+        return;
+      }
+      dialogRef.current?.focus();
+    };
+    const frame = window.requestAnimationFrame(() => {
+      focusTransferControl();
+    });
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === "Tab") {
+        event.preventDefault();
+        focusTransferControl();
+      } else if (event.key === "Escape" && canCancelRef.current) {
+        event.preventDefault();
+        onCancelRef.current();
+      }
+    };
+    document.addEventListener("keydown", containFocus);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", containFocus);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (finalizing || cancelling) dialogRef.current?.focus();
+  }, [cancelling, finalizing]);
+
+  return (
+    <section
+      ref={dialogRef}
+      role="dialog"
+      tabIndex={-1}
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={`${descriptionId} ${warningId}`}
+      aria-busy="true"
+      className={formClassNames(
+        "fixed inset-0 z-[1500] flex min-h-[100dvh] overflow-y-auto overscroll-contain bg-[var(--app-bg)] px-3 py-4 text-[var(--app-text)] sm:px-6 sm:py-8",
+        className
+      )}
+      style={{
+        paddingTop: "max(1rem, env(safe-area-inset-top))",
+        paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+        paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+      }}
+    >
+      <div className="m-auto w-full max-w-xl rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4 shadow-[var(--app-shadow-modal)] sm:p-6">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] text-[var(--app-info)]">
+            <TransferIcon className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--app-accent)]">
+              {config.eyebrow}
+            </p>
+            <h2
+              id={titleId}
+              className="mt-1 text-lg font-bold leading-6 text-[var(--app-text-strong)] sm:text-xl"
+            >
+              {config.title}
+            </h2>
+            <p
+              id={descriptionId}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className="mt-1 break-words text-sm leading-5 text-[var(--app-text-muted)]"
+            >
+              {finalizing
+                ? config.finalizingLabel
+                : cancelling
+                  ? config.cancellingLabel
+                  : message}
+            </p>
+          </div>
+          <span className="shrink-0 text-lg font-bold tabular-nums text-[var(--app-text-strong)]">
+            {safePercent}%
+          </span>
+        </div>
+
+        <div
+          className="mt-5 h-2.5 overflow-hidden rounded-full bg-[var(--app-control-border)]"
+          role="progressbar"
+          aria-label={config.progressLabel}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={safePercent}
+          aria-valuetext={`${safePercent}% - ${
+            finalizing
+              ? config.finalizingLabel
+              : cancelling
+                ? config.cancellingLabel
+                : message
+          }`}
+        >
+          <div
+            className="h-full rounded-full bg-[var(--app-accent)] transition-[width] duration-200 motion-reduce:transition-none"
+            style={{ width: `${safePercent}%` }}
+          />
+        </div>
+
+        {showFileStats || showByteStats ? (
+          <dl className="mt-4 grid grid-cols-1 gap-2 min-[390px]:grid-cols-2">
+            {showFileStats ? (
+              <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2.5">
+                <dt className="text-xs font-medium text-[var(--app-text-muted)]">
+                  Files
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                  {safeTransferredFiles === undefined
+                    ? `${safeTotalFiles} total`
+                    : `${Math.min(safeTransferredFiles, safeTotalFiles)} of ${safeTotalFiles}`}
+                </dd>
+              </div>
+            ) : null}
+            {showByteStats ? (
+              <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2.5">
+                <dt className="text-xs font-medium text-[var(--app-text-muted)]">
+                  Data
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                  {safeTransferredBytes === undefined
+                    ? formatDraftBytes(safeTotalBytes)
+                    : `${formatDraftBytes(
+                        Math.min(safeTransferredBytes, safeTotalBytes)
+                      )} of ${formatDraftBytes(safeTotalBytes)}`}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
+
+        <div
+          id={warningId}
+          className="mt-4 flex items-start gap-2.5 rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] px-3 py-3 text-sm leading-5"
+        >
+          <AlertTriangle
+            className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-warning)]"
+            aria-hidden="true"
+          />
+          <p className="font-medium text-[var(--app-text)]">
+            {finalizing ? config.finalizingWarning : config.warning}
+          </p>
+        </div>
+
+        <div className="mt-5 flex justify-stretch sm:justify-end">
+          {finalizing ? (
+            <div
+              aria-hidden="true"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--app-info)] sm:w-auto"
+            >
+              <LoaderCircle
+                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              {config.finalizingLabel}
+            </div>
+          ) : (
+            <button
+              ref={cancelButtonRef}
+              type="button"
+              onClick={onCancel}
+              disabled={cancelling}
+              className={formClassNames(
+                secondaryButtonClass,
+                "w-full border-[var(--app-danger-border)] text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] sm:w-auto"
+              )}
+            >
+              {cancelling ? (
+                <LoaderCircle
+                  className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+              ) : (
+                <X className="h-4 w-4" aria-hidden="true" />
+              )}
+              {cancelling ? config.cancellingLabel : config.cancelLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

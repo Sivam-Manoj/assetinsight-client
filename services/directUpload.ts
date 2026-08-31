@@ -35,7 +35,57 @@ const COMPLETE_SESSION_RETRIES = 4;
 const DIRECT_UPLOAD_CIRCUIT_TTL_MS = 10 * 60 * 1000;
 const CLOUDFLARE_R2_HOST_SUFFIX = ".r2.cloudflarestorage.com";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+function abortReason(signal?: AbortSignal) {
+  return (
+    signal?.reason ||
+    new DOMException("The operation was aborted.", "AbortError")
+  );
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+function waitForPromiseOrAbort<T>(promise: Promise<T>, signal?: AbortSignal) {
+  if (!signal) return promise;
+  throwIfAborted(signal);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+const sleep = (ms: number, signal?: AbortSignal) => {
+  if (!signal) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+  }
+  throwIfAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(abortReason(signal));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+};
 let serverFallbackQueue: Promise<void> = Promise.resolve();
 const directUploadUnavailableUntil = new Map<string, number>();
 
@@ -89,18 +139,38 @@ export function resetDirectUploadCircuitBreakerForTests() {
   directUploadUnavailableUntil.clear();
 }
 
-async function withServerFallbackSlot<T>(task: () => Promise<T>): Promise<T> {
+async function withServerFallbackSlot<T>(
+  task: () => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
   const previous = serverFallbackQueue;
   let release!: () => void;
   serverFallbackQueue = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await previous;
+  let acquired = false;
   try {
+    await waitForPromiseOrAbort(previous, signal);
+    acquired = true;
+    throwIfAborted(signal);
     return await task();
   } finally {
-    release();
+    if (acquired) {
+      release();
+    } else {
+      void previous.then(release, release);
+    }
   }
+}
+
+function postWithSignal<T>(
+  url: string,
+  data: unknown,
+  signal?: AbortSignal
+) {
+  return signal
+    ? API.post<T>(url, data, { signal })
+    : API.post<T>(url, data);
 }
 
 const uploadErrorMessage = (error: unknown, fallback: string) => {
@@ -119,19 +189,26 @@ const isRetryableServerUploadError = (error: unknown) => {
 async function completeUploadSessionWithRetry(
   endpoint: "/asset" | "/lot-listing",
   sessionId: string,
+  signal?: AbortSignal
 ) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= COMPLETE_SESSION_RETRIES; attempt += 1) {
+    throwIfAborted(signal);
     try {
-      return await API.post(`${endpoint}/upload-session/${sessionId}/complete`, {});
+      return await postWithSignal<any>(
+        `${endpoint}/upload-session/${sessionId}/complete`,
+        {},
+        signal
+      );
     } catch (error) {
       lastError = error;
+      if (signal?.aborted) throw abortReason(signal);
       if (!isRetryableServerUploadError(error) || attempt === COMPLETE_SESSION_RETRIES) {
         throw error;
       }
       // Completion is idempotent. Retrying this exact session is safer than
       // resubmitting its files and prevents transient 503s creating duplicates.
-      await sleep(Math.min(6000, 750 * 2 ** (attempt - 1)));
+      await sleep(Math.min(6000, 750 * 2 ** (attempt - 1)), signal);
     }
   }
   throw lastError;
@@ -142,11 +219,33 @@ export function putFileWithProgress(
   file: File,
   contentType: string,
   onDelta?: (delta: number) => void,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  signal?: AbortSignal
 ) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let lastLoaded = 0;
+    let settled = false;
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      try {
+        xhr.abort();
+      } finally {
+        rejectOnce(abortReason(signal));
+      }
+    };
     xhr.open("PUT", url);
     let hasSignedContentType = false;
     for (const [name, value] of Object.entries(headers || {})) {
@@ -171,13 +270,29 @@ export function putFileWithProgress(
       if (xhr.status >= 200 && xhr.status < 300) {
         const delta = Math.max(0, file.size - lastLoaded);
         if (delta) onDelta?.(delta);
-        resolve();
+        resolveOnce();
       } else {
         const detail = xhr.responseText?.trim().replace(/\s+/g, " ").slice(0, 180);
-        reject(new Error(`R2 upload failed for ${file.name} (${xhr.status})${detail ? `: ${detail}` : ""}`));
+        rejectOnce(new Error(`R2 upload failed for ${file.name} (${xhr.status})${detail ? `: ${detail}` : ""}`));
       }
     };
-    xhr.onerror = () => reject(new Error(`R2 upload failed for ${file.name}`));
+    xhr.onerror = () =>
+      rejectOnce(
+        signal?.aborted
+          ? abortReason(signal)
+          : new Error(`R2 upload failed for ${file.name}`)
+      );
+    xhr.onabort = () =>
+      rejectOnce(
+        signal?.aborted
+          ? abortReason(signal)
+          : new Error(`R2 upload was interrupted for ${file.name}`)
+      );
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     xhr.send(file);
   });
 }
@@ -186,11 +301,13 @@ export async function uploadFileThroughServerFallback(
   endpoint: "/asset" | "/lot-listing",
   sessionId: string,
   fileId: string,
-  file: File
+  file: File,
+  signal?: AbortSignal
 ) {
   await withServerFallbackSlot(async () => {
     let lastError: unknown;
     for (let attempt = 0; attempt <= SERVER_FALLBACK_RETRIES; attempt += 1) {
+      throwIfAborted(signal);
       const formData = new FormData();
       formData.append("file", file, file.name);
       try {
@@ -202,32 +319,36 @@ export async function uploadFileThroughServerFallback(
             // Content-Type manually can produce an incomplete form body behind
             // some proxies.
             timeout: 300000,
+            ...(signal ? { signal } : {}),
           }
         );
         return;
       } catch (error) {
         lastError = error;
+        if (signal?.aborted) throw abortReason(signal);
         if (
           attempt >= SERVER_FALLBACK_RETRIES ||
           !isRetryableServerUploadError(error)
         ) {
           throw error;
         }
-        await sleep(750 * (attempt + 1));
+        await sleep(750 * (attempt + 1), signal);
       }
     }
     throw lastError;
-  });
+  }, signal);
 }
 
 export async function verifyUploadSessionFile(
   endpoint: "/asset" | "/lot-listing",
   sessionId: string,
-  fileId: string
+  fileId: string,
+  signal?: AbortSignal
 ) {
-  const { data } = await API.post(
+  const { data } = await postWithSignal<any>(
     `${endpoint}/upload-session/${sessionId}/files/${encodeURIComponent(fileId)}/verify`,
-    {}
+    {},
+    signal
   );
   return data?.data?.verified === true;
 }
@@ -241,7 +362,9 @@ export async function uploadFileToReportSession(args: {
   contentType: string;
   headers?: Record<string, string>;
   onDelta?: (delta: number) => void;
+  signal?: AbortSignal;
 }) {
+  throwIfAborted(args.signal);
   if (
     !canUseDirectBrowserUpload(args.uploadUrl) ||
     directUploadIsUnavailable(args.uploadUrl)
@@ -250,7 +373,8 @@ export async function uploadFileToReportSession(args: {
       args.endpoint,
       args.sessionId,
       args.fileId,
-      args.file
+      args.file,
+      args.signal
     );
     return { transport: "server" as const };
   }
@@ -261,10 +385,14 @@ export async function uploadFileToReportSession(args: {
       args.file,
       args.contentType,
       args.onDelta,
-      args.headers
+      args.headers,
+      args.signal
     );
     return { transport: "direct" as const };
   } catch (directUploadError) {
+    if (args.signal?.aborted) {
+      throw abortReason(args.signal);
+    }
     // R2 may accept the PUT but hide the response from the browser when its
     // CORS policy is absent or stale. A small authenticated HEAD check avoids
     // uploading the same multi-megabyte photo through the API unnecessarily.
@@ -272,10 +400,14 @@ export async function uploadFileToReportSession(args: {
       const verified = await verifyUploadSessionFile(
         args.endpoint,
         args.sessionId,
-        args.fileId
+        args.fileId,
+        args.signal
       );
       if (verified) return { transport: "direct-verified" as const };
     } catch {
+      if (args.signal?.aborted) {
+        throw abortReason(args.signal);
+      }
       // A missing object or an older API without the verification endpoint
       // should continue to the compatible server upload path.
     }
@@ -285,6 +417,7 @@ export async function uploadFileToReportSession(args: {
     // CORS rule). Remember that briefly so a large report does not repeat the
     // same doomed retries for every remaining photo.
     markDirectUploadUnavailable(args.uploadUrl);
+    throwIfAborted(args.signal);
 
     try {
       // Preserve the original session and R2 object key. This is a transport
@@ -293,10 +426,14 @@ export async function uploadFileToReportSession(args: {
         args.endpoint,
         args.sessionId,
         args.fileId,
-        args.file
+        args.file,
+        args.signal
       );
       return { transport: "server" as const };
     } catch (fallbackError) {
+      if (args.signal?.aborted) {
+        throw abortReason(args.signal);
+      }
       const directMessage = uploadErrorMessage(
         directUploadError,
         "Direct R2 upload failed"
@@ -315,16 +452,28 @@ export async function putFileWithRetry(
   file: File,
   contentType: string,
   onDelta?: (delta: number) => void,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  signal?: AbortSignal
 ) {
   let lastError: unknown;
   for (let attempt = 0; attempt <= DIRECT_UPLOAD_RETRIES; attempt += 1) {
+    throwIfAborted(signal);
     try {
-      await putFileWithProgress(url, file, contentType, onDelta, headers);
+      await putFileWithProgress(
+        url,
+        file,
+        contentType,
+        onDelta,
+        headers,
+        signal
+      );
       return;
     } catch (error) {
       lastError = error;
-      if (attempt < DIRECT_UPLOAD_RETRIES) await sleep(500 * (attempt + 1));
+      if (signal?.aborted) throw abortReason(signal);
+      if (attempt < DIRECT_UPLOAD_RETRIES) {
+        await sleep(500 * (attempt + 1), signal);
+      }
     }
   }
   throw lastError;
@@ -333,13 +482,16 @@ export async function putFileWithRetry(
 export async function mapWithConcurrency<T>(
   items: T[],
   worker: (item: T, index: number) => Promise<void>,
-  concurrency = DIRECT_UPLOAD_CONCURRENCY
+  concurrency = DIRECT_UPLOAD_CONCURRENCY,
+  signal?: AbortSignal
 ) {
+  throwIfAborted(signal);
   const limit = Math.max(1, Math.min(concurrency, items.length || 1));
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: limit }, async () => {
       while (true) {
+        throwIfAborted(signal);
         const index = nextIndex;
         nextIndex += 1;
         if (index >= items.length) break;
@@ -354,7 +506,9 @@ export async function uploadReportFilesDirectToR2(args: {
   details: Record<string, any>;
   files: DirectUploadFile[];
   onUploadProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
 }) {
+  throwIfAborted(args.signal);
   const totalBytes = args.files.reduce((sum, item) => sum + (item.file.size || 1), 0) || 1;
   let uploadedBytes = 0;
   const manifest = args.files.map((item, index) => ({
@@ -363,6 +517,9 @@ export async function uploadReportFilesDirectToR2(args: {
     name: item.file.name || `${item.fieldname || "image"}-${index + 1}`,
     type: item.file.type || "application/octet-stream",
     size: item.file.size,
+    lastModified: Number.isFinite(item.file.lastModified)
+      ? Math.max(0, Math.trunc(item.file.lastModified))
+      : undefined,
     fieldname: item.fieldname || "images",
     lotIndex: item.lotIndex,
     imageIndex: item.imageIndex ?? index,
@@ -371,12 +528,13 @@ export async function uploadReportFilesDirectToR2(args: {
     role: item.role || (item.fieldname === "videos" ? "video" : "main"),
   }));
 
-  const { data: sessionEnvelope } = await API.post<{ data: UploadSession }>(
+  const { data: sessionEnvelope } = await postWithSignal<{ data: UploadSession }>(
     `${args.endpoint}/upload-session`,
     {
       details: args.details,
       files: manifest,
-    }
+    },
+    args.signal
   );
   const session = sessionEnvelope.data;
   if (session.alreadyQueued && session.reportId) {
@@ -390,6 +548,7 @@ export async function uploadReportFilesDirectToR2(args: {
       resumed: true,
     };
   }
+  throwIfAborted(args.signal);
   const targetById = new Map(session.files.map((file) => [file.fileId, file]));
 
   if (!session.readyToComplete) {
@@ -405,6 +564,7 @@ export async function uploadReportFilesDirectToR2(args: {
         file: item.file,
         contentType: target.contentType,
         headers: target.headers,
+        signal: args.signal,
         onDelta: (delta) => {
           const nextLoaded = Math.min(item.file.size, fileLoaded + delta);
           uploadedBytes += Math.max(0, nextLoaded - fileLoaded);
@@ -419,13 +579,15 @@ export async function uploadReportFilesDirectToR2(args: {
         fileLoaded = item.file.size;
         args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
       }
-    });
+    }, DIRECT_UPLOAD_CONCURRENCY, args.signal);
   }
 
+  throwIfAborted(args.signal);
   args.onUploadProgress?.(0.95);
   const { data } = await completeUploadSessionWithRetry(
     args.endpoint,
     session.sessionId,
+    args.signal
   );
   args.onUploadProgress?.(1);
   return data;

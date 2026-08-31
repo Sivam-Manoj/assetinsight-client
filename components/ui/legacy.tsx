@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 type Sx = Record<string, unknown> | undefined;
@@ -69,29 +75,160 @@ export function Menu({
   onClose,
   children,
   slotProps,
+  anchorOrigin,
+  transformOrigin,
+  ariaLabel,
 }: {
   anchorEl?: HTMLElement | null;
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
   slotProps?: { paper?: { sx?: Sx } };
-  anchorOrigin?: unknown;
-  transformOrigin?: unknown;
+  anchorOrigin?: {
+    vertical: "top" | "center" | "bottom" | number;
+    horizontal: "left" | "center" | "right" | number;
+  };
+  transformOrigin?: {
+    vertical: "top" | "center" | "bottom" | number;
+    horizontal: "left" | "center" | "right" | number;
+  };
+  ariaLabel?: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
-  useLayoutEffect(() => {
-    if (!open || !anchorEl) return;
+  const anchorVertical = anchorOrigin?.vertical ?? "bottom";
+  const anchorHorizontal = anchorOrigin?.horizontal ?? "right";
+  const transformVertical = transformOrigin?.vertical ?? "top";
+  const transformHorizontal = transformOrigin?.horizontal ?? "right";
+
+  const updatePosition = useCallback(() => {
+    if (!anchorEl || !panelRef.current) return;
+
+    const viewportPadding = 8;
+    const anchorGap = 6;
     const bounds = anchorEl.getBoundingClientRect();
-    const width = panelRef.current?.offsetWidth ?? 220;
-    const top = Math.min(window.innerHeight - 12, bounds.bottom + 6);
-    const left = Math.max(
-      8,
-      Math.min(window.innerWidth - width - 8, bounds.right - width)
+    const panelBounds = panelRef.current.getBoundingClientRect();
+    const width = panelRef.current.offsetWidth || panelBounds.width || 220;
+    const height = panelRef.current.offsetHeight || panelBounds.height;
+
+    const anchorY =
+      typeof anchorVertical === "number"
+        ? bounds.top + anchorVertical
+        : anchorVertical === "top"
+          ? bounds.top
+          : anchorVertical === "center"
+            ? bounds.top + bounds.height / 2
+            : bounds.bottom;
+    const anchorX =
+      typeof anchorHorizontal === "number"
+        ? bounds.left + anchorHorizontal
+        : anchorHorizontal === "left"
+          ? bounds.left
+          : anchorHorizontal === "center"
+            ? bounds.left + bounds.width / 2
+            : bounds.right;
+    const transformY =
+      typeof transformVertical === "number"
+        ? transformVertical
+        : transformVertical === "top"
+          ? 0
+          : transformVertical === "center"
+            ? height / 2
+            : height;
+    const transformX =
+      typeof transformHorizontal === "number"
+        ? transformHorizontal
+        : transformHorizontal === "left"
+          ? 0
+          : transformHorizontal === "center"
+            ? width / 2
+            : width;
+    const verticalGap =
+      anchorVertical === "top" && transformVertical === "bottom"
+        ? -anchorGap
+        : anchorVertical === "bottom" && transformVertical === "top"
+          ? anchorGap
+          : 0;
+
+    let top = anchorY - transformY + verticalGap;
+    const aboveTop = bounds.top - height - anchorGap;
+    const belowTop = bounds.bottom + anchorGap;
+    const viewportBottom = window.innerHeight - viewportPadding;
+
+    if (top + height > viewportBottom && aboveTop >= viewportPadding) {
+      top = aboveTop;
+    } else if (
+      top < viewportPadding &&
+      belowTop + height <= viewportBottom
+    ) {
+      top = belowTop;
+    }
+
+    const maxTop = Math.max(
+      viewportPadding,
+      window.innerHeight - height - viewportPadding
     );
-    setPosition({ top, left });
+    const maxLeft = Math.max(
+      viewportPadding,
+      window.innerWidth - width - viewportPadding
+    );
+    top = Math.max(viewportPadding, Math.min(maxTop, top));
+    const left = Math.max(
+      viewportPadding,
+      Math.min(maxLeft, anchorX - transformX)
+    );
+
+    setPosition((current) =>
+      current.top === top && current.left === left
+        ? current
+        : { top, left }
+    );
+  }, [
+    anchorEl,
+    anchorHorizontal,
+    anchorVertical,
+    transformHorizontal,
+    transformVertical,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
+
+  useEffect(() => {
+    if (!open || !anchorEl || !panelRef.current) return;
+    const panel = panelRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      panel
+        .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+        ?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      const activeElement = document.activeElement;
+      if (
+        activeElement === document.body ||
+        (activeElement instanceof Node && panel.contains(activeElement))
+      ) {
+        anchorEl.focus();
+      }
+    };
   }, [anchorEl, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, {
+      capture: true,
+      passive: true,
+    });
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +256,54 @@ export function Menu({
     <div
       ref={panelRef}
       role="menu"
+      aria-label={
+        ariaLabel || anchorEl?.getAttribute("aria-label") || "Actions"
+      }
+      aria-orientation="vertical"
+      onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          onClose();
+          return;
+        }
+        if (
+          event.key !== "ArrowDown" &&
+          event.key !== "ArrowUp" &&
+          event.key !== "Home" &&
+          event.key !== "End"
+        ) {
+          return;
+        }
+        const items = Array.from(
+          panelRef.current?.querySelectorAll<HTMLElement>(
+            '[role="menuitem"]:not(:disabled)'
+          ) || []
+        ).filter((item) => {
+          const style = window.getComputedStyle(item);
+          return (
+            !item.hidden &&
+            style.display !== "none" &&
+            style.visibility !== "hidden"
+          );
+        });
+        if (!items.length) return;
+        event.preventDefault();
+        const currentIndex = items.indexOf(
+          document.activeElement as HTMLElement
+        );
+        const nextIndex =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? items.length - 1
+              : event.key === "ArrowUp"
+                ? currentIndex <= 0
+                  ? items.length - 1
+                  : currentIndex - 1
+                : currentIndex < 0 || currentIndex === items.length - 1
+                  ? 0
+                  : currentIndex + 1;
+        items[nextIndex]?.focus();
+      }}
       style={{
         position: "fixed",
         zIndex: 160,
