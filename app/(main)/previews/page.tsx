@@ -846,7 +846,7 @@ export default function PreviewsPage() {
                     ? "Generate a new report to begin the review and submission flow."
                     : activeTab === "submitted"
                       ? "Submitted previews and approvals will appear here."
-                      : "Use Save Draft in an Asset or Lot Listing form to prepare a draft preview without submitting it."}
+                      : "Save an Asset or Lot Listing draft, then choose Prepare preview here when you are ready to review it."}
                 </p>
                 {activeTab === "new" ? (
                   <a

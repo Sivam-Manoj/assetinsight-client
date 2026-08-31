@@ -381,6 +381,17 @@ describe("ProposalValuationDialog", () => {
     fireEvent.click(addEvaluator);
     expect(mocks.updateEvaluators).not.toHaveBeenCalled();
     expect(screen.getByText("Draft queued")).toBeInTheDocument();
+
+    // Let this component's scheduled retry settle before the next test resets
+    // the shared service mock. Otherwise the intentional unmount flush can be
+    // observed as the next test's first mutation.
+    const recovered = makePayload();
+    recovered.revision = 8;
+    recovered.assetScheduleSheet.rows[0].notes = "Retain this local draft";
+    mocks.patchChanges.mockResolvedValue(recovered);
+    await waitFor(() => expect(mocks.patchChanges).toHaveBeenCalledTimes(2), {
+      timeout: 5000,
+    });
   });
 
   it("does not let a delayed evaluator response regress a newer live revision", async () => {

@@ -40,6 +40,7 @@ import {
 } from "@/lib/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import DuplicateDraftDialog from "./DuplicateDraftDialog";
+import { saveManualDraftOnly } from "./manualDraftSave";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -392,6 +393,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [draftSaveProgress, setDraftSaveProgress] =
     useState<ReportDraftSaveProgress | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
@@ -740,31 +742,16 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const revision = Math.max(saveRevisionRef.current + 1, 1);
     saveRevisionRef.current = revision;
     publishDraftStatus("dirty", "Unsaved changes");
-    await requestDraftSave(revision);
-    if (committedRevisionRef.current < revision) return;
-
-    try {
-      const draft = await ReportDraftService.getByClientId(
-        draftScopeId,
-        "asset"
-      );
-      await ReportDraftService.processPreview(draft.id || draft._id);
-      publishDraftStatus(
-        "saved",
-        "Draft saved. Its preview is now being prepared."
-      );
-      toast.success("Draft saved. Preview processing has started.");
-    } catch (error) {
-      const duplicateWarning = getDuplicateLotWarning(error);
-      syncDuplicateDraftDialog(duplicateWarning);
-      const message =
-        duplicateWarning ||
-        (error instanceof Error
-          ? error.message
-          : "The draft was saved, but preview processing could not start.");
-      setDraftGuidance({ tone: duplicateWarning ? "warning" : "error", message });
-      if (!duplicateWarning) toast.error(message);
-    }
+    await saveManualDraftOnly(
+      async () => {
+        await requestDraftSave(revision);
+        return committedRevisionRef.current >= revision;
+      },
+      () => {
+        publishDraftStatus("saved", "Draft and photos saved to your account");
+        toast.success("Draft and photos saved.");
+      }
+    );
   };
 
   retryAccountSyncRef.current = () => {
@@ -1635,75 +1622,90 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   async function onSubmit(event?: React.FormEvent) {
     event?.preventDefault();
-    if (submitting || !validateForm()) return;
+    if (submitLockRef.current || submitting || !validateForm()) return;
+    submitLockRef.current = true;
 
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
-    autoSaveBlockedRef.current = true;
-    if (saveInFlightRef.current) await saveInFlightRef.current;
-
-    const filesToSend = mixedLots.flatMap((lot) => [
-      ...lot.files,
-      ...lot.extraFiles,
-    ]);
-    const videosToSend = mixedLots.flatMap((lot) => lot.videoFiles || []);
-    const focusBoxes: NonNullable<AssetCreateDetails["focus_boxes"]> =
-      buildMixedFocusBoxes(mixedLots);
-
-    const jobId = ensureJobId();
-    const payload = {
-      grouping_mode: "mixed",
-      client_name: clientName.trim(),
-      effective_date: effectiveDate,
-      appraisal_purpose: appraisalPurpose.trim(),
-      ...(ownerName.trim() && { owner_name: ownerName.trim() }),
-      appraiser: appraiser.trim(),
-      ...(appraisalCompany.trim() && { appraisal_company: appraisalCompany.trim() }),
-      ...(industry.trim() && { industry: industry.trim() }),
-      ...(inspectionDate && { inspection_date: inspectionDate }),
-      location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
-      ...(isValidBrowserCoordinates(latitude, longitude)
-        ? { latitude: Number(latitude), longitude: Number(longitude) }
-        : {}),
-      ...(contractNo.trim() && { contract_no: contractNo.trim() }),
-      language,
-      currency,
-      include_valuation_table: includeValuationTable,
-      valuation_methods: includeValuationTable ? selectedValuationMethods : [],
-      include_damage_analysis: includeDamageAnalysis,
-      bank_photos_enabled: bankPhotosEnabled,
-      watermark_images: watermarkImages,
-      progress_id: jobId,
-      client_submission_id: jobId,
-      force_new: forceNewSubmissionRef.current,
-      ...(auctioneer && {
-        auctioneer_work_item_id: auctioneer.workItemId,
-      }),
-      ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
-      ...(factorsAgeCondition.trim() && { factors_age_condition: factorsAgeCondition.trim() }),
-      ...(factorsQuality.trim() && { factors_quality: factorsQuality.trim() }),
-      ...(factorsAnalysis.trim() && { factors_analysis: factorsAnalysis.trim() }),
-      mixed_lots: mixedLots.map((lot) => ({
-        count: lot.files.length,
-        extra_count: lot.extraFiles.length,
-        cover_index: Math.max(0, Math.min(lot.files.length - 1, lot.coverIndex || 0)),
-        mode: lot.mode!,
-        ...(lot.source && {
-          source_key: lot.source.key,
-          source_lot_id: lot.source.lotId,
-          source_submission_id: lot.source.submissionId,
-        }),
-      })),
-      ...(focusBoxes.length ? { focus_boxes: focusBoxes } : {}),
-    } as AssetCreateDetails & {
-      client_submission_id: string;
-      force_new: boolean;
-      auctioneer_work_item_id?: string;
-    };
-
+    let keepDraftSavingBlocked = false;
     try {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+      autoSaveBlockedRef.current = true;
+      if (saveInFlightRef.current) await saveInFlightRef.current;
+
+      const filesToSend = mixedLots.flatMap((lot) => [
+        ...lot.files,
+        ...lot.extraFiles,
+      ]);
+      const videosToSend = mixedLots.flatMap((lot) => lot.videoFiles || []);
+      const focusBoxes: NonNullable<AssetCreateDetails["focus_boxes"]> =
+        buildMixedFocusBoxes(mixedLots);
+
+      const jobId = ensureJobId();
+      const payload = {
+        grouping_mode: "mixed",
+        client_name: clientName.trim(),
+        effective_date: effectiveDate,
+        appraisal_purpose: appraisalPurpose.trim(),
+        ...(ownerName.trim() && { owner_name: ownerName.trim() }),
+        appraiser: appraiser.trim(),
+        ...(appraisalCompany.trim() && {
+          appraisal_company: appraisalCompany.trim(),
+        }),
+        ...(industry.trim() && { industry: industry.trim() }),
+        ...(inspectionDate && { inspection_date: inspectionDate }),
+        location: location.trim() || CURRENT_BROWSER_LOCATION_LABEL,
+        ...(isValidBrowserCoordinates(latitude, longitude)
+          ? { latitude: Number(latitude), longitude: Number(longitude) }
+          : {}),
+        ...(contractNo.trim() && { contract_no: contractNo.trim() }),
+        language,
+        currency,
+        include_valuation_table: includeValuationTable,
+        valuation_methods: includeValuationTable
+          ? selectedValuationMethods
+          : [],
+        include_damage_analysis: includeDamageAnalysis,
+        bank_photos_enabled: bankPhotosEnabled,
+        watermark_images: watermarkImages,
+        progress_id: jobId,
+        client_submission_id: jobId,
+        force_new: forceNewSubmissionRef.current,
+        ...(auctioneer && {
+          auctioneer_work_item_id: auctioneer.workItemId,
+        }),
+        ...(preparedFor.trim() && { prepared_for: preparedFor.trim() }),
+        ...(factorsAgeCondition.trim() && {
+          factors_age_condition: factorsAgeCondition.trim(),
+        }),
+        ...(factorsQuality.trim() && {
+          factors_quality: factorsQuality.trim(),
+        }),
+        ...(factorsAnalysis.trim() && {
+          factors_analysis: factorsAnalysis.trim(),
+        }),
+        mixed_lots: mixedLots.map((lot) => ({
+          count: lot.files.length,
+          extra_count: lot.extraFiles.length,
+          cover_index: Math.max(
+            0,
+            Math.min(lot.files.length - 1, lot.coverIndex || 0)
+          ),
+          mode: lot.mode!,
+          ...(lot.source && {
+            source_key: lot.source.key,
+            source_lot_id: lot.source.lotId,
+            source_submission_id: lot.source.submissionId,
+          }),
+        })),
+        ...(focusBoxes.length ? { focus_boxes: focusBoxes } : {}),
+      } as AssetCreateDetails & {
+        client_submission_id: string;
+        force_new: boolean;
+        auctioneer_work_item_id?: string;
+      };
+
       setSubmitting(true);
       setError(null);
       setAcceptedMessage(null);
@@ -1745,22 +1747,21 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       resetForm();
       setAcceptedMessage(null);
       forceNewSubmissionRef.current = false;
-      setSubmitting(false);
       publishDraftStatus("saved", "Submission accepted");
       if (cleanupError) {
         toast.warning(
           "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
         );
       }
-      onSuccess?.(accepted);
+      keepDraftSavingBlocked = true;
       window.setTimeout(() => {
         lastFingerprintRef.current = null;
         createdEventDispatchedRef.current = false;
         autoSaveBlockedRef.current = false;
         setDraftHydrated(true);
       }, 0);
+      onSuccess?.(accepted);
     } catch (submitError: any) {
-      setSubmitting(false);
       autoSaveBlockedRef.current = false;
       if (
         submitError?.response?.status === 409 &&
@@ -1779,6 +1780,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       saveRevisionRef.current = revision;
       publishDraftStatus("dirty", "Submission failed · saving draft");
       await requestDraftSave(revision);
+    } finally {
+      setSubmitting(false);
+      submitLockRef.current = false;
+      if (!keepDraftSavingBlocked) autoSaveBlockedRef.current = false;
     }
   }
 

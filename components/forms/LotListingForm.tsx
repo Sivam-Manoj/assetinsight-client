@@ -43,6 +43,7 @@ import {
 } from "@/services/reportDrafts";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import DuplicateDraftDialog from "./DuplicateDraftDialog";
+import { saveManualDraftOnly } from "./manualDraftSave";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -1030,39 +1031,11 @@ export default function LotListingForm({
 
   const handleSaveDraft = useCallback(async () => {
     requestedRevisionRef.current += 1;
-    const committed = await flushDraft();
-    if (committed) {
-      try {
-        const draft = await ReportDraftService.getByClientId(
-          draftScopeId,
-          "lot-listing"
-        );
-        await ReportDraftService.processPreview(draft.id || draft._id);
-        reportDraftStatus(
-          "saved",
-          "Draft saved. Its preview is now being prepared."
-        );
-        toast.success("Draft saved. Preview processing has started.");
-      } catch (error) {
-        const issue = draftFailureGuidance(error);
-        syncDuplicateDraftDialog(
-          issue.title === "Duplicate Lot Detected" ? issue.message : null
-        );
-        setDraftIssue(
-          issue.title === "Duplicate Lot Detected"
-            ? issue
-            : {
-                tone: "warning",
-                title: "Draft saved, preview not started",
-                message: issue.message,
-              }
-        );
-        if (issue.title !== "Duplicate Lot Detected") {
-          toast.error("Draft saved, but preview processing could not start.");
-        }
-      }
-    }
-  }, [draftScopeId, flushDraft, reportDraftStatus, syncDuplicateDraftDialog]);
+    await saveManualDraftOnly(flushDraft, () => {
+      reportDraftStatus("saved", "Draft and photos saved to your account");
+      toast.success("Draft and photos saved.");
+    });
+  }, [flushDraft, reportDraftStatus]);
 
   const validateForm = useCallback(
     ({ requireMedia = true }: { requireMedia?: boolean } = {}) => {
