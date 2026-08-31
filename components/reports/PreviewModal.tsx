@@ -368,6 +368,9 @@ export default function PreviewModal({
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
   const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
+  const effectiveResubmitMode = status
+    ? status === "pending_approval" || status === "approved"
+    : isResubmitMode;
   const focusStateRef = useRef<{
     fieldId: string | null;
     selectionStart: number | null;
@@ -612,7 +615,7 @@ export default function PreviewModal({
       setSubmitting(true);
       let submittedReport: any;
       
-      if (isResubmitMode) {
+      if (effectiveResubmitMode) {
         // For resubmit mode: save changes and resubmit in one call
         const submitUpdatedReport = resubmitReportOverride || resubmitReport;
         const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
@@ -635,7 +638,7 @@ export default function PreviewModal({
       }
       
       if (onSuccess) onSuccess(
-        isResubmitMode
+        effectiveResubmitMode
           ? undefined
           : submittedReport
       );
@@ -2474,34 +2477,34 @@ export default function PreviewModal({
               </button>
               <button
                 onClick={handleSubmitForApproval}
-                disabled={(!isResubmitMode && hasChanges) || submitting || loading || workflowLocked}
+                disabled={(!effectiveResubmitMode && hasChanges) || submitting || loading || workflowLocked}
                 aria-label={
                   isAssignedApprovalMode
                     ? "Submit and approve after regeneration"
-                    : isResubmitMode
+                    : effectiveResubmitMode
                       ? "Resubmit report"
                       : "Submit report"
                 }
                 className="app-button app-button--primary"
               >
-                {isResubmitMode ? <RefreshCw className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {effectiveResubmitMode ? <RefreshCw className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 <span className="hidden sm:inline">
-                  {submitting 
-                    ? (isAssignedApprovalMode ? "Submitting..." : isResubmitMode ? "Resubmitting..." : "Submitting...") 
+                  {submitting
+                    ? (isAssignedApprovalMode ? "Submitting..." : effectiveResubmitMode ? "Resubmitting..." : "Submitting...")
                     : workflowLocked
                     ? (filesRegenerating ? "Regenerating Files..." : "Already Submitted")
                     : isAssignedApprovalMode
                       ? "Submit & Approve"
-                      : (isResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
+                      : (effectiveResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
                 </span>
                 <span className="sm:hidden">
-                  {submitting 
-                    ? (isAssignedApprovalMode ? "Submit..." : isResubmitMode ? "Resubmit..." : "Submit...") 
+                  {submitting
+                    ? (isAssignedApprovalMode ? "Submit..." : effectiveResubmitMode ? "Resubmit..." : "Submit...")
                     : workflowLocked
                     ? (filesRegenerating ? "Generating..." : "Submitted")
                     : isAssignedApprovalMode
                       ? "Approve"
-                      : (isResubmitMode ? "Resubmit" : "Submit")}
+                      : (effectiveResubmitMode ? "Resubmit" : "Submit")}
                 </span>
               </button>
             </div>

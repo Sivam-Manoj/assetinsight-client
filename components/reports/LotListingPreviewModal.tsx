@@ -260,6 +260,9 @@ export default function LotListingPreviewModal({
   const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
+  const effectiveResubmitMode = status
+    ? status === "pending_approval" || status === "approved"
+    : isResubmitMode;
 
   useEffect(() => {
     if (isOpen && reportId) {
@@ -438,7 +441,7 @@ export default function LotListingPreviewModal({
       setSubmitting(true);
       let submittedReport: LotListing | undefined;
 
-      if (isResubmitMode) {
+      if (effectiveResubmitMode) {
         const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
         setPreviewData(previewForRequest);
         const updated = resubmitReportOverride
@@ -1482,10 +1485,12 @@ export default function LotListingPreviewModal({
               >
                 {submitting || saving ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : effectiveResubmitMode ? (
+                  <RefreshCw className="h-4 w-4" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {isResubmitMode ? "Regenerate Approved Files" : "Generate Approved Files"}
+                {effectiveResubmitMode ? "Regenerate Approved Files" : "Generate Approved Files"}
               </button>
             </div>
           </div>
