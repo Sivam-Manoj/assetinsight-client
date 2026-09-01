@@ -53,6 +53,7 @@ const approvedAssetResponse = {
       client_name: "Approved Asset Client",
       currency: "USD",
       grouping_mode: "single_lot",
+      location: "10 Downing Street, London SW1A 2AA, United Kingdom",
       valuation_methods: ["FML"],
       lots: [
         {
@@ -78,6 +79,7 @@ const approvedLotListingResponse = {
     preview_data: {
       client_name: "Approved Lot Listing Client",
       currency: "USD",
+      location: "10 Downing Street, London SW1A 2AA, United Kingdom",
       valuation_methods: ["FML"],
       lots: [
         {

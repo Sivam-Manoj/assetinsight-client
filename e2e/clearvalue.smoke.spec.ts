@@ -39,11 +39,13 @@ async function mockAuthenticatedApi(
     releaseManager = true,
     incomingItems = [incomingItem],
     onIncomingRequest,
+    onLocationRequest,
   }: {
     approver?: boolean;
     releaseManager?: boolean;
     incomingItems?: Array<Record<string, unknown>>;
     onIncomingRequest?: (url: URL) => void;
+    onLocationRequest?: (body: Record<string, unknown>) => void;
   } = {}
 ) {
   await page.context().addCookies([
@@ -85,7 +87,23 @@ async function mockAuthenticatedApi(
       return;
     }
 
-    if (path.endsWith("/api/user/me")) {
+    if (path.endsWith("/api/location/reverse-geocode")) {
+      onLocationRequest?.(
+        (request.postDataJSON() || {}) as Record<string, unknown>
+      );
+      body = {
+        message: "Browser location resolved",
+        data: {
+          location:
+            "10 Downing Street, Westminster, London, England, SW1A 2AA, United Kingdom",
+          countryCode: "GB",
+          currency: "GBP",
+          source: "openstreetmap",
+          attribution: "© OpenStreetMap contributors",
+          attributionUrl: "https://www.openstreetmap.org/copyright",
+        },
+      };
+    } else if (path.endsWith("/api/user/me")) {
       body = {
         _id: "e2e-user",
         email: "alex.morgan@example.com",
@@ -704,6 +722,61 @@ test("Smart Upload keeps a large review bounded and completes without navigation
       { exact: true }
     )
   ).toBeVisible();
+});
+
+test("Asset and Lot Listing resolve synthetic browser coordinates to a readable place", async ({
+  context,
+  page,
+}, testInfo) => {
+  test.skip(!["desktop", "mobile"].includes(testInfo.project.name));
+  const requestedCoordinates: Array<Record<string, unknown>> = [];
+  await context.grantPermissions(["geolocation"], { origin: baseURL });
+  await context.setGeolocation({
+    latitude: 51.503407,
+    longitude: -0.127592,
+    accuracy: 8,
+  });
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page, {
+    onLocationRequest: (body) => requestedCoordinates.push(body),
+  });
+
+  for (const form of [
+    {
+      path: "/create/asset",
+      heading: "Asset Report",
+      label: /Inspection location/i,
+    },
+    {
+      path: "/create/lot-listing",
+      heading: "Lot Listing",
+      label: /Current inspection location/i,
+    },
+  ]) {
+    await page.goto(form.path);
+    await expect(
+      page.getByRole("heading", { level: 1, name: form.heading })
+    ).toBeVisible();
+    const location = page.getByLabel(form.label);
+    await expect(location).toHaveValue(
+      "10 Downing Street, Westminster, London, England, SW1A 2AA, United Kingdom"
+    );
+    await expect(
+      page.getByRole("link", { name: "© OpenStreetMap contributors" })
+    ).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
+    await expect(
+      page.getByRole("textbox", { name: /latitude|longitude/i })
+    ).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+  }
+
+  expect(requestedCoordinates.length).toBeGreaterThanOrEqual(2);
+  for (const requestBody of requestedCoordinates) {
+    expect(requestBody).toEqual({
+      latitude: 51.503407,
+      longitude: -0.127592,
+    });
+  }
 });
 
 test("Incoming keeps user assignment server-side and explains an empty queue", async ({

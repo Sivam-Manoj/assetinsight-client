@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReportDraftRecord } from "@/services/reportDrafts";
 import AssetForm from "./AssetForm";
 
 type DraftProgress = {
@@ -26,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   deleteScopedDraft: vi.fn(),
   deleteSmartUploadDraft: vi.fn(),
   geolocation: vi.fn(),
+  reverseGeocode: vi.fn(),
+  restoreLots: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   toastInfo: vi.fn(),
@@ -131,11 +134,15 @@ vi.mock("@/services/asset", () => ({
   AssetService: { create: mocks.createAsset },
 }));
 
+vi.mock("@/services/browserLocation", () => ({
+  BrowserLocationService: { reverseGeocode: mocks.reverseGeocode },
+}));
+
 vi.mock("@/services/reportDrafts", () => ({
   ReportDraftService: {
     upsertWithMedia: mocks.upsertWithMedia,
     deleteByClientId: mocks.deleteDraftByClientId,
-    restoreLots: vi.fn(),
+    restoreLots: mocks.restoreLots,
   },
   createReportDraftClientId: () => "asset-workflow-draft",
   getDuplicateLotWarning: () => null,
@@ -184,6 +191,11 @@ const position = {
   timestamp: 1,
 } as GeolocationPosition;
 
+const RESOLVED_ASSET_LOCATION =
+  "10 Downing Street, London SW1A 2AA, United Kingdom";
+const OPENSTREETMAP_COPYRIGHT_URL =
+  "https://www.openstreetmap.org/copyright";
+
 const uploadingProgress: DraftProgress = {
   phase: "uploading",
   percent: 35,
@@ -220,12 +232,52 @@ function fillRequiredReportFields() {
   });
 }
 
+async function waitForResolvedAssetLocation() {
+  const location = screen.getByLabelText(/Inspection location/i);
+  await waitFor(() =>
+    expect(location).toHaveValue(RESOLVED_ASSET_LOCATION)
+  );
+  return location;
+}
+
+function makeAssetResumeDraft(
+  location = "Lat 51.507351 / Long -0.127758"
+): ReportDraftRecord {
+  return {
+    _id: "asset-resume-id",
+    user: "user-asset-workflow",
+    clientDraftId: "asset-resume-draft",
+    type: "asset",
+    storageMode: "r2_media",
+    revision: 4,
+    contractNo: "ASSET-RESTORE-1",
+    formData: {
+      location,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      currency: "GBP",
+    },
+    lots: [],
+    media: [],
+    createdAt: "2026-08-31T10:00:00.000Z",
+    updatedAt: "2026-08-31T10:00:00.000Z",
+  };
+}
+
 describe("AssetForm manual save and submission workflow", () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
     mocks.deleteDraftByClientId.mockResolvedValue(undefined);
     mocks.deleteScopedDraft.mockResolvedValue(undefined);
     mocks.deleteSmartUploadDraft.mockResolvedValue(undefined);
+    mocks.reverseGeocode.mockResolvedValue({
+      location: RESOLVED_ASSET_LOCATION,
+      currency: "GBP",
+      attribution: "© OpenStreetMap contributors",
+      attributionUrl: "https://www.openstreetmap.org/copyright",
+      source: "nominatim",
+    });
+    mocks.restoreLots.mockResolvedValue([]);
     mocks.geolocation.mockImplementation(
       (success: PositionCallback, _error?: PositionErrorCallback, _options?: PositionOptions) => {
         success(position);
@@ -235,13 +287,6 @@ describe("AssetForm manual save and submission workflow", () => {
       configurable: true,
       value: { getCurrentPosition: mocks.geolocation },
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ currency: "GBP" }),
-      })
-    );
     window.localStorage.clear();
   });
 
@@ -432,6 +477,7 @@ describe("AssetForm manual save and submission workflow", () => {
       }
     );
     render(<AssetForm />);
+    await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
 
@@ -504,8 +550,9 @@ describe("AssetForm manual save and submission workflow", () => {
           );
           return retryUpload.promise;
         }
-      );
+    );
     render(<AssetForm />);
+    await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
 
@@ -554,6 +601,7 @@ describe("AssetForm manual save and submission workflow", () => {
     mocks.createAsset.mockResolvedValueOnce({ message: "Accepted" });
     mocks.deleteDraftByClientId.mockReturnValueOnce(cleanup.promise);
     render(<AssetForm />);
+    await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
 
@@ -600,6 +648,40 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(location).toHaveAccessibleDescription(
       "Manually entered inspection location"
     );
+    expect(mocks.reverseGeocode).not.toHaveBeenCalled();
+  });
+
+  it("aborts and ignores an in-flight reverse lookup after manual entry", async () => {
+    const lookup = deferred<{
+      location: string;
+      attribution: string;
+      attributionUrl: string;
+    }>();
+    mocks.reverseGeocode.mockReturnValueOnce(lookup.promise);
+    render(<AssetForm />);
+
+    await waitFor(() => expect(mocks.reverseGeocode).toHaveBeenCalledOnce());
+    const lookupSignal = mocks.reverseGeocode.mock.calls[0][1].signal as AbortSignal;
+    const location = screen.getByLabelText(/Inspection location/i);
+    fireEvent.change(location, { target: { value: "Manual warehouse bay" } });
+
+    expect(lookupSignal.aborted).toBe(true);
+    await act(async () => {
+      lookup.resolve({
+        location: "Stale automatic location",
+        attribution: "© OpenStreetMap contributors",
+        attributionUrl: OPENSTREETMAP_COPYRIGHT_URL,
+      });
+      await lookup.promise;
+    });
+
+    expect(location).toHaveValue("Manual warehouse bay");
+    expect(location).toHaveAccessibleDescription(
+      "Manually entered inspection location"
+    );
+    expect(
+      screen.queryByRole("link", { name: "© OpenStreetMap contributors" })
+    ).not.toBeInTheDocument();
   });
 
   it("preserves the prior location when re-detection is denied", async () => {
@@ -615,10 +697,7 @@ describe("AssetForm manual save and submission workflow", () => {
       }
     );
     render(<AssetForm />);
-    const location = await screen.findByLabelText(/Inspection location/i);
-    await waitFor(() =>
-      expect(location).toHaveValue("Lat 51.507351 / Long -0.127758")
-    );
+    const location = await waitForResolvedAssetLocation();
     fireEvent.change(location, { target: { value: "Existing inspection yard" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
@@ -642,20 +721,46 @@ describe("AssetForm manual save and submission workflow", () => {
       }
     );
     render(<AssetForm />);
-    const location = await screen.findByLabelText(/Inspection location/i);
-    await waitFor(() =>
-      expect(location).toHaveValue("Lat 51.507351 / Long -0.127758")
-    );
+    const location = await waitForResolvedAssetLocation();
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
-    expect(location).toHaveValue("Lat 51.507351 / Long -0.127758");
+    expect(location).toHaveValue(RESOLVED_ASSET_LOCATION);
 
     fillRequiredReportFields();
     addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
     await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
     expect(mocks.createAsset.mock.calls[0][0]).toMatchObject({
-      location: "Lat 51.507351 / Long -0.127758",
+      location: RESOLVED_ASSET_LOCATION,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    });
+  });
+
+  it("preserves the readable name, exact coordinates, and attribution when the provider fails", async () => {
+    render(<AssetForm />);
+    const location = await waitForResolvedAssetLocation();
+    mocks.reverseGeocode.mockRejectedValueOnce(
+      new Error("Reverse geocoding unavailable")
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
+    await waitFor(() =>
+      expect(location).toHaveAccessibleDescription(
+        "The location name could not be refreshed. Keeping the previous location. · © OpenStreetMap contributors"
+      )
+    );
+    expect(location).toHaveValue(RESOLVED_ASSET_LOCATION);
+    expect(
+      screen.getByRole("link", { name: "© OpenStreetMap contributors" })
+    ).toHaveAttribute("href", OPENSTREETMAP_COPYRIGHT_URL);
+
+    fillRequiredReportFields();
+    addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+    expect(mocks.createAsset.mock.calls[0][0]).toMatchObject({
+      location: RESOLVED_ASSET_LOCATION,
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
     });
@@ -677,6 +782,12 @@ describe("AssetForm manual save and submission workflow", () => {
     act(() => {
       resolveLocation?.(position);
     });
+    await waitFor(() =>
+      expect(onDraftStatusChange).toHaveBeenCalledWith(
+        "dirty",
+        "Location updated · save again"
+      )
+    );
     serverSave.resolve({ _id: "saved-before-location", media: [] });
 
     await waitFor(() =>
@@ -692,6 +803,106 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(
       onDraftStatusChange.mock.calls.some(([status]) => status === "saved")
     ).toBe(false);
+  });
+
+  it("keeps an immediately resolved legacy draft location marked dirty after hydration", async () => {
+    const restoredLots = deferred<[]>();
+    const onDraftStatusChange = vi.fn();
+    mocks.restoreLots.mockReturnValueOnce(restoredLots.promise);
+
+    render(
+      <AssetForm
+        resumeDraft={makeAssetResumeDraft()}
+        onDraftStatusChange={onDraftStatusChange}
+      />
+    );
+    await waitForResolvedAssetLocation();
+    restoredLots.resolve([]);
+
+    await waitFor(() => {
+      const calls = onDraftStatusChange.mock.calls;
+      expect(calls[calls.length - 1]).toEqual([
+        "dirty",
+        "Location updated · save again",
+      ]);
+    });
+    expect(mocks.geolocation).not.toHaveBeenCalled();
+  });
+
+  it("marks a delayed legacy location migration dirty and saves the readable tuple as a new revision", async () => {
+    const lookup = deferred<{
+      location: string;
+      currency: string;
+      attribution: string;
+      attributionUrl: string;
+    }>();
+    const onDraftStatusChange = vi.fn();
+    mocks.reverseGeocode.mockReturnValueOnce(lookup.promise);
+    mocks.upsertWithMedia.mockResolvedValueOnce({
+      _id: "saved-migrated-location",
+      media: [],
+    });
+
+    render(
+      <AssetForm
+        resumeDraft={makeAssetResumeDraft()}
+        onDraftStatusChange={onDraftStatusChange}
+      />
+    );
+    await waitFor(() =>
+      expect(onDraftStatusChange).toHaveBeenCalledWith(
+        "saved",
+        "Draft and photos restored"
+      )
+    );
+
+    await act(async () => {
+      lookup.resolve({
+        location: RESOLVED_ASSET_LOCATION,
+        currency: "GBP",
+        attribution: "© OpenStreetMap contributors",
+        attributionUrl: OPENSTREETMAP_COPYRIGHT_URL,
+      });
+      await lookup.promise;
+    });
+    await waitForResolvedAssetLocation();
+    await waitFor(() => {
+      const calls = onDraftStatusChange.mock.calls;
+      expect(calls).toContainEqual([
+        "dirty",
+        "Location updated · save again",
+      ]);
+      expect(calls[calls.length - 1]?.[0]).toBe("dirty");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
+    await waitFor(() => expect(mocks.upsertWithMedia).toHaveBeenCalledOnce());
+    const draftInput = mocks.upsertWithMedia.mock.calls[0][0];
+    expect(draftInput.revision).toBeGreaterThan(4);
+    expect(draftInput.formData).toMatchObject({
+      location: RESOLVED_ASSET_LOCATION,
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    });
+  });
+
+  it("keeps a legacy coordinate-only draft blank when its name cannot be resolved", async () => {
+    mocks.reverseGeocode.mockRejectedValueOnce(
+      new Error("Reverse geocoding unavailable")
+    );
+
+    render(<AssetForm resumeDraft={makeAssetResumeDraft()} />);
+    const location = screen.getByLabelText(/Inspection location/i);
+    await waitFor(() =>
+      expect(location).toHaveAccessibleDescription(
+        "The browser coordinates could not be named. Re-detect or enter the location manually."
+      )
+    );
+    expect(location).toHaveValue("");
+    expect(location).not.toHaveAccessibleDescription(
+      /Keeping the previous location/
+    );
+    expect(mocks.geolocation).not.toHaveBeenCalled();
   });
 
   it("aborts active draft saves and submissions when the form unmounts", async () => {
@@ -736,6 +947,7 @@ describe("AssetForm manual save and submission workflow", () => {
       }
     );
     const submissionView = render(<AssetForm />);
+    await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
@@ -744,7 +956,7 @@ describe("AssetForm manual save and submission workflow", () => {
     await waitFor(() => expect(submitSignal?.aborted).toBe(true));
   });
 
-  it("requests a fresh high-accuracy position and displays exact coordinates", async () => {
+  it("requests exact fresh coordinates but displays a readable attributed location", async () => {
     render(<AssetForm />);
 
     await waitFor(() => expect(mocks.geolocation).toHaveBeenCalled());
@@ -755,11 +967,22 @@ describe("AssetForm manual save and submission workflow", () => {
         maximumAge: 0,
       });
     }
-    expect(screen.getByLabelText(/Inspection location/i)).toHaveValue(
-      "Lat 51.507351 / Long -0.127758"
+    const location = await waitForResolvedAssetLocation();
+    expect(location).toHaveAccessibleDescription(
+      "Accurate to within approximately 7 m · © OpenStreetMap contributors"
     );
-    expect(
-      screen.getByText("Accurate to within approximately 7 m")
-    ).toBeVisible();
+    expect(mocks.reverseGeocode).toHaveBeenCalledWith(
+      {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      },
+      { signal: expect.any(AbortSignal) }
+    );
+    const attribution = screen.getByRole("link", {
+      name: "© OpenStreetMap contributors",
+    });
+    expect(attribution).toHaveAttribute("href", OPENSTREETMAP_COPYRIGHT_URL);
+    expect(attribution).toHaveAttribute("target", "_blank");
+    expect(attribution).toHaveAttribute("rel", "noopener noreferrer");
   });
 });

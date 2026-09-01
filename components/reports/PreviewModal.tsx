@@ -18,8 +18,9 @@ import { mergeSubmittedPreviewData } from "@/lib/previewSaveMerge";
 import BottomDrawer from "@/components/BottomDrawer";
 import AuctioneerSpecsEditor from "@/components/reports/AuctioneerSpecsEditor";
 import {
-  CURRENT_BROWSER_LOCATION_LABEL,
+  normalizePreviewLocationData,
 } from "@/lib/browserLocation";
+import { usePreviewLocation } from "@/components/reports/usePreviewLocation";
 import { ReportsService } from "@/services/reports";
 import {
   applyDamageAnalysisLotPolicy,
@@ -368,6 +369,20 @@ export default function PreviewModal({
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
   const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
+  const {
+    isLocationReady,
+    locationAttribution,
+    locationAttributionUrl,
+    locationBusy,
+    locationStatus,
+    requestCurrentLocation,
+    updateLocation,
+  } = usePreviewLocation({
+    isOpen,
+    previewData,
+    setPreviewData,
+    setHasChanges,
+  });
   const effectiveResubmitMode = status
     ? status === "pending_approval" || status === "approved"
     : isResubmitMode;
@@ -491,32 +506,11 @@ export default function PreviewModal({
       setFilesRegenerating(Boolean((response.data as any).files_regenerating));
       setDeclineReason((response.data as any).decline_reason || "");
       const nextPreviewData = response.data.preview_data || {};
-      const fallbackLocation =
-        nextPreviewData.location ||
-        (Array.isArray(nextPreviewData.lots)
-          ? nextPreviewData.lots.find((lot: any) => lot?.location)?.location
-          : "") ||
-        CURRENT_BROWSER_LOCATION_LABEL;
-      const fallbackCoordinates = Array.isArray(nextPreviewData.lots)
-        ? nextPreviewData.lots.find((lot: any) =>
-            Number.isFinite(Number(lot?.latitude)) &&
-            Number.isFinite(Number(lot?.longitude))
-          )
-        : undefined;
-      setPreviewData(applyDamageAnalysisLotPolicy({
-        ...nextPreviewData,
-        location: fallbackLocation,
-        latitude: Number.isFinite(Number(nextPreviewData.latitude))
-          ? Number(nextPreviewData.latitude)
-          : Number.isFinite(Number(fallbackCoordinates?.latitude))
-            ? Number(fallbackCoordinates.latitude)
-            : nextPreviewData.latitude,
-        longitude: Number.isFinite(Number(nextPreviewData.longitude))
-          ? Number(nextPreviewData.longitude)
-          : Number.isFinite(Number(fallbackCoordinates?.longitude))
-            ? Number(fallbackCoordinates.longitude)
-            : nextPreviewData.longitude,
-      }));
+      setPreviewData(
+        applyDamageAnalysisLotPolicy(
+          normalizePreviewLocationData(nextPreviewData)
+        )
+      );
       setPreviewFiles((response.data as any).preview_files || null);
       setGroupingMode(response.data.grouping_mode);
       setImageCount(response.data.image_count);
@@ -530,6 +524,12 @@ export default function PreviewModal({
   };
 
   const handleSaveChanges = async () => {
+    if (!isLocationReady) {
+      toast.error(
+        "Enter or resolve a readable inspection location before saving."
+      );
+      return;
+    }
     if (filesGenerating || filesRegenerating) {
       toast.info("This report has already been submitted and is still generating files.");
       return;
@@ -606,6 +606,13 @@ export default function PreviewModal({
       return;
     }
 
+    if (!isLocationReady) {
+      toast.error(
+        "Enter or resolve a readable inspection location before submitting."
+      );
+      return;
+    }
+
     if (filesGenerating || filesRegenerating) {
       toast.info("This report has already been submitted and is still generating files.");
       return;
@@ -653,35 +660,6 @@ export default function PreviewModal({
   const updateField = (field: string, value: any) => {
     setPreviewData((prev: any) => ({ ...prev, [field]: value }));
     setHasChanges(true);
-  };
-
-  const requestCurrentLocation = () => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      toast.info("Browser location access is unavailable.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords || ({} as any);
-        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-          toast.error("Could not detect latitude and longitude.");
-          return;
-        }
-        setPreviewData((prev: any) => ({
-          ...prev,
-          location: CURRENT_BROWSER_LOCATION_LABEL,
-          latitude,
-          longitude,
-        }));
-        setHasChanges(true);
-        toast.success("Current location updated.");
-      },
-      () => {
-        toast.error("Browser location access denied or unavailable.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
-    );
   };
 
   const updateAppraiserSignature = (dataUrl: string | null) => {
@@ -1381,6 +1359,62 @@ export default function PreviewModal({
                     className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="e.g., C-2024-001"
                   />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label
+                    htmlFor="asset-preview-inspection-location"
+                    className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5"
+                  >
+                    Inspection Location *
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      id="asset-preview-inspection-location"
+                      type="text"
+                      {...getFocusTrackingProps("location")}
+                      value={previewData?.location || ""}
+                      onChange={(event) => updateLocation(event.target.value)}
+                      aria-describedby="asset-preview-location-status"
+                      aria-invalid={!isLocationReady}
+                      className="min-w-0 flex-1 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="Street address, city, province/state, country"
+                    />
+                    <button
+                      type="button"
+                      onClick={requestCurrentLocation}
+                      disabled={locationBusy}
+                      className="app-button app-button--secondary shrink-0"
+                    >
+                      {locationBusy ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      {locationBusy ? "Resolving location…" : "Use current location"}
+                    </button>
+                  </div>
+                  <p
+                    id="asset-preview-location-status"
+                    className={`mt-1.5 text-xs ${
+                      isLocationReady
+                        ? "text-[var(--app-text-muted)]"
+                        : "text-[var(--app-warning)]"
+                    }`}
+                    aria-live="polite"
+                  >
+                    {locationStatus}
+                    {locationAttribution ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={locationAttributionUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline underline-offset-2"
+                        >
+                          {locationAttribution}
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">

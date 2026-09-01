@@ -27,10 +27,13 @@ import API from "@/lib/api";
 import {
   FRESH_HIGH_ACCURACY_POSITION_OPTIONS,
   formatBrowserAccuracyStatus,
-  formatBrowserCoordinates,
+  formatBrowserLocationAttribution,
   hasUsableReportLocation,
   isValidBrowserCoordinates,
+  OPENSTREETMAP_ATTRIBUTION_URL,
+  parseBrowserCoordinateLocation,
 } from "@/lib/browserLocation";
+import { BrowserLocationService } from "@/services/browserLocation";
 import { useAuthContext } from "@/context/AuthContext";
 import {
   uploadReportFilesDirectToR2,
@@ -317,6 +320,12 @@ export default function LotListingForm({
   const [locationStatus, setLocationStatus] = useState(
     auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
   );
+  const [locationAttribution, setLocationAttribution] = useState<string | null>(
+    null
+  );
+  const [locationAttributionUrl, setLocationAttributionUrl] = useState<
+    string | null
+  >(null);
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
@@ -374,6 +383,7 @@ export default function LotListingForm({
   const draftSaveAbortRef = useRef<AbortController | null>(null);
   const submitAbortRef = useRef<AbortController | null>(null);
   const locationRequestGenerationRef = useRef(0);
+  const locationLookupAbortRef = useRef<AbortController | null>(null);
   const [cancellingOperation, setCancellingOperation] = useState(false);
   const statusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
@@ -381,8 +391,10 @@ export default function LotListingForm({
 
   useEffect(
     () => () => {
+      locationRequestGenerationRef.current += 1;
       draftSaveAbortRef.current?.abort();
       submitAbortRef.current?.abort();
+      locationLookupAbortRef.current?.abort();
     },
     []
   );
@@ -434,37 +446,73 @@ export default function LotListingForm({
     lots: mixedLots,
   };
 
-  const requestCurrentLocation = useCallback(() => {
-    const requestGeneration = ++locationRequestGenerationRef.current;
+  const locationStateRef = useRef({ location, latitude, longitude });
+  locationStateRef.current = { location, latitude, longitude };
 
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setLocationStatus("Browser location access is unavailable");
-      return;
-    }
+  const resolveCoordinatesToLocation = useCallback(
+    async ({
+      coordinates,
+      requestGeneration,
+      accuracy,
+      restored = false,
+    }: {
+      coordinates: { latitude: number; longitude: number };
+      requestGeneration: number;
+      accuracy?: number | null;
+      restored?: boolean;
+    }) => {
+      if (
+        !isValidBrowserCoordinates(
+          coordinates.latitude,
+          coordinates.longitude
+        )
+      ) {
+        if (requestGeneration === locationRequestGenerationRef.current) {
+          setLocationStatus(
+            "Browser coordinates were unavailable. Re-detect or enter the location manually."
+          );
+        }
+        return;
+      }
+      if (requestGeneration !== locationRequestGenerationRef.current) return;
 
-    setLocationStatus("Detecting current location...");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const nextLatitude = position.coords?.latitude;
-        const nextLongitude = position.coords?.longitude;
-        if (!isValidBrowserCoordinates(nextLatitude, nextLongitude)) {
-          if (
-            requestGeneration === locationRequestGenerationRef.current
-          ) {
-            setLocationStatus("Latitude/Longitude not detected");
-          }
+      const hadReadableLocation =
+        !restored &&
+        hasUsableReportLocation(locationStateRef.current.location);
+      const controller = new AbortController();
+      locationLookupAbortRef.current?.abort();
+      locationLookupAbortRef.current = controller;
+      setLocationStatus(
+        restored
+          ? "Finding a readable name for the saved location…"
+          : "Finding the nearest readable location…"
+      );
+
+      try {
+        const resolved = await BrowserLocationService.reverseGeocode(
+          coordinates,
+          { signal: controller.signal }
+        );
+        if (
+          controller.signal.aborted ||
+          requestGeneration !== locationRequestGenerationRef.current
+        ) {
           return;
         }
-        if (requestGeneration !== locationRequestGenerationRef.current) return;
-        const normalizedLatitude = Number(nextLatitude);
-        const normalizedLongitude = Number(nextLongitude);
-        setLatitude(normalizedLatitude);
-        setLongitude(normalizedLongitude);
-        setLocation(
-          formatBrowserCoordinates(normalizedLatitude, normalizedLongitude)
+
+        setLatitude(coordinates.latitude);
+        setLongitude(coordinates.longitude);
+        setLocation(resolved.location);
+        setLocationAttribution(
+          formatBrowserLocationAttribution(resolved.attribution)
+        );
+        setLocationAttributionUrl(
+          resolved.attributionUrl || OPENSTREETMAP_ATTRIBUTION_URL
         );
         setLocationStatus(
-          formatBrowserAccuracyStatus(position.coords?.accuracy)
+          accuracy === undefined || accuracy === null
+            ? "Browser location restored from draft"
+            : formatBrowserAccuracyStatus(accuracy)
         );
         setErrors((current) => {
           if (!current.location) return current;
@@ -474,6 +522,48 @@ export default function LotListingForm({
         });
         requestedRevisionRef.current += 1;
         reportDraftStatus("dirty", "Unsaved changes");
+      } catch {
+        if (
+          controller.signal.aborted ||
+          requestGeneration !== locationRequestGenerationRef.current
+        ) {
+          return;
+        }
+        setLocationStatus(
+          hadReadableLocation
+            ? "The location name could not be refreshed. Keeping the previous location."
+            : "The browser coordinates could not be named. Re-detect or enter the location manually."
+        );
+      } finally {
+        if (locationLookupAbortRef.current === controller) {
+          locationLookupAbortRef.current = null;
+        }
+      }
+    },
+    [reportDraftStatus]
+  );
+
+  const requestCurrentLocation = useCallback(() => {
+    const requestGeneration = ++locationRequestGenerationRef.current;
+    locationLookupAbortRef.current?.abort();
+    locationLookupAbortRef.current = null;
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationStatus("Browser location access is unavailable");
+      return;
+    }
+
+    setLocationStatus("Detecting current location...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void resolveCoordinatesToLocation({
+          coordinates: {
+            latitude: Number(position.coords?.latitude),
+            longitude: Number(position.coords?.longitude),
+          },
+          requestGeneration,
+          accuracy: position.coords?.accuracy,
+        });
       },
       () => {
         if (requestGeneration === locationRequestGenerationRef.current) {
@@ -482,7 +572,7 @@ export default function LotListingForm({
       },
       FRESH_HIGH_ACCURACY_POSITION_OPTIONS
     );
-  }, [reportDraftStatus]);
+  }, [resolveCoordinatesToLocation]);
 
   useEffect(() => {
     if (auctioneer) return;
@@ -674,34 +764,66 @@ export default function LotListingForm({
 
   const applyRestoredDraft = useCallback(
     (data: DraftSnapshot, revision: number, missingMediaCount: number) => {
-      const hasStoredCoordinates = isValidBrowserCoordinates(
+      const explicitCoordinates = isValidBrowserCoordinates(
         data.latitude,
         data.longitude
-      );
+      )
+        ? {
+            latitude: Number(data.latitude),
+            longitude: Number(data.longitude),
+          }
+        : null;
+      const legacyCoordinates = parseBrowserCoordinateLocation(data.location);
+      const storedCoordinates = explicitCoordinates || legacyCoordinates;
       const hasStoredLocation = hasUsableReportLocation(data.location);
-      if (hasStoredCoordinates || hasStoredLocation) {
-        locationRequestGenerationRef.current += 1;
+      let locationResolutionGeneration: number | null = null;
+      if (storedCoordinates || hasStoredLocation) {
+        locationResolutionGeneration = ++locationRequestGenerationRef.current;
+        locationLookupAbortRef.current?.abort();
+        locationLookupAbortRef.current = null;
       }
       setContractNo(data.contractNo || "");
       setSalesDate(data.salesDate || isoDate(new Date()));
-      if (hasStoredCoordinates) {
-        setLatitude(Number(data.latitude));
-        setLongitude(Number(data.longitude));
-        setLocation(
-          formatBrowserCoordinates(data.latitude, data.longitude)
+      if (hasStoredLocation) {
+        setLatitude(storedCoordinates?.latitude ?? null);
+        setLongitude(storedCoordinates?.longitude ?? null);
+        setLocation(data.location.trim());
+        setLocationAttribution(
+          storedCoordinates ? formatBrowserLocationAttribution(undefined) : null
         );
-        setLocationStatus("Current location restored from draft");
+        setLocationAttributionUrl(
+          storedCoordinates ? OPENSTREETMAP_ATTRIBUTION_URL : null
+        );
+        setLocationStatus(
+          storedCoordinates
+            ? "Browser location restored from draft"
+            : "Inspection location restored from draft"
+        );
+      } else if (storedCoordinates && locationResolutionGeneration !== null) {
+        setLatitude(storedCoordinates.latitude);
+        setLongitude(storedCoordinates.longitude);
+        setLocation("");
+        setLocationAttribution(null);
+        setLocationAttributionUrl(null);
+        setLocationStatus("Finding a readable name for the saved location…");
+        void resolveCoordinatesToLocation({
+          coordinates: storedCoordinates,
+          requestGeneration: locationResolutionGeneration,
+          restored: true,
+        });
       } else {
         setLatitude(null);
         setLongitude(null);
-        setLocation(
-          hasUsableReportLocation(data.location) ? data.location : ""
-        );
+        setLocationAttribution(null);
+        setLocationAttributionUrl(null);
         if (auctioneer) {
+          setLocation(importedLocation);
           setLocationStatus("Imported from Auctioneer");
-        } else if (hasStoredLocation) {
-          setLocationStatus("Inspection location restored from draft");
         } else {
+          setLocation("");
+          setLocationStatus(
+            "No readable location was saved. Detect it again or enter it manually."
+          );
           requestCurrentLocation();
         }
       }
@@ -733,7 +855,13 @@ export default function LotListingForm({
         reportDraftStatus("saved", "Draft restored");
       }
     },
-    [auctioneer, reportDraftStatus, requestCurrentLocation]
+    [
+      auctioneer,
+      importedLocation,
+      reportDraftStatus,
+      requestCurrentLocation,
+      resolveCoordinatesToLocation,
+    ]
   );
 
   useEffect(() => {
@@ -1007,12 +1135,17 @@ export default function LotListingForm({
   }, [deleteDraftStorage]);
 
   const resetFormState = useCallback(() => {
+    locationRequestGenerationRef.current += 1;
+    locationLookupAbortRef.current?.abort();
+    locationLookupAbortRef.current = null;
     setMixedLots(buildAuctioneerSeedLots(auctioneer));
     setContractNo(auctioneer?.contract.contractNo || "");
     setSalesDate(importedSalesDate);
     setLocation(importedLocation);
     setLatitude(null);
     setLongitude(null);
+    setLocationAttribution(null);
+    setLocationAttributionUrl(null);
     setLocationStatus(
       auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
     );
@@ -1544,6 +1677,21 @@ export default function LotListingForm({
     Boolean(contractNo.trim()) &&
     /^[A-Z]{3}$/.test(currency.trim()) &&
     hasUsableReportLocation(location);
+  const locationHint = locationAttribution ? (
+    <>
+      {locationStatus} ·{" "}
+      <a
+        href={locationAttributionUrl || OPENSTREETMAP_ATTRIBUTION_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-[var(--app-accent)] underline underline-offset-2"
+      >
+        {locationAttribution}
+      </a>
+    </>
+  ) : (
+    locationStatus
+  );
   const mediaComplete =
     mixedLots.length > 0 &&
     mixedLots.every((lot) => lot.files.length > 0 && Boolean(lot.mode));
@@ -1801,17 +1949,14 @@ export default function LotListingForm({
                 id="lot-location"
                 label="Current inspection location"
                 required
-                hint={locationStatus}
+                hint={locationHint}
                 error={errors.location}
                 className="sm:col-span-2"
                 labelAction={
                   <button
                     type="button"
                     className="font-semibold text-[var(--app-accent)] hover:underline"
-                    onClick={() => {
-                      requestCurrentLocation();
-                      markDirty();
-                    }}
+                    onClick={requestCurrentLocation}
                   >
                     Re-detect
                   </button>
@@ -1822,9 +1967,13 @@ export default function LotListingForm({
                   value={location}
                   onChange={(event) => {
                     locationRequestGenerationRef.current += 1;
+                    locationLookupAbortRef.current?.abort();
+                    locationLookupAbortRef.current = null;
                     setLocation(event.target.value);
                     setLatitude(null);
                     setLongitude(null);
+                    setLocationAttribution(null);
+                    setLocationAttributionUrl(null);
                     setLocationStatus("Manually entered inspection location");
                     clearFieldError("location");
                     markDirty();

@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReportDraftRecord } from "@/services/reportDrafts";
 import LotListingForm from "./LotListingForm";
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   loadScopedDraft: vi.fn(),
   push: vi.fn(),
   requestDurableDraftStorage: vi.fn(),
+  reverseGeocode: vi.fn(),
   restoreLots: vi.fn(),
   upsertWithMedia: vi.fn(),
   uploadReportFilesDirectToR2: vi.fn(),
@@ -108,6 +110,10 @@ vi.mock("@/services/directUpload", () => ({
   uploadReportFilesDirectToR2: mocks.uploadReportFilesDirectToR2,
 }));
 
+vi.mock("@/services/browserLocation", () => ({
+  BrowserLocationService: { reverseGeocode: mocks.reverseGeocode },
+}));
+
 vi.mock("@/services/reportDrafts", () => ({
   ReportDraftService: {
     deleteByClientId: mocks.deleteByClientId,
@@ -158,6 +164,10 @@ const detectedPosition = {
   toJSON: () => ({}),
 } as GeolocationPosition;
 
+const RESOLVED_LOT_LOCATION = "123 Test Yard Road, Regina, SK, Canada";
+const OPENSTREETMAP_COPYRIGHT_URL =
+  "https://www.openstreetmap.org/copyright";
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -176,6 +186,36 @@ function addValidListing() {
   fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
 }
 
+async function waitForResolvedLotLocation() {
+  const location = screen.getByRole("textbox", {
+    name: /current inspection location/i,
+  });
+  await waitFor(() => expect(location).toHaveValue(RESOLVED_LOT_LOCATION));
+  return location;
+}
+
+function makeLotResumeDraft(): ReportDraftRecord {
+  return {
+    _id: "lot-resume-id",
+    user: "user-1",
+    clientDraftId: "lot-resume-draft",
+    type: "lotListing",
+    storageMode: "r2_media",
+    revision: 3,
+    contractNo: "LOT-RESTORE-1",
+    formData: {
+      location: "Lat 50.123457 / Long -104.765432",
+      latitude: detectedPosition.coords.latitude,
+      longitude: detectedPosition.coords.longitude,
+      currency: "CAD",
+    },
+    lots: [],
+    media: [],
+    createdAt: "2026-08-31T10:00:00.000Z",
+    updatedAt: "2026-08-31T10:00:00.000Z",
+  };
+}
+
 describe("LotListingForm explicit save and upload workflow", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -190,6 +230,13 @@ describe("LotListingForm explicit save and upload workflow", () => {
     mocks.loadScopedDraft.mockReset().mockResolvedValue(null);
     mocks.push.mockReset();
     mocks.requestDurableDraftStorage.mockReset().mockResolvedValue(undefined);
+    mocks.reverseGeocode.mockReset().mockResolvedValue({
+      location: RESOLVED_LOT_LOCATION,
+      currency: "CAD",
+      attribution: "© OpenStreetMap contributors",
+      attributionUrl: "https://www.openstreetmap.org/copyright",
+      source: "nominatim",
+    });
     mocks.restoreLots.mockReset().mockResolvedValue([]);
     mocks.upsertWithMedia.mockReset();
     mocks.uploadReportFilesDirectToR2.mockReset();
@@ -248,6 +295,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     );
 
     const { container } = render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
     const contractInput = screen.getByRole("textbox", {
       name: /contract number/i,
@@ -327,6 +375,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     );
 
     const { container } = render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
     const contractInput = screen.getByRole("textbox", {
       name: /contract number/i,
@@ -358,7 +407,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       endpoint: "/lot-listing",
       details: {
         contract_no: "LOT-TEST-1",
-        location: "Lat 50.123457 / Long -104.765432",
+        location: RESOLVED_LOT_LOCATION,
         latitude: 50.1234567,
         longitude: -104.7654321,
       },
@@ -401,6 +450,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         return retryUpload.promise;
       });
     render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
 
     fireEvent.click(
@@ -456,6 +506,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     });
     mocks.deleteByClientId.mockReturnValueOnce(cleanup.promise);
     render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
 
     fireEvent.click(
@@ -513,6 +564,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     );
 
     render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
     fireEvent.click(
       screen.getByRole("button", { name: "Create Lot Listing" })
@@ -564,6 +616,43 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(location).toHaveAccessibleDescription(
       "Manually entered inspection location"
     );
+    expect(mocks.reverseGeocode).not.toHaveBeenCalled();
+  });
+
+  it("aborts and ignores an in-flight reverse lookup after manual entry", async () => {
+    const lookup = deferred<{
+      location: string;
+      attribution: string;
+      attributionUrl: string;
+    }>();
+    mocks.reverseGeocode.mockReturnValueOnce(lookup.promise);
+    render(<LotListingForm />);
+
+    await waitFor(() => expect(mocks.reverseGeocode).toHaveBeenCalledOnce());
+    const lookupSignal = mocks.reverseGeocode.mock.calls[0][1]
+      .signal as AbortSignal;
+    const location = screen.getByRole("textbox", {
+      name: /current inspection location/i,
+    });
+    fireEvent.change(location, { target: { value: "Manual auction yard" } });
+
+    expect(lookupSignal.aborted).toBe(true);
+    await act(async () => {
+      lookup.resolve({
+        location: "Stale automatic location",
+        attribution: "© OpenStreetMap contributors",
+        attributionUrl: OPENSTREETMAP_COPYRIGHT_URL,
+      });
+      await lookup.promise;
+    });
+
+    expect(location).toHaveValue("Manual auction yard");
+    expect(location).toHaveAccessibleDescription(
+      "Manually entered inspection location"
+    );
+    expect(
+      screen.queryByRole("link", { name: "© OpenStreetMap contributors" })
+    ).not.toBeInTheDocument();
   });
 
   it("preserves the prior location when re-detection is denied", async () => {
@@ -579,12 +668,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
     );
     render(<LotListingForm />);
-    const location = await screen.findByRole("textbox", {
-      name: /current inspection location/i,
-    });
-    await waitFor(() =>
-      expect(location).toHaveValue("Lat 50.123457 / Long -104.765432")
-    );
+    const location = await waitForResolvedLotLocation();
     fireEvent.change(location, { target: { value: "Existing auction yard" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
@@ -608,15 +692,10 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
     );
     render(<LotListingForm />);
-    const location = await screen.findByRole("textbox", {
-      name: /current inspection location/i,
-    });
-    await waitFor(() =>
-      expect(location).toHaveValue("Lat 50.123457 / Long -104.765432")
-    );
+    const location = await waitForResolvedLotLocation();
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
-    expect(location).toHaveValue("Lat 50.123457 / Long -104.765432");
+    expect(location).toHaveValue(RESOLVED_LOT_LOCATION);
 
     addValidListing();
     fireEvent.click(
@@ -628,7 +707,41 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(
       mocks.uploadReportFilesDirectToR2.mock.calls[0][0].details
     ).toMatchObject({
-      location: "Lat 50.123457 / Long -104.765432",
+      location: RESOLVED_LOT_LOCATION,
+      latitude: detectedPosition.coords.latitude,
+      longitude: detectedPosition.coords.longitude,
+    });
+  });
+
+  it("preserves the readable name, exact coordinates, and attribution when the provider fails", async () => {
+    render(<LotListingForm />);
+    const location = await waitForResolvedLotLocation();
+    mocks.reverseGeocode.mockRejectedValueOnce(
+      new Error("Reverse geocoding unavailable")
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
+    await waitFor(() =>
+      expect(location).toHaveAccessibleDescription(
+        "The location name could not be refreshed. Keeping the previous location. · © OpenStreetMap contributors"
+      )
+    );
+    expect(location).toHaveValue(RESOLVED_LOT_LOCATION);
+    expect(
+      screen.getByRole("link", { name: "© OpenStreetMap contributors" })
+    ).toHaveAttribute("href", OPENSTREETMAP_COPYRIGHT_URL);
+
+    addValidListing();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Lot Listing" })
+    );
+    await waitFor(() =>
+      expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce()
+    );
+    expect(
+      mocks.uploadReportFilesDirectToR2.mock.calls[0][0].details
+    ).toMatchObject({
+      location: RESOLVED_LOT_LOCATION,
       latitude: detectedPosition.coords.latitude,
       longitude: detectedPosition.coords.longitude,
     });
@@ -654,6 +767,12 @@ describe("LotListingForm explicit save and upload workflow", () => {
     act(() => {
       resolveLocation?.(detectedPosition);
     });
+    await waitFor(() =>
+      expect(onDraftStatusChange).toHaveBeenCalledWith(
+        "dirty",
+        "Unsaved changes"
+      )
+    );
     serverSave.resolve({ _id: "saved-before-location", media: [] });
 
     await waitFor(() =>
@@ -665,6 +784,27 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(
       onDraftStatusChange.mock.calls.some(([status]) => status === "saved")
     ).toBe(false);
+  });
+
+  it("keeps a legacy coordinate-only draft blank when its name cannot be resolved", async () => {
+    mocks.getCurrentPosition.mockImplementation(() => undefined);
+    mocks.reverseGeocode.mockRejectedValueOnce(
+      new Error("Reverse geocoding unavailable")
+    );
+
+    render(<LotListingForm resumeDraft={makeLotResumeDraft()} />);
+    const location = screen.getByRole("textbox", {
+      name: /current inspection location/i,
+    });
+    await waitFor(() =>
+      expect(location).toHaveAccessibleDescription(
+        "The browser coordinates could not be named. Re-detect or enter the location manually."
+      )
+    );
+    expect(location).toHaveValue("");
+    expect(location).not.toHaveAccessibleDescription(
+      /Keeping the previous location/
+    );
   });
 
   it("aborts active draft saves and submissions when the form unmounts", async () => {
@@ -699,6 +839,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
     );
     const submissionView = render(<LotListingForm />);
+    await waitForResolvedLotLocation();
     addValidListing();
     fireEvent.click(
       screen.getByRole("button", { name: "Create Lot Listing" })
@@ -708,16 +849,26 @@ describe("LotListingForm explicit save and upload workflow", () => {
     await waitFor(() => expect(submitSignal?.aborted).toBe(true));
   });
 
-  it("displays exact fresh browser coordinates and their accuracy", async () => {
+  it("uses exact fresh coordinates but displays a readable attributed location", async () => {
     render(<LotListingForm />);
 
-    const location = await screen.findByRole("textbox", {
-      name: /current inspection location/i,
-    });
-    expect(location).toHaveValue("Lat 50.123457 / Long -104.765432");
+    const location = await waitForResolvedLotLocation();
     expect(location).toHaveAccessibleDescription(
-      "Accurate to within approximately 7 m"
+      "Accurate to within approximately 7 m · © OpenStreetMap contributors"
     );
+    expect(mocks.reverseGeocode).toHaveBeenCalledWith(
+      {
+        latitude: detectedPosition.coords.latitude,
+        longitude: detectedPosition.coords.longitude,
+      },
+      { signal: expect.any(AbortSignal) }
+    );
+    const attribution = screen.getByRole("link", {
+      name: "© OpenStreetMap contributors",
+    });
+    expect(attribution).toHaveAttribute("href", OPENSTREETMAP_COPYRIGHT_URL);
+    expect(attribution).toHaveAttribute("target", "_blank");
+    expect(attribution).toHaveAttribute("rel", "noopener noreferrer");
     expect(mocks.getCurrentPosition).toHaveBeenCalledWith(
       expect.any(Function),
       expect.any(Function),

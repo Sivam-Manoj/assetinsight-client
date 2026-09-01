@@ -37,10 +37,13 @@ import { useAuthContext } from "@/context/AuthContext";
 import {
   FRESH_HIGH_ACCURACY_POSITION_OPTIONS,
   formatBrowserAccuracyStatus,
-  formatBrowserCoordinates,
+  formatBrowserLocationAttribution,
   hasUsableReportLocation,
   isValidBrowserCoordinates,
+  OPENSTREETMAP_ATTRIBUTION_URL,
+  parseBrowserCoordinateLocation,
 } from "@/lib/browserLocation";
+import { BrowserLocationService } from "@/services/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import DuplicateDraftDialog from "./DuplicateDraftDialog";
 import { saveManualDraftOnly } from "./manualDraftSave";
@@ -364,6 +367,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [locationStatus, setLocationStatus] = useState(
     auctioneer ? "Imported from Auctioneer" : "Detecting current location…"
   );
+  const [locationAttribution, setLocationAttribution] = useState<string | null>(
+    null
+  );
+  const [locationAttributionUrl, setLocationAttributionUrl] = useState<
+    string | null
+  >(null);
   const [contractNo, setContractNo] = useState(
     () => auctioneer?.contract.contractNo || ""
   );
@@ -438,6 +447,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const draftSaveAbortRef = useRef<AbortController | null>(null);
   const submitAbortRef = useRef<AbortController | null>(null);
   const locationRequestGenerationRef = useRef(0);
+  const locationLookupAbortRef = useRef<AbortController | null>(null);
+  const restoredLocationMigrationDirtyRef = useRef(false);
   const [cancellingOperation, setCancellingOperation] = useState(false);
   const draftStatusCallbackRef = useRef(onDraftStatusChange);
   const mountRestoreStartedRef = useRef(false);
@@ -445,8 +456,10 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   useEffect(
     () => () => {
+      locationRequestGenerationRef.current += 1;
       draftSaveAbortRef.current?.abort();
       submitAbortRef.current?.abort();
+      locationLookupAbortRef.current?.abort();
     },
     []
   );
@@ -541,6 +554,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     factorsQuality,
     factorsAnalysis,
   };
+
+  const locationStateRef = useRef({ location, latitude, longitude });
+  locationStateRef.current = { location, latitude, longitude };
+  const currencyTouchedRef = useRef(currencyTouched);
+  currencyTouchedRef.current = currencyTouched;
 
   const formStateRef = useRef<{ formData: AssetDraftFormData; lots: MixedLot[] }>({
     formData: currentFormData,
@@ -811,37 +829,78 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (typeof formData.appraisalCompany === "string") setAppraisalCompany(formData.appraisalCompany);
     if (typeof formData.industry === "string") setIndustry(formData.industry);
     if (typeof formData.inspectionDate === "string") setInspectionDate(formData.inspectionDate);
-    const hasStoredCoordinates = isValidBrowserCoordinates(
+    const explicitCoordinates = isValidBrowserCoordinates(
       formData.latitude,
       formData.longitude
-    );
+    )
+      ? {
+          latitude: Number(formData.latitude),
+          longitude: Number(formData.longitude),
+        }
+      : null;
+    const legacyCoordinates = parseBrowserCoordinateLocation(formData.location);
+    const storedCoordinates = explicitCoordinates || legacyCoordinates;
     const hasStoredLocation = hasUsableReportLocation(formData.location);
-    if (hasStoredCoordinates || hasStoredLocation) {
+    if (storedCoordinates || hasStoredLocation) {
+      const requestGeneration = ++locationRequestGenerationRef.current;
+      locationLookupAbortRef.current?.abort();
+      locationLookupAbortRef.current = null;
+
+      if (hasStoredLocation) {
+        setLocation(String(formData.location).trim());
+        setLatitude(storedCoordinates?.latitude ?? null);
+        setLongitude(storedCoordinates?.longitude ?? null);
+        setLocationAttribution(
+          storedCoordinates ? formatBrowserLocationAttribution(undefined) : null
+        );
+        setLocationAttributionUrl(
+          storedCoordinates ? OPENSTREETMAP_ATTRIBUTION_URL : null
+        );
+        setLocationStatus(
+          storedCoordinates
+            ? "Browser location restored from draft"
+            : "Inspection location restored from draft"
+        );
+      } else if (storedCoordinates) {
+        setLocation("");
+        setLatitude(storedCoordinates.latitude);
+        setLongitude(storedCoordinates.longitude);
+        setLocationAttribution(null);
+        setLocationAttributionUrl(null);
+        setLocationStatus("Finding a readable name for the saved location…");
+        void resolveCoordinatesToLocation({
+          coordinates: storedCoordinates,
+          requestGeneration,
+          restored: true,
+        });
+      }
+    } else if (
+      typeof formData.location === "string" &&
+      formData.location.trim()
+    ) {
       locationRequestGenerationRef.current += 1;
-    }
-    if (hasStoredCoordinates) {
-      setLatitude(Number(formData.latitude));
-      setLongitude(Number(formData.longitude));
-      setLocation(
-        formatBrowserCoordinates(formData.latitude, formData.longitude)
-      );
-      setLocationStatus("Current location restored from draft");
-    } else {
+      locationLookupAbortRef.current?.abort();
+      locationLookupAbortRef.current = null;
+      setLocation("");
       setLatitude(null);
       setLongitude(null);
-      if (typeof formData.location === "string") {
-        setLocation(
-          hasUsableReportLocation(formData.location)
-            ? formData.location
-            : ""
-        );
-      }
+      setLocationAttribution(null);
+      setLocationAttributionUrl(null);
+      setLocationStatus(
+        "The saved location needs a readable name. Re-detect it or enter it manually."
+      );
     }
     if (typeof formData.contractNo === "string") setContractNo(formData.contractNo);
     if (formData.language === "en" || formData.language === "fr" || formData.language === "es") {
       setLanguage(formData.language);
     }
-    if (typeof formData.currency === "string") setCurrency(formData.currency);
+    if (typeof formData.currency === "string") {
+      setCurrency(formData.currency);
+      if (formData.currency.trim()) {
+        setCurrencyTouched(true);
+        currencyTouchedRef.current = true;
+      }
+    }
     if (typeof formData.includeValuationTable === "boolean") {
       setIncludeValuationTable(formData.includeValuationTable);
     }
@@ -952,10 +1011,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const restoredLots = Array.isArray(envelope.lots) ? envelope.lots : [];
     applyDraftMediaLocations(restoredLots, envelope.mediaMetadata);
     envelope.mediaMetadata = listDraftMediaLocations(restoredLots);
-    restoreFormFields(envelope.formData || {});
-    setMixedLots(restoredLots);
     saveRevisionRef.current = envelope.revision || 0;
     committedRevisionRef.current = envelope.revision || 0;
+    restoredLocationMigrationDirtyRef.current = false;
+    restoreFormFields(envelope.formData || {});
+    setMixedLots(restoredLots);
     if (missingMediaCount) {
       setDraftGuidance({
         tone: "warning",
@@ -964,6 +1024,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         } could not be restored. All available fields and media were retained.`,
       });
       publishDraftStatus("partial", "Draft restored with missing media");
+    } else if (restoredLocationMigrationDirtyRef.current) {
+      publishDraftStatus("dirty", "Location updated · save again");
     } else {
       publishDraftStatus("saved", "Draft restored");
     }
@@ -1014,6 +1076,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         ? languageValue
         : "en";
 
+    saveRevisionRef.current = resumeDraft.revision || 0;
+    committedRevisionRef.current = resumeDraft.revision || 0;
+    restoredLocationMigrationDirtyRef.current = false;
     restoreFormFields({
       clientSubmissionId: resumeDraft.clientDraftId,
       clientName: textValue("clientName", "client_name"),
@@ -1069,13 +1134,17 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         : await ReportDraftService.restoreLots<MixedLot>(resumeDraft);
     setMixedLots(restoredLots);
     jobIdRef.current = resumeDraft.clientDraftId;
-    saveRevisionRef.current = resumeDraft.revision || 0;
-    committedRevisionRef.current = resumeDraft.revision || 0;
-
     if (resumeDraft.storageMode === "smart_upload") {
       setDraftGuidance(null);
       setSmartUploadOpen(true);
-      publishDraftStatus("saved", "Smart Upload restored");
+      publishDraftStatus(
+        restoredLocationMigrationDirtyRef.current ? "dirty" : "saved",
+        restoredLocationMigrationDirtyRef.current
+          ? "Location updated · save again"
+          : "Smart Upload restored"
+      );
+    } else if (restoredLocationMigrationDirtyRef.current) {
+      publishDraftStatus("dirty", "Location updated · save again");
     } else {
       setDraftGuidance(null);
       publishDraftStatus("saved", "Draft and photos restored");
@@ -1147,126 +1216,174 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       DE: "EUR", ES: "EUR", IT: "EUR", NL: "EUR", IE: "EUR",
       PT: "EUR", BE: "EUR",
     };
-    if (!currencyTouched) setCurrency((current) => current || currencies[region] || "CAD");
+    if (!currencyTouchedRef.current) {
+      setCurrency((current) => current || currencies[region] || "CAD");
+    }
   };
 
-  const applyCurrentPosition = (
-    position: GeolocationPosition,
-    requestGeneration?: number
-  ) => {
-    const nextLatitude = position.coords?.latitude;
-    const nextLongitude = position.coords?.longitude;
-    if (!isValidBrowserCoordinates(nextLatitude, nextLongitude)) {
-      if (
-        requestGeneration === undefined ||
-        requestGeneration === locationRequestGenerationRef.current
-      ) {
-        setLocationStatus("Latitude and longitude could not be detected");
+  async function resolveCoordinatesToLocation({
+    coordinates,
+    requestGeneration,
+    accuracy,
+    restored = false,
+    detectCurrency = false,
+  }: {
+    coordinates: { latitude: number; longitude: number };
+    requestGeneration: number;
+    accuracy?: number | null;
+    restored?: boolean;
+    detectCurrency?: boolean;
+  }) {
+    if (!isValidBrowserCoordinates(coordinates.latitude, coordinates.longitude)) {
+      if (requestGeneration === locationRequestGenerationRef.current) {
+        setLocationStatus(
+          "Browser coordinates were unavailable. Re-detect or enter the location manually."
+        );
+        if (detectCurrency) applyLocaleFallbackCurrency();
       }
-      return null;
-    }
-    const coordinates = {
-      latitude: Number(nextLatitude),
-      longitude: Number(nextLongitude),
-    };
-    if (
-      requestGeneration !== undefined &&
-      requestGeneration !== locationRequestGenerationRef.current
-    ) {
-      return coordinates;
-    }
-    setLatitude(coordinates.latitude);
-    setLongitude(coordinates.longitude);
-    setLocation(
-      formatBrowserCoordinates(coordinates.latitude, coordinates.longitude)
-    );
-    setLocationStatus(formatBrowserAccuracyStatus(position.coords?.accuracy));
-    clearFieldError("location");
-    if (draftSaveAbortRef.current) {
-      saveRevisionRef.current += 1;
-      publishDraftStatus("dirty", "Location updated · save again");
-    }
-    return coordinates;
-  };
-
-  const requestCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationStatus("Browser location access is unavailable");
       return;
     }
+    if (requestGeneration !== locationRequestGenerationRef.current) return;
+
+    const hadReadableLocation =
+      !restored &&
+      hasUsableReportLocation(locationStateRef.current.location);
+    const controller = new AbortController();
+    locationLookupAbortRef.current?.abort();
+    locationLookupAbortRef.current = controller;
+    setLocationStatus(
+      restored
+        ? "Finding a readable name for the saved location…"
+        : "Finding the nearest readable location…"
+    );
+
+    try {
+      const resolved = await BrowserLocationService.reverseGeocode(
+        coordinates,
+        { signal: controller.signal }
+      );
+      if (
+        controller.signal.aborted ||
+        requestGeneration !== locationRequestGenerationRef.current
+      ) {
+        return;
+      }
+
+      setLocation(resolved.location);
+      setLatitude(coordinates.latitude);
+      setLongitude(coordinates.longitude);
+      setLocationAttribution(
+        formatBrowserLocationAttribution(resolved.attribution)
+      );
+      setLocationAttributionUrl(
+        resolved.attributionUrl || OPENSTREETMAP_ATTRIBUTION_URL
+      );
+      setLocationStatus(
+        accuracy === undefined || accuracy === null
+          ? "Browser location restored from draft"
+          : formatBrowserAccuracyStatus(accuracy)
+      );
+      clearFieldError("location");
+      if (!currencyTouchedRef.current && resolved.currency) {
+        setCurrency(resolved.currency);
+      } else if (detectCurrency && !resolved.currency) {
+        applyLocaleFallbackCurrency();
+      }
+      if (restored) {
+        restoredLocationMigrationDirtyRef.current = true;
+        saveRevisionRef.current =
+          Math.max(
+            saveRevisionRef.current,
+            committedRevisionRef.current
+          ) + 1;
+        publishDraftStatus("dirty", "Location updated · save again");
+      } else if (draftSaveAbortRef.current) {
+        saveRevisionRef.current += 1;
+        publishDraftStatus("dirty", "Location updated · save again");
+      }
+    } catch {
+      if (
+        controller.signal.aborted ||
+        requestGeneration !== locationRequestGenerationRef.current
+      ) {
+        return;
+      }
+      setLocationStatus(
+        hadReadableLocation
+          ? "The location name could not be refreshed. Keeping the previous location."
+          : "The browser coordinates could not be named. Re-detect or enter the location manually."
+      );
+      if (detectCurrency) applyLocaleFallbackCurrency();
+    } finally {
+      if (locationLookupAbortRef.current === controller) {
+        locationLookupAbortRef.current = null;
+      }
+    }
+  }
+
+  const requestCurrentLocation = ({
+    detectCurrency = false,
+  }: { detectCurrency?: boolean } = {}) => {
     const requestGeneration = ++locationRequestGenerationRef.current;
+    locationLookupAbortRef.current?.abort();
+    locationLookupAbortRef.current = null;
+    if (detectCurrency) setCurrencyLoading(true);
+    if (!navigator.geolocation) {
+      setLocationStatus("Browser location access is unavailable");
+      if (detectCurrency) {
+        applyLocaleFallbackCurrency();
+        setCurrencyLoading(false);
+      }
+      return;
+    }
     setLocationStatus("Detecting current location…");
     navigator.geolocation.getCurrentPosition(
-      (position) => applyCurrentPosition(position, requestGeneration),
+      (position) => {
+        void resolveCoordinatesToLocation({
+          coordinates: {
+            latitude: Number(position.coords?.latitude),
+            longitude: Number(position.coords?.longitude),
+          },
+          requestGeneration,
+          accuracy: position.coords?.accuracy,
+          detectCurrency,
+        }).finally(() => {
+          if (detectCurrency) setCurrencyLoading(false);
+        });
+      },
       () => {
         if (requestGeneration === locationRequestGenerationRef.current) {
           setLocationStatus(
             "Browser location access was denied or is unavailable"
           );
+          if (detectCurrency) applyLocaleFallbackCurrency();
         }
+        if (detectCurrency) setCurrencyLoading(false);
       },
       FRESH_HIGH_ACCURACY_POSITION_OPTIONS
     );
   };
 
   useEffect(() => {
-    if (auctioneer) {
+    if (auctioneer || resumeDraft) {
       setCurrencyLoading(false);
       return;
     }
     if (currencyPromptedRef.current || currencyTouched) return;
     currencyPromptedRef.current = true;
-    setCurrencyLoading(true);
-    if (!navigator.geolocation) {
-      applyLocaleFallbackCurrency();
-      setCurrencyLoading(false);
-      return;
-    }
-    const requestGeneration = ++locationRequestGenerationRef.current;
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const coordinates = applyCurrentPosition(
-            position,
-            requestGeneration
-          );
-          if (!coordinates) return applyLocaleFallbackCurrency();
-          const response = await fetch("/api/ai/currency", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              lat: coordinates.latitude,
-              lng: coordinates.longitude,
-            }),
-          });
-          if (!response.ok) return applyLocaleFallbackCurrency();
-          const data = await response.json();
-          const detected = String(data?.currency || "").toUpperCase();
-          if (!currencyTouched && /^[A-Z]{3}$/.test(detected)) {
-            setCurrency(detected);
-          } else {
-            applyLocaleFallbackCurrency();
-          }
-        } catch {
-          applyLocaleFallbackCurrency();
-        } finally {
-          setCurrencyLoading(false);
-        }
-      },
-      () => {
-        if (requestGeneration === locationRequestGenerationRef.current) {
-          setLocationStatus(
-            "Browser location access was denied or is unavailable"
-          );
-        }
-        applyLocaleFallbackCurrency();
-        setCurrencyLoading(false);
-      },
-      FRESH_HIGH_ACCURACY_POSITION_OPTIONS
-    );
-  }, [auctioneer, currencyTouched]);
+    requestCurrentLocation({ detectCurrency: true });
+    // React development Strict Mode intentionally replays effects. Reset this
+    // guard during cleanup so the replay can replace the now-invalidated
+    // geolocation request instead of leaving the form stuck on "Detecting".
+    return () => {
+      currencyPromptedRef.current = false;
+    };
+  }, [auctioneer, currencyTouched, resumeDraft]);
 
   const resetForm = () => {
+    locationRequestGenerationRef.current += 1;
+    locationLookupAbortRef.current?.abort();
+    locationLookupAbortRef.current = null;
     setClientName(auctioneer?.contract.customerName || "");
     setEffectiveDate(importedEventDate);
     setAppraisalPurpose(
@@ -1281,6 +1398,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     setLocation(importedLocation);
     setLatitude(null);
     setLongitude(null);
+    setLocationAttribution(null);
+    setLocationAttributionUrl(null);
     setLocationStatus(
       auctioneer ? "Imported from Auctioneer" : "Detecting current location…"
     );
@@ -1910,6 +2029,21 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   );
   const draftSaving = draftSaveActive;
   const transferActive = draftSaving || submitting;
+  const locationHint = locationAttribution ? (
+    <>
+      {locationStatus} ·{" "}
+      <a
+        href={locationAttributionUrl || OPENSTREETMAP_ATTRIBUTION_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-[var(--app-accent)] underline underline-offset-2"
+      >
+        {locationAttribution}
+      </a>
+    </>
+  ) : (
+    locationStatus
+  );
 
   const cancelActiveOperation = () => {
     const controller = draftSaveAbortRef.current || submitAbortRef.current;
@@ -2176,11 +2310,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   id="asset-location"
                   label="Inspection location"
                   required
-                  hint={locationStatus}
+                  hint={locationHint}
                   error={errors.location}
                   className="sm:col-span-2"
                   labelAction={
-                    <button type="button" className="font-semibold text-[var(--app-accent)] hover:underline" onClick={requestCurrentLocation}>
+                    <button
+                      type="button"
+                      className="font-semibold text-[var(--app-accent)] hover:underline"
+                      onClick={() => requestCurrentLocation()}
+                    >
                       Re-detect
                     </button>
                   }
@@ -2191,9 +2329,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     placeholder="Detecting browser location…"
                     onChange={(event) => {
                       locationRequestGenerationRef.current += 1;
+                      locationLookupAbortRef.current?.abort();
+                      locationLookupAbortRef.current = null;
                       setLocation(event.target.value);
                       setLatitude(null);
                       setLongitude(null);
+                      setLocationAttribution(null);
+                      setLocationAttributionUrl(null);
                       setLocationStatus("Manually entered inspection location");
                       clearFieldError("location");
                     }}

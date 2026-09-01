@@ -4,6 +4,7 @@ import PreviewModal from "./PreviewModal";
 
 const mocks = vi.hoisted(() => ({
   getAssetCategorySpecs: vi.fn(),
+  reverseGeocode: vi.fn(),
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   toastSuccess: vi.fn(),
@@ -25,6 +26,12 @@ vi.mock("@/components/ui/toast", () => ({
     error: mocks.toastError,
     info: mocks.toastInfo,
     success: mocks.toastSuccess,
+  },
+}));
+
+vi.mock("@/services/browserLocation", () => ({
+  BrowserLocationService: {
+    reverseGeocode: mocks.reverseGeocode,
   },
 }));
 
@@ -86,6 +93,12 @@ describe("PreviewModal valuation methods", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     mocks.getAssetCategorySpecs.mockReset();
     mocks.getAssetCategorySpecs.mockResolvedValue({ categories: [], specs: [] });
+    mocks.reverseGeocode.mockReset();
+    mocks.reverseGeocode.mockResolvedValue({
+      location: "10 Downing Street, London, United Kingdom",
+      attribution: "© OpenStreetMap contributors",
+      attributionUrl: "https://www.openstreetmap.org/copyright",
+    });
   });
 
   afterEach(() => {
@@ -135,6 +148,89 @@ describe("PreviewModal valuation methods", () => {
 
     await waitFor(() => {
       expect(within(valueGroups[0]).getByText("US$35,000")).toBeInTheDocument();
+    });
+  });
+
+  it("resolves a legacy coordinate-only preview before showing a location", async () => {
+    const response = makePreviewResponse();
+    Object.assign(response.data.preview_data, {
+      location: "Current Browser Location",
+      latitude: 51.503407,
+      longitude: -0.127592,
+    });
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-location"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+      />
+    );
+
+    const location = await screen.findByRole("textbox", {
+      name: "Inspection Location *",
+    });
+    await waitFor(() => {
+      expect(location).toHaveValue(
+        "10 Downing Street, London, United Kingdom"
+      );
+    });
+    expect(screen.queryByDisplayValue("Current Browser Location")).toBeNull();
+    expect(mocks.reverseGeocode).toHaveBeenCalledWith(
+      { latitude: 51.503407, longitude: -0.127592 },
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it("clears stale report and inherited lot coordinates after a manual location edit", async () => {
+    const response = makePreviewResponse();
+    Object.assign(response.data.preview_data, {
+      location: "Old Inspection Yard",
+      latitude: 50.1,
+      longitude: -104.2,
+    });
+    Object.assign(response.data.preview_data.lots[0], {
+      location: "Old Inspection Yard",
+      latitude: 50.1,
+      longitude: -104.2,
+    });
+    const updatePreview = vi.fn().mockResolvedValue({
+      message: "Saved",
+      data: response.data.preview_data,
+    });
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-manual-location"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+        refreshAssetSpecPdfOverride={vi.fn().mockResolvedValue({
+          message: "Refreshed",
+          data: { spec_pdf: "https://example.test/cr.pdf" },
+        })}
+      />
+    );
+
+    const location = await screen.findByRole("textbox", {
+      name: "Inspection Location *",
+    });
+    fireEvent.change(location, { target: { value: "New Inspection Yard" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalled());
+    const savedPreview = updatePreview.mock.calls[0][1];
+    expect(savedPreview).toMatchObject({
+      location: "New Inspection Yard",
+      latitude: null,
+      longitude: null,
+    });
+    expect(savedPreview.lots[0]).toMatchObject({
+      location: "New Inspection Yard",
+      latitude: null,
+      longitude: null,
     });
   });
 });
