@@ -41,6 +41,7 @@ import {
   formatLotValuationValue,
   type LotValuationLine,
 } from "@/components/reports/lotValuationMethods";
+import { ReportDraftService } from "@/services/reportDrafts";
 
 interface PreviewModalProps {
   reportId: string;
@@ -82,6 +83,7 @@ interface PreviewModalProps {
     };
   }>;
   isAssignedApprovalMode?: boolean;
+  draftPreviewId?: string;
 }
 
 type FocusableFormElement =
@@ -348,6 +350,7 @@ export default function PreviewModal({
   uploadPreviewLotImagesOverride,
   refreshAssetSpecPdfOverride,
   isAssignedApprovalMode = false,
+  draftPreviewId,
 }: PreviewModalProps) {
   // Single-page layout (tabs removed)
   const [loading, setLoading] = useState(true);
@@ -622,7 +625,23 @@ export default function PreviewModal({
       setSubmitting(true);
       let submittedReport: any;
       
-      if (effectiveResubmitMode) {
+      if (draftPreviewId) {
+        // A draft preview is an intentionally hidden derivative. Promote and
+        // submit it in one request so the exact edited snapshot owns every
+        // generated artifact and the report becomes visible in normal queues.
+        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+        setPreviewData(previewForRequest);
+        const promoted = await ReportDraftService.promotePreview(draftPreviewId, {
+          preview_data: previewForRequest,
+          submit: true,
+        });
+        submittedReport = {
+          ...promoted,
+          _id: promoted.reportId,
+        };
+        setHasChanges(false);
+        toast.success("Draft moved to reports. Files are being generated from your saved preview.");
+      } else if (effectiveResubmitMode) {
         // For resubmit mode: save changes and resubmit in one call
         const submitUpdatedReport = resubmitReportOverride || resubmitReport;
         const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
@@ -2511,10 +2530,17 @@ export default function PreviewModal({
               </button>
               <button
                 onClick={handleSubmitForApproval}
-                disabled={(!effectiveResubmitMode && hasChanges) || submitting || loading || workflowLocked}
+                disabled={
+                  (!effectiveResubmitMode && !draftPreviewId && hasChanges) ||
+                  submitting ||
+                  loading ||
+                  workflowLocked
+                }
                 aria-label={
                   isAssignedApprovalMode
                     ? "Submit and approve after regeneration"
+                    : draftPreviewId
+                      ? "Save draft preview and submit report"
                     : effectiveResubmitMode
                       ? "Resubmit report"
                       : "Submit report"
@@ -2529,7 +2555,9 @@ export default function PreviewModal({
                     ? (filesRegenerating ? "Regenerating Files..." : "Already Submitted")
                     : isAssignedApprovalMode
                       ? "Submit & Approve"
-                      : (effectiveResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
+                      : draftPreviewId
+                        ? "Save & Submit"
+                        : (effectiveResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
                 </span>
                 <span className="sm:hidden">
                   {submitting
@@ -2538,7 +2566,9 @@ export default function PreviewModal({
                     ? (filesRegenerating ? "Generating..." : "Submitted")
                     : isAssignedApprovalMode
                       ? "Approve"
-                      : (effectiveResubmitMode ? "Resubmit" : "Submit")}
+                      : draftPreviewId
+                        ? "Save & Submit"
+                        : (effectiveResubmitMode ? "Resubmit" : "Submit")}
                 </span>
               </button>
             </div>

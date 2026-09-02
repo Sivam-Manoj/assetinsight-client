@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
+  ArrowRight,
   Download,
   FileSearch,
   Merge,
@@ -251,11 +252,13 @@ export default function PreviewsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [resubmitting, setResubmitting] = useState<string | null>(null);
+  const [promotingDraft, setPromotingDraft] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [realEstateModalOpen, setRealEstateModalOpen] = useState(false);
   const [lotListingModalOpen, setLotListingModalOpen] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [selectedDraftPreviewId, setSelectedDraftPreviewId] = useState<string | null>(null);
   const [isResubmitMode, setIsResubmitMode] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CombinedReport | null>(null);
   const [mergeAnchorId, setMergeAnchorId] = useState<string | null>(null);
@@ -432,6 +435,7 @@ export default function PreviewsPage() {
   };
 
   const handleOpenPreview = (report: CombinedReport, resubmitMode = false) => {
+    setSelectedDraftPreviewId(null);
     setSelectedReportId(report._id);
     setIsResubmitMode(resubmitMode);
     if (report.reportType === "realEstate") {
@@ -478,11 +482,13 @@ export default function PreviewsPage() {
     setRealEstateModalOpen(false);
     setLotListingModalOpen(false);
     setSelectedReportId(null);
+    setSelectedDraftPreviewId(null);
     setIsResubmitMode(false);
   };
 
   const handleOpenDraftPreview = (draft: ReportDraftRecord) => {
     if (!draft.previewReportId || draft.previewStatus !== "ready") return;
+    setSelectedDraftPreviewId(String(draft.id || draft._id));
     setSelectedReportId(String(draft.previewReportId));
     setIsResubmitMode(false);
     if (draft.type === "lotListing") setLotListingModalOpen(true);
@@ -508,6 +514,34 @@ export default function PreviewsPage() {
           error?.message ||
           "Draft preview processing could not be started."
       );
+    }
+  };
+
+  const handlePromoteDraftPreview = async (draft: ReportDraftRecord) => {
+    const draftId = String(draft.id || draft._id || "");
+    if (!draftId || draft.type !== "asset") return;
+    try {
+      setPromotingDraft(draftId);
+      const promoted = await ReportDraftService.promotePreview(draftId);
+      const submitted = ["pending_approval", "approved"].includes(
+        String(promoted.status || "")
+      );
+      setActiveTab(submitted ? "submitted" : "new");
+      requestReportsRefetch();
+      toast.success(
+        submitted
+          ? "Draft moved to submitted previews."
+          : "Draft moved to main previews."
+      );
+      await loadReports({ silent: true });
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Draft preview could not be moved."
+      );
+    } finally {
+      setPromotingDraft(null);
     }
   };
 
@@ -784,13 +818,32 @@ export default function PreviewsPage() {
                       </div>
                       <div className={styles.actions}>
                         {isReady && !stale ? (
-                          <button
-                            type="button"
-                            className={`${styles.action} ${styles.actionPrimary}`}
-                            onClick={() => handleOpenDraftPreview(draft)}
-                          >
-                            <FileSearch className="size-4" /> Open preview
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className={`${styles.action} ${styles.actionPrimary}`}
+                              onClick={() => handleOpenDraftPreview(draft)}
+                            >
+                              <FileSearch className="size-4" /> Open preview
+                            </button>
+                            {draft.type === "asset" ? (
+                              <button
+                                type="button"
+                                className={`${styles.action} ${styles.actionSecondary}`}
+                                onClick={() => void handlePromoteDraftPreview(draft)}
+                                disabled={promotingDraft === String(draft.id || draft._id)}
+                              >
+                                {promotingDraft === String(draft.id || draft._id) ? (
+                                  <RefreshCw className="size-4 animate-spin" />
+                                ) : (
+                                  <ArrowRight className="size-4" />
+                                )}
+                                {promotingDraft === String(draft.id || draft._id)
+                                  ? "Moving..."
+                                  : "Move to previews"}
+                              </button>
+                            ) : null}
+                          </>
                         ) : null}
                         {(status === "error" || stale || status === "idle") ? (
                           <button
@@ -1264,6 +1317,7 @@ export default function PreviewsPage() {
           onClose={handleModalClose}
           onSuccess={handleSuccess}
           isResubmitMode={isResubmitMode}
+          draftPreviewId={selectedDraftPreviewId || undefined}
         />
       ) : null}
       {selectedReportId && realEstateModalOpen ? (

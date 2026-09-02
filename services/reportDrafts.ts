@@ -105,6 +105,20 @@ export type ReportDraftRecord = {
   updatedAt: string;
 };
 
+export type PromotedDraftPreview = {
+  reportId: string;
+  reportType: "asset" | "lotListing";
+  status: string;
+  preview_data?: Record<string, unknown>;
+  files_generating?: boolean;
+  files_regenerating?: boolean;
+};
+
+export type PromoteDraftPreviewInput = {
+  preview_data?: Record<string, unknown>;
+  submit?: boolean;
+};
+
 export type UpsertReportDraftInput = {
   clientDraftId: string;
   kind: ReportDraftKind;
@@ -484,6 +498,15 @@ export const ReportDraftService = {
     return unwrap(
       await API.post<{ data: ReportDraftRecord }>(
         `/report-drafts/${encodeURIComponent(id)}/process-preview`
+      )
+    );
+  },
+
+  async promotePreview(id: string, input: PromoteDraftPreviewInput = {}) {
+    return unwrap(
+      await API.post<{ data: PromotedDraftPreview }>(
+        `/report-drafts/${encodeURIComponent(id)}/promote-preview`,
+        input
       )
     );
   },

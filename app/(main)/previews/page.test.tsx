@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetReport } from "@/services/assets";
 import type { LotListing } from "@/services/lotListing";
@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   deleteLotListing: vi.fn(),
   resubmitReport: vi.fn(),
   resubmitLotListing: vi.fn(),
+  listDrafts: vi.fn(),
+  promoteDraftPreview: vi.fn(),
   routerPush: vi.fn(),
 }));
 
@@ -36,10 +38,12 @@ vi.mock("next/dynamic", () => ({
       isOpen,
       reportId,
       isResubmitMode,
+      draftPreviewId,
     }: {
       isOpen?: boolean;
       reportId?: string;
       isResubmitMode?: boolean;
+      draftPreviewId?: string;
     }) {
       if (!isOpen) return null;
       if (componentIndex === 1) {
@@ -48,6 +52,7 @@ vi.mock("next/dynamic", () => ({
             role="dialog"
             aria-label={`Asset preview editor: ${reportId}`}
             data-resubmit={isResubmitMode}
+            data-draft-preview-id={draftPreviewId}
           />
         );
       }
@@ -103,6 +108,16 @@ vi.mock("@/services/realEstate", () => ({
   },
 }));
 
+vi.mock("@/services/reportDrafts", () => ({
+  ReportDraftService: {
+    list: mocks.listDrafts,
+    promotePreview: mocks.promoteDraftPreview,
+    processPreview: vi.fn(),
+  },
+  draftKindForRecord: (draft: { type: string }) =>
+    draft.type === "lotListing" ? "lot-listing" : "asset",
+}));
+
 const assetPreview: AssetReport = {
   _id: "asset-preview-action",
   user: "user-1",
@@ -155,6 +170,12 @@ describe("Preview queue affordances", () => {
     });
     mocks.getSubmittedLotListings.mockReset().mockResolvedValue({ data: [] });
     mocks.getRealEstateReports.mockReset().mockResolvedValue({ data: [] });
+    mocks.listDrafts.mockReset().mockResolvedValue([]);
+    mocks.promoteDraftPreview.mockReset().mockResolvedValue({
+      reportId: "promoted-report",
+      reportType: "asset",
+      status: "preview",
+    });
   });
 
   afterEach(() => {
@@ -232,5 +253,76 @@ describe("Preview queue affordances", () => {
     expect(
       await screen.findByRole("tab", { name: /Draft Previews/i })
     ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("moves a current ready Asset draft preview into the main preview queue", async () => {
+    mocks.listDrafts.mockResolvedValue([
+      {
+        _id: "draft-1",
+        user: "user-1",
+        clientDraftId: "client-draft-1",
+        type: "asset",
+        storageMode: "r2_media",
+        revision: 4,
+        contractNo: "CV-DRAFT-1",
+        title: "Draft asset report",
+        formData: {},
+        lots: [{ lot_number: "1" }],
+        media: [],
+        previewStatus: "ready",
+        previewReportId: "hidden-report-1",
+        previewProcessedRevision: 4,
+        createdAt: "2026-08-03T08:00:00.000Z",
+        updatedAt: "2026-08-03T08:30:00.000Z",
+      },
+    ]);
+
+    render(<PreviewsPage />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Draft Previews/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Move to previews" })
+    );
+
+    await waitFor(() =>
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith("draft-1")
+    );
+    expect(screen.getByRole("tab", { name: /^New /i })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+  });
+
+  it("opens a ready Asset draft with its draft promotion identity", async () => {
+    mocks.listDrafts.mockResolvedValue([
+      {
+        _id: "draft-editor-1",
+        user: "user-1",
+        clientDraftId: "client-draft-editor-1",
+        type: "asset",
+        storageMode: "r2_media",
+        revision: 1,
+        contractNo: "CV-DRAFT-EDITOR",
+        formData: {},
+        lots: [{ lot_number: "1" }],
+        media: [],
+        previewStatus: "ready",
+        previewReportId: "hidden-editor-report",
+        previewProcessedRevision: 1,
+        createdAt: "2026-08-03T08:00:00.000Z",
+        updatedAt: "2026-08-03T08:30:00.000Z",
+      },
+    ]);
+
+    render(<PreviewsPage />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Draft Previews/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open preview" }));
+
+    expect(
+      screen.getByRole("dialog", {
+        name: "Asset preview editor: hidden-editor-report",
+      })
+    ).toHaveAttribute("data-draft-preview-id", "draft-editor-1");
   });
 });

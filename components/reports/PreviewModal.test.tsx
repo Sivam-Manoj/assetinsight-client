@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   toastSuccess: vi.fn(),
+  promoteDraftPreview: vi.fn(),
 }));
 
 vi.mock("@/services/assets", () => ({
@@ -35,6 +36,12 @@ vi.mock("@/services/browserLocation", () => ({
   },
 }));
 
+vi.mock("@/services/reportDrafts", () => ({
+  ReportDraftService: {
+    promotePreview: mocks.promoteDraftPreview,
+  },
+}));
+
 function makePreviewResponse() {
   return {
     data: {
@@ -44,6 +51,7 @@ function makePreviewResponse() {
       imageUrls: [],
       preview_data: {
         client_name: "Test Client",
+        location: "Test Yard, London",
         currency: "USD",
         grouping_mode: "single_lot",
         valuation_methods: ["FML", "TKV", "OLV", "FLV"],
@@ -98,6 +106,12 @@ describe("PreviewModal valuation methods", () => {
       location: "10 Downing Street, London, United Kingdom",
       attribution: "© OpenStreetMap contributors",
       attributionUrl: "https://www.openstreetmap.org/copyright",
+    });
+    mocks.promoteDraftPreview.mockReset().mockResolvedValue({
+      reportId: "promoted-report-1",
+      reportType: "asset",
+      status: "pending_approval",
+      files_generating: true,
     });
   });
 
@@ -232,5 +246,50 @@ describe("PreviewModal valuation methods", () => {
       latitude: null,
       longitude: null,
     });
+  });
+
+  it("promotes and submits a draft from the exact edited preview snapshot", async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="hidden-report-1"
+        draftPreviewId="draft-1"
+        onClose={onClose}
+        onSuccess={onSuccess}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(makePreviewResponse())}
+      />
+    );
+
+    const clientName = await screen.findByRole("textbox", {
+      name: "Client Name *",
+    });
+    fireEvent.change(clientName, { target: { value: "Edited Draft Client" } });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Save draft preview and submit report",
+      })
+    );
+
+    await waitFor(() =>
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith(
+        "draft-1",
+        expect.objectContaining({
+          submit: true,
+          preview_data: expect.objectContaining({
+            client_name: "Edited Draft Client",
+          }),
+        })
+      )
+    );
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: "promoted-report-1",
+        reportId: "promoted-report-1",
+      })
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

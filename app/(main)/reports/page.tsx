@@ -35,6 +35,7 @@ import AuctioneerService, {
   type AuctioneerDeliverySummary,
 } from "@/services/auctioneer";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
+import { SERVER_BASE } from "@/lib/config";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -304,6 +305,14 @@ function hasReportFileUrls(report: any) {
       return typeof value === "string" && value.trim().length > 0;
     });
   });
+}
+
+function reportFileUrl(value: unknown): string | undefined {
+  const url = String(value || "").trim();
+  if (!url) return undefined;
+  if (/^(https?:|blob:|data:)/i.test(url)) return url;
+  if (url.startsWith("/")) return `${SERVER_BASE}${url}`;
+  return `${SERVER_BASE}/${url}`;
 }
 
 function isFileGenerationBlocking(report: any) {
@@ -698,6 +707,46 @@ export default function ReportsPage() {
         map.set(key, group);
       }
 
+      // `/reports/myreports` also returns structured Asset aggregates. They are
+      // not PdfReport rows, so their parent Asset id must never be sent to the
+      // legacy `/reports/:pdfReportId/download` endpoint. Build every available
+      // action from the aggregate's canonical artifact URLs instead.
+      const reportRecord = report as any;
+      const isStructuredAggregate =
+        !reportRef &&
+        (Object.prototype.hasOwnProperty.call(reportRecord, "preview_files") ||
+          Object.prototype.hasOwnProperty.call(reportRecord, "files"));
+      if (isStructuredAggregate) {
+        const artifactFiles = {
+          ...(reportRecord.files || {}),
+          ...(reportRecord.preview_files || {}),
+        };
+        const directVariant = (
+          field: string,
+          fileType: NonNullable<PdfReport["fileType"]>
+        ): PdfReport | undefined => {
+          const url = reportFileUrl(artifactFiles[field]);
+          if (!url) return undefined;
+          return {
+            ...report,
+            _id: `${key}-${field}`,
+            fileType,
+            url,
+          } as PdfReport;
+        };
+        group.variants = {
+          pdf: directVariant("pdf", "pdf"),
+          specPdf: directVariant("spec_pdf", "spec_pdf"),
+          crDocx: directVariant("cr_docx", "cr_docx"),
+          docx: directVariant("docx", "docx"),
+          xlsx:
+            directVariant("excel", "xlsx") || directVariant("xlsx", "xlsx"),
+          images:
+            directVariant("images", "images") || directVariant("zip", "images"),
+        };
+        continue;
+      }
+
       const fileType = (
         (report.fileType || String(report.filename || "").split(".").pop() || "") as string
       ).toLowerCase();
@@ -710,7 +759,10 @@ export default function ReportsPage() {
     }
 
     for (const asset of assetReports) {
-      const previewFiles = (asset as any).preview_files || {};
+      const previewFiles = {
+        ...((asset as any).files || {}),
+        ...((asset as any).preview_files || {}),
+      };
       const currency = String(
         (asset as any)?.preview_data?.currency || (asset as any)?.currency || "CAD"
       ).toUpperCase();
@@ -751,7 +803,7 @@ export default function ReportsPage() {
           _id: `${asset._id}-${fileType}`,
           filename: `${addressBase}.${fileType}`,
           fileType,
-          url,
+          url: reportFileUrl(url),
           ...extra,
           address: addressBase,
           fairMarketValue,
@@ -830,7 +882,10 @@ export default function ReportsPage() {
     }
 
     for (const report of realEstateReports) {
-      const previewFiles = (report as any).preview_files || {};
+      const previewFiles = {
+        ...((report as any).files || {}),
+        ...((report as any).preview_files || {}),
+      };
       const addressBase =
         (report as any)?.property_details?.address ||
         (report as any)?.preview_data?.property_details?.address ||
@@ -845,7 +900,7 @@ export default function ReportsPage() {
           _id: `${report._id}-${fileType}`,
           filename: `${addressBase.replace(/[^a-zA-Z0-9]/g, "_")}.${fileType}`,
           fileType,
-          url,
+          url: reportFileUrl(url),
           address: addressBase,
           fairMarketValue,
           createdAt: report.createdAt,
@@ -938,7 +993,7 @@ export default function ReportsPage() {
           _id: `${listing._id}-${fileType}`,
           filename: `${addressBase}.${fileType}`,
           fileType,
-          url,
+          url: reportFileUrl(url),
           ...extra,
           address: addressBase,
           fairMarketValue,
