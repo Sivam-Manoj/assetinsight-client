@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   toastSuccess: vi.fn(),
+  promoteDraftPreview: vi.fn(),
 }));
 
 vi.mock("@/services/lotListing", () => ({
@@ -35,6 +36,12 @@ vi.mock("@/components/ui/toast", () => ({
     error: mocks.toastError,
     info: mocks.toastInfo,
     success: mocks.toastSuccess,
+  },
+}));
+
+vi.mock("@/services/reportDrafts", () => ({
+  ReportDraftService: {
+    promotePreview: mocks.promoteDraftPreview,
   },
 }));
 
@@ -81,6 +88,12 @@ describe("LotListingPreviewModal inspection location", () => {
       location: "10 Downing Street, London, United Kingdom",
       attribution: "© OpenStreetMap contributors",
       attributionUrl: "https://www.openstreetmap.org/copyright",
+    });
+    mocks.promoteDraftPreview.mockReset().mockResolvedValue({
+      reportId: "promoted-lot-report",
+      reportType: "lotListing",
+      status: "approved",
+      files_generating: true,
     });
   });
 
@@ -146,5 +159,71 @@ describe("LotListingPreviewModal inspection location", () => {
       latitude: null,
       longitude: null,
     });
+  });
+
+  it("promotes and submits the exact edited Lot Listing draft preview", async () => {
+    const onSuccess = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <LotListingPreviewModal
+        isOpen
+        reportId="hidden-lot-report"
+        draftPreviewId="lot-draft-1"
+        onClose={onClose}
+        onSuccess={onSuccess}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(makeListingPreview())}
+      />
+    );
+
+    const contract = await screen.findByDisplayValue("LOT-LOCATION-1");
+    fireEvent.change(contract, { target: { value: "LOT-EDITED-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save & Submit" }));
+
+    await waitFor(() =>
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith(
+        "lot-draft-1",
+        expect.objectContaining({
+          submit: true,
+          preview_data: expect.objectContaining({
+            contract_no: "LOT-EDITED-1",
+          }),
+        })
+      )
+    );
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: "promoted-lot-report",
+        reportId: "promoted-lot-report",
+      })
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves Lot Listing draft edits without generating partial hidden CR files", async () => {
+    const response = makeListingPreview();
+    const updatePreview = vi.fn().mockResolvedValue({
+      data: { preview_data: response.data.preview_data, imageUrls: [] },
+    });
+    const refreshSpecPdf = vi.fn();
+
+    render(
+      <LotListingPreviewModal
+        isOpen
+        reportId="hidden-lot-save-only"
+        draftPreviewId="lot-draft-save-only"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+        refreshSpecPdfOverride={refreshSpecPdf}
+      />
+    );
+
+    const contract = await screen.findByDisplayValue("LOT-LOCATION-1");
+    fireEvent.change(contract, { target: { value: "LOT-SAVED-ONLY" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
+    expect(refreshSpecPdf).not.toHaveBeenCalled();
+    expect(mocks.promoteDraftPreview).not.toHaveBeenCalled();
   });
 });

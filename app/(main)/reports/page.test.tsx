@@ -208,6 +208,9 @@ describe("My Reports thumbnails", () => {
     mocks.getRealEstateReports.mockReset().mockResolvedValue({ data: [] });
     mocks.getLotListings.mockReset().mockResolvedValue({ data: [] });
     mocks.getDeliveries.mockReset().mockResolvedValue([]);
+    mocks.downloadReport.mockReset();
+    mocks.downloadCr.mockReset();
+    mocks.downloadCrDocx.mockReset();
     mocks.routerPush.mockReset();
     vi.stubGlobal("IntersectionObserver", ImmediatelyIntersectingObserver);
   });
@@ -393,5 +396,176 @@ describe("My Reports thumbnails", () => {
     expect(
       within(reportRow).queryByRole("button", { name: /More actions/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("downloads canonical Asset CR files without calling legacy report routes", async () => {
+    const clickAnchor = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    render(<ReportsPage />);
+
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /CV-THUMB-100/i });
+    const fileGroup = within(row).getByRole("group", {
+      name: "Available files for CV-THUMB-100",
+    });
+    fireEvent.click(
+      within(fileGroup).getByRole("button", { name: "Download CR PDF" })
+    );
+    fireEvent.click(
+      within(fileGroup).getByRole("button", { name: "Download CR DOCX" })
+    );
+
+    expect(clickAnchor).toHaveBeenCalledTimes(2);
+    expect(mocks.downloadCr).not.toHaveBeenCalled();
+    expect(mocks.downloadCrDocx).not.toHaveBeenCalled();
+  });
+
+  it("uses every canonical artifact URL from a structured Asset aggregate", async () => {
+    const clickAnchor = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    mocks.getAssetReports.mockResolvedValue({ message: "ok", data: [] });
+    mocks.getMyReports.mockResolvedValue([
+      {
+        _id: "promoted-asset-report",
+        filename: "Promoted Asset.docx",
+        address: "Promoted Asset",
+        fairMarketValue: "CAD 10,000",
+        createdAt: "2026-08-04T09:00:00.000Z",
+        type: "Asset",
+        approvalStatus: "approved",
+        downloadable: true,
+        preview_files: {
+          pdf: "https://cdn.example.test/promoted.pdf",
+          spec_pdf: "https://cdn.example.test/promoted-cr.pdf",
+          cr_docx: "https://cdn.example.test/promoted-cr.docx",
+          docx: "https://cdn.example.test/promoted.docx",
+          excel: "https://cdn.example.test/promoted.xlsx",
+          images: "https://cdn.example.test/promoted.zip",
+        },
+      },
+    ]);
+
+    render(<ReportsPage />);
+
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /Promoted Asset/i });
+    const fileGroup = within(row).getByRole("group", {
+      name: "Available files for Promoted Asset",
+    });
+    for (const label of [
+      "Schedule A",
+      "CR PDF",
+      "CR DOCX",
+      "Appraisal report",
+      "XLSX",
+      "ZIP",
+    ]) {
+      expect(
+        within(fileGroup).getByRole("button", { name: `Download ${label}` })
+      ).toBeInTheDocument();
+    }
+
+    fireEvent.click(
+      within(fileGroup).getByRole("button", {
+        name: "Download Appraisal report",
+      })
+    );
+    expect(clickAnchor).toHaveBeenCalledTimes(1);
+    expect(mocks.downloadReport).not.toHaveBeenCalled();
+  });
+
+  it("does not invent a legacy Appraisal download for a URL-less aggregate", async () => {
+    mocks.getAssetReports.mockResolvedValue({ message: "ok", data: [] });
+    mocks.getMyReports.mockResolvedValue([
+      {
+        _id: "hidden-aggregate-without-files",
+        filename: "Hidden Draft.docx",
+        address: "Hidden Draft",
+        fairMarketValue: "CAD 0.00",
+        createdAt: "2026-08-04T09:00:00.000Z",
+        type: "Asset",
+        approvalStatus: "approved",
+        downloadable: true,
+        preview_files: {},
+      },
+    ]);
+
+    render(<ReportsPage />);
+
+    await screen.findByRole("table", { name: "Generated reports" });
+    expect(
+      screen.queryByRole("button", { name: "Download Appraisal report" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the generated Schedule A for a Lot Listing", async () => {
+    mocks.getAssetReports.mockResolvedValue({ message: "ok", data: [] });
+    mocks.getLotListings.mockResolvedValue({
+      data: [
+        {
+          ...previewReadyLotListing,
+          _id: "lot-with-schedule-a",
+          status: "approved",
+          details: { contract_no: "LOT-SCHEDULE-A", currency: "CAD" },
+          preview_files: {
+            schedule_a_pdf: "https://cdn.example.test/lot-schedule-a.pdf",
+            excel: "https://cdn.example.test/lot.xlsx",
+            images: "https://cdn.example.test/lot.zip",
+          },
+        },
+      ],
+    });
+
+    render(<ReportsPage />);
+
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /LOT-SCHEDULE-A/i });
+    expect(
+      within(row).getByRole("button", { name: "Download Schedule A" })
+    ).toBeInTheDocument();
+  });
+
+  it("downloads canonical Lot Listing CR files without calling legacy report routes", async () => {
+    const clickAnchor = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    mocks.getAssetReports.mockResolvedValue({ message: "ok", data: [] });
+    mocks.getLotListings.mockResolvedValue({
+      data: [
+        {
+          ...previewReadyLotListing,
+          _id: "lot-canonical-cr",
+          status: "approved",
+          generation_state: "ready",
+          files_generating: false,
+          details: { contract_no: "LOT-CANONICAL-CR", currency: "CAD" },
+          preview_files: {
+            spec_pdf: "https://cdn.example.test/lot-cr.pdf",
+            cr_docx: "https://cdn.example.test/lot-cr.docx",
+          },
+        },
+      ],
+    });
+
+    render(<ReportsPage />);
+
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /LOT-CANONICAL-CR/i });
+    const fileGroup = within(row).getByRole("group", {
+      name: "Available files for LOT-CANONICAL-CR",
+    });
+    fireEvent.click(
+      within(fileGroup).getByRole("button", { name: "Download CR PDF" })
+    );
+    fireEvent.click(
+      within(fileGroup).getByRole("button", { name: "Download CR DOCX" })
+    );
+
+    expect(clickAnchor).toHaveBeenCalledTimes(2);
+    expect(mocks.downloadCr).not.toHaveBeenCalled();
+    expect(mocks.downloadCrDocx).not.toHaveBeenCalled();
   });
 });

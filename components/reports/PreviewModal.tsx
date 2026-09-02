@@ -567,7 +567,12 @@ export default function PreviewModal({
         return;
       }
       let pdfRefreshed = false;
-      const refreshSpecPdf = refreshAssetSpecPdfOverride || (!updatePreviewDataOverride ? refreshAssetSpecPdf : null);
+      // A draft preview must stay metadata-only until it is promoted. Generating
+      // a CR here creates partial hidden artifacts from a non-final snapshot;
+      // Save & Submit/Resubmit is the single final-artifact boundary.
+      const refreshSpecPdf = draftPreviewId
+        ? null
+        : refreshAssetSpecPdfOverride || (!updatePreviewDataOverride ? refreshAssetSpecPdf : null);
       try {
         if (refreshSpecPdf) {
           const pdf = await refreshSpecPdf(reportId);
@@ -663,11 +668,15 @@ export default function PreviewModal({
         toast.success(submitted.message || "Report submitted. Files are being generated.");
       }
       
-      if (onSuccess) onSuccess(
-        effectiveResubmitMode
-          ? undefined
-          : submittedReport
-      );
+      if (onSuccess) {
+        onSuccess(
+          draftPreviewId
+            ? submittedReport
+            : effectiveResubmitMode
+              ? undefined
+              : submittedReport
+        );
+      }
       onClose();
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to submit report");
@@ -2555,8 +2564,10 @@ export default function PreviewModal({
                     ? (filesRegenerating ? "Regenerating Files..." : "Already Submitted")
                     : isAssignedApprovalMode
                       ? "Submit & Approve"
-                      : draftPreviewId
-                        ? "Save & Submit"
+                    : draftPreviewId
+                      ? effectiveResubmitMode
+                        ? "Save & Resubmit"
+                        : "Save & Submit"
                         : (effectiveResubmitMode ? "Save & Resubmit" : "Submit for Approval")}
                 </span>
                 <span className="sm:hidden">
@@ -2567,7 +2578,9 @@ export default function PreviewModal({
                     : isAssignedApprovalMode
                       ? "Approve"
                       : draftPreviewId
-                        ? "Save & Submit"
+                        ? effectiveResubmitMode
+                          ? "Save & Resubmit"
+                          : "Save & Submit"
                         : (effectiveResubmitMode ? "Resubmit" : "Submit")}
                 </span>
               </button>

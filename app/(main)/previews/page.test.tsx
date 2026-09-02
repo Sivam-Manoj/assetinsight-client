@@ -285,7 +285,9 @@ describe("Preview queue affordances", () => {
     );
 
     await waitFor(() =>
-      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith("draft-1")
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith("draft-1", {
+        submit: false,
+      })
     );
     expect(screen.getByRole("tab", { name: /^New /i })).toHaveAttribute(
       "aria-selected",
@@ -324,5 +326,43 @@ describe("Preview queue affordances", () => {
         name: "Asset preview editor: hidden-editor-report",
       })
     ).toHaveAttribute("data-draft-preview-id", "draft-editor-1");
+  });
+
+  it("offers the same move action for a ready Lot Listing draft", async () => {
+    mocks.listDrafts.mockResolvedValue([
+      {
+        _id: "lot-draft-1",
+        user: "user-1",
+        clientDraftId: "client-lot-draft-1",
+        type: "lotListing",
+        storageMode: "r2_media",
+        revision: 2,
+        contractNo: "LOT-DRAFT-1",
+        formData: {},
+        lots: [{ lot_number: "1" }],
+        media: [],
+        previewStatus: "ready",
+        previewReportId: "hidden-lot-report-1",
+        previewProcessedRevision: 2,
+        createdAt: "2026-08-03T08:00:00.000Z",
+        updatedAt: "2026-08-03T08:30:00.000Z",
+      },
+    ]);
+    mocks.promoteDraftPreview.mockResolvedValue({
+      reportId: "lot-report-1",
+      reportType: "lotListing",
+      status: "preview",
+    });
+
+    render(<PreviewsPage />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Draft Previews/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move to previews" }));
+
+    await waitFor(() =>
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith("lot-draft-1", {
+        submit: false,
+      })
+    );
   });
 });

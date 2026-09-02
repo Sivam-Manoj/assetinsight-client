@@ -519,10 +519,12 @@ export default function PreviewsPage() {
 
   const handlePromoteDraftPreview = async (draft: ReportDraftRecord) => {
     const draftId = String(draft.id || draft._id || "");
-    if (!draftId || draft.type !== "asset") return;
+    if (!draftId) return;
     try {
       setPromotingDraft(draftId);
-      const promoted = await ReportDraftService.promotePreview(draftId);
+      const promoted = await ReportDraftService.promotePreview(draftId, {
+        submit: false,
+      });
       const submitted = ["pending_approval", "approved"].includes(
         String(promoted.status || "")
       );
@@ -826,23 +828,21 @@ export default function PreviewsPage() {
                             >
                               <FileSearch className="size-4" /> Open preview
                             </button>
-                            {draft.type === "asset" ? (
-                              <button
-                                type="button"
-                                className={`${styles.action} ${styles.actionSecondary}`}
-                                onClick={() => void handlePromoteDraftPreview(draft)}
-                                disabled={promotingDraft === String(draft.id || draft._id)}
-                              >
-                                {promotingDraft === String(draft.id || draft._id) ? (
-                                  <RefreshCw className="size-4 animate-spin" />
-                                ) : (
-                                  <ArrowRight className="size-4" />
-                                )}
-                                {promotingDraft === String(draft.id || draft._id)
-                                  ? "Moving..."
-                                  : "Move to previews"}
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              className={`${styles.action} ${styles.actionSecondary}`}
+                              onClick={() => void handlePromoteDraftPreview(draft)}
+                              disabled={promotingDraft === String(draft.id || draft._id)}
+                            >
+                              {promotingDraft === String(draft.id || draft._id) ? (
+                                <RefreshCw className="size-4 animate-spin" />
+                              ) : (
+                                <ArrowRight className="size-4" />
+                              )}
+                              {promotingDraft === String(draft.id || draft._id)
+                                ? "Moving..."
+                                : "Move to previews"}
+                            </button>
                           </>
                         ) : null}
                         {(status === "error" || stale || status === "idle") ? (
@@ -1335,6 +1335,7 @@ export default function PreviewsPage() {
           onClose={handleModalClose}
           onSuccess={handleSuccess}
           isResubmitMode={isResubmitMode}
+          draftPreviewId={selectedDraftPreviewId || undefined}
         />
       ) : null}
       {mergeAnchorId ? (

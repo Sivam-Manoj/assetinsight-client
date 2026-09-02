@@ -263,9 +263,7 @@ describe("PreviewModal valuation methods", () => {
       />
     );
 
-    const clientName = await screen.findByRole("textbox", {
-      name: "Client Name *",
-    });
+    const clientName = (await screen.findAllByDisplayValue("Test Client"))[0];
     fireEvent.change(clientName, { target: { value: "Edited Draft Client" } });
     fireEvent.click(
       screen.getByRole("button", {
@@ -291,5 +289,69 @@ describe("PreviewModal valuation methods", () => {
       })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves draft edits without generating partial hidden CR files", async () => {
+    const response = makePreviewResponse();
+    const updatePreview = vi.fn().mockResolvedValue({
+      message: "Saved",
+      data: response.data.preview_data,
+    });
+    const refreshSpecPdf = vi.fn();
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="hidden-report-save-only"
+        draftPreviewId="draft-save-only"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+        refreshAssetSpecPdfOverride={refreshSpecPdf}
+      />
+    );
+
+    const clientName = (await screen.findAllByDisplayValue("Test Client"))[0];
+    fireEvent.change(clientName, { target: { value: "Saved Draft Client" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
+    expect(refreshSpecPdf).not.toHaveBeenCalled();
+    expect(mocks.promoteDraftPreview).not.toHaveBeenCalled();
+  });
+
+  it("keeps an approved hidden draft on the promotion path when saving and resubmitting", async () => {
+    const onSuccess = vi.fn();
+    const approvedPreview = makePreviewResponse();
+    approvedPreview.data.status = "approved";
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="hidden-approved-report"
+        draftPreviewId="approved-draft"
+        onClose={vi.fn()}
+        onSuccess={onSuccess}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(approvedPreview)}
+      />
+    );
+
+    await screen.findByRole("heading", { name: "Assets / Lots" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Save draft preview and submit report",
+      })
+    );
+
+    await waitFor(() =>
+      expect(mocks.promoteDraftPreview).toHaveBeenCalledWith(
+        "approved-draft",
+        expect.objectContaining({ submit: true })
+      )
+    );
+    expect(screen.getAllByText("Save & Resubmit")).toHaveLength(2);
+    expect(onSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({ reportId: "promoted-report-1" })
+    );
   });
 });

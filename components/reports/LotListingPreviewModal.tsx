@@ -37,6 +37,7 @@ import {
   isPrimarySerialField,
 } from "@/lib/previewSerialNumber";
 import { getPreviewLotPhotoEntries } from "@/lib/previewLotPhotos";
+import { ReportDraftService } from "@/services/reportDrafts";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -56,6 +57,7 @@ interface LotListingPreviewModalProps {
     onProgress?: (progress: number) => void
   ) => Promise<any>;
   refreshSpecPdfOverride?: (id: string) => Promise<any>;
+  draftPreviewId?: string;
 }
 
 type ConditionSelectionKey = "condition" | "completeness" | "legal";
@@ -246,6 +248,7 @@ export default function LotListingPreviewModal({
   resubmitReportOverride,
   uploadPreviewLotImagesOverride,
   refreshSpecPdfOverride,
+  draftPreviewId,
 }: LotListingPreviewModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -390,24 +393,26 @@ export default function LotListingPreviewModal({
         return;
       }
       let pdfRefreshed = false;
-      try {
-        const pdf = refreshSpecPdfOverride
-          ? await refreshSpecPdfOverride(reportId)
-          : await refreshLotListingSpecPdf(reportId);
-        setPreviewFiles((prev: any) => ({
-          ...(prev || {}),
-          ...(pdf.data?.preview_files || {}),
-          spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
-          cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
-        }));
-        // File refresh responses can lag behind the save response. They must
-        // not replace the newly saved editable preview snapshot.
-        if (Array.isArray(pdf.data?.imageUrls)) {
-          setImageUrls(pdf.data.imageUrls);
+      if (!draftPreviewId) {
+        try {
+          const pdf = refreshSpecPdfOverride
+            ? await refreshSpecPdfOverride(reportId)
+            : await refreshLotListingSpecPdf(reportId);
+          setPreviewFiles((prev: any) => ({
+            ...(prev || {}),
+            ...(pdf.data?.preview_files || {}),
+            spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
+            cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
+          }));
+          // File refresh responses can lag behind the save response. They must
+          // not replace the newly saved editable preview snapshot.
+          if (Array.isArray(pdf.data?.imageUrls)) {
+            setImageUrls(pdf.data.imageUrls);
+          }
+          pdfRefreshed = true;
+        } catch (pdfError: any) {
+          toast.error(pdfError.response?.data?.message || "Changes saved, but CR could not be refreshed.");
         }
-        pdfRefreshed = true;
-      } catch (pdfError: any) {
-        toast.error(pdfError.response?.data?.message || "Changes saved, but CR could not be refreshed.");
       }
       setHasChanges(false);
       toast.success(pdfRefreshed ? "Changes saved and CR refreshed." : "Changes saved successfully.");
@@ -446,7 +451,26 @@ export default function LotListingPreviewModal({
       setSubmitting(true);
       let submittedReport: LotListing | undefined;
 
-      if (effectiveResubmitMode) {
+      if (draftPreviewId) {
+        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+        setPreviewData(previewForRequest);
+        const promoted = await ReportDraftService.promotePreview(draftPreviewId, {
+          preview_data: previewForRequest,
+          submit: true,
+        });
+        submittedReport = {
+          ...promoted,
+          _id: promoted.reportId,
+        } as unknown as LotListing;
+        setHasChanges(false);
+        applyLotListingState(promoted, {
+          assumeFilesGenerating: true,
+          assumeFilesRegenerating: false,
+        });
+        toast.success(
+          "Draft moved to reports. Files are being generated from your saved preview."
+        );
+      } else if (effectiveResubmitMode) {
         const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
         setPreviewData(previewForRequest);
         const updated = resubmitReportOverride
@@ -1521,7 +1545,13 @@ export default function LotListingPreviewModal({
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {effectiveResubmitMode ? "Regenerate Approved Files" : "Generate Approved Files"}
+                {draftPreviewId
+                  ? effectiveResubmitMode
+                    ? "Save & Resubmit"
+                    : "Save & Submit"
+                  : effectiveResubmitMode
+                    ? "Regenerate Approved Files"
+                    : "Generate Approved Files"}
               </button>
             </div>
           </div>

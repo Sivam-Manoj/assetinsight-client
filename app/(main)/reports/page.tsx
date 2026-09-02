@@ -283,7 +283,11 @@ function actionLabel(
     .toLowerCase()
     .replace(/[\s_-]/g, "");
 
-  if (variant === "pdf") return normalizedType === "asset" ? "Schedule A" : "PDF";
+  if (variant === "pdf") {
+    return normalizedType === "asset" || normalizedType === "lotlisting"
+      ? "Schedule A"
+      : "PDF";
+  }
   if (variant === "specPdf") return "CR PDF";
   if (variant === "crDocx") return "CR DOCX";
   if (variant === "docx") {
@@ -296,7 +300,17 @@ function actionLabel(
 }
 
 function hasReportFileUrls(report: any) {
-  const keys = ["pdf", "spec_pdf", "cr_docx", "docx", "excel", "xlsx", "images", "zip"];
+  const keys = [
+    "schedule_a_pdf",
+    "pdf",
+    "spec_pdf",
+    "cr_docx",
+    "docx",
+    "excel",
+    "xlsx",
+    "images",
+    "zip",
+  ];
   const sources = [report?.preview_files, report?.files];
   return sources.some((source) => {
     if (!source || typeof source !== "object") return false;
@@ -727,15 +741,29 @@ export default function ReportsPage() {
         ): PdfReport | undefined => {
           const url = reportFileUrl(artifactFiles[field]);
           if (!url) return undefined;
+          const extension =
+            fileType === "spec_pdf"
+              ? "pdf"
+              : fileType === "cr_docx"
+                ? "docx"
+                : fileType === "images"
+                  ? "zip"
+                  : fileType;
+          const fileBase = String(
+            reportRecord.contract_no || report.address || "report"
+          ).replace(/[^a-zA-Z0-9._-]+/g, "-");
           return {
             ...report,
             _id: `${key}-${field}`,
             fileType,
+            filename: `${fileBase}.${extension}`,
             url,
           } as PdfReport;
         };
         group.variants = {
-          pdf: directVariant("pdf", "pdf"),
+          pdf:
+            directVariant("schedule_a_pdf", "pdf") ||
+            directVariant("pdf", "pdf"),
           specPdf: directVariant("spec_pdf", "spec_pdf"),
           crDocx: directVariant("cr_docx", "cr_docx"),
           docx: directVariant("docx", "docx"),
@@ -846,13 +874,16 @@ export default function ReportsPage() {
           ? (asset as any).merged_from_report_ids.length
           : 0,
         variants: {
-          pdf: previewFiles.pdf ? createPseudoReport(previewFiles.pdf, "pdf") : undefined,
+          pdf: previewFiles.schedule_a_pdf
+            ? createPseudoReport(previewFiles.schedule_a_pdf, "pdf")
+            : previewFiles.pdf
+              ? createPseudoReport(previewFiles.pdf, "pdf")
+              : undefined,
           specPdf: previewFiles.spec_pdf
             ? createPseudoReport(previewFiles.spec_pdf, "pdf", {
                 _id: `${asset._id}-cr`,
                 filename: `${addressBase}-CR.pdf`,
                 fileType: "spec_pdf",
-                crReportId: asset._id,
               })
             : undefined,
           crDocx: previewFiles.cr_docx
@@ -860,7 +891,6 @@ export default function ReportsPage() {
                 _id: `${asset._id}-cr-docx`,
                 filename: `${addressBase}-CR.docx`,
                 fileType: "cr_docx",
-                crReportId: asset._id,
               })
             : isDownloadable ? createPseudoReport(`/api/reports/${asset._id}/cr-docx`, "docx", {
                 _id: `${asset._id}-cr-docx`,
@@ -1033,12 +1063,16 @@ export default function ReportsPage() {
         displayTitle: reportDisplayTitle(lots, addressBase, listing),
         type: "LotListing",
         variants: {
+          pdf: previewFiles.schedule_a_pdf
+            ? createPseudoReport(previewFiles.schedule_a_pdf, "pdf")
+            : previewFiles.pdf
+              ? createPseudoReport(previewFiles.pdf, "pdf")
+              : undefined,
           specPdf: previewFiles.spec_pdf
             ? createPseudoReport(previewFiles.spec_pdf, "pdf", {
                 _id: `${listing._id}-cr`,
                 filename: `${addressBase}-CR.pdf`,
                 fileType: "spec_pdf",
-                crReportId: listing._id,
               })
             : undefined,
           crDocx: previewFiles.cr_docx
@@ -1046,7 +1080,6 @@ export default function ReportsPage() {
                 _id: `${listing._id}-cr-docx`,
                 filename: `${addressBase}-CR.docx`,
                 fileType: "cr_docx",
-                crReportId: listing._id,
               })
             : isDownloadable ? createPseudoReport(`/api/reports/${listing._id}/cr-docx`, "docx", {
                 _id: `${listing._id}-cr-docx`,
