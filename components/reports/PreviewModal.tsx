@@ -42,6 +42,11 @@ import {
   type LotValuationLine,
 } from "@/components/reports/lotValuationMethods";
 import { ReportDraftService } from "@/services/reportDrafts";
+import AssetCoverImagePicker from "@/components/reports/AssetCoverImagePicker";
+import {
+  collectAssetCoverImageUrls,
+  normalizeAssetCoverImageUrls,
+} from "@/lib/assetCoverImages";
 
 interface PreviewModalProps {
   reportId: string;
@@ -115,6 +120,38 @@ type LotGalleryState = {
   entries: LotGalleryEntry[];
   currentIdx: number;
 };
+
+const LEGAL_SELECTION_OPTIONS = ["Salvage", "No Title", "N/A"] as const;
+const LOTS_PER_PAGE = 20;
+
+const normalizeLegalSelection = (value: unknown) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  if (normalized === "na" || normalized === "not applicable") return "n/a";
+  return normalized;
+};
+
+function useDesktopPreviewLayout() {
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return true;
+    }
+    return window.matchMedia("(min-width: 768px)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+    const updateLayout = () => setIsDesktop(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener?.("change", updateLayout);
+    return () => mediaQuery.removeEventListener?.("change", updateLayout);
+  }, []);
+
+  return isDesktop;
+}
 
 const normalizeSpecKey = (value: unknown) =>
   String(value ?? "")
@@ -326,7 +363,7 @@ function AppraiserSignaturePad({ value, disabled, onChange }: SignaturePadProps)
         onPointerUp={finishDrawing}
         onPointerCancel={finishDrawing}
         onPointerLeave={finishDrawing}
-        className={`h-40 w-full touch-none rounded-lg border border-dashed border-[var(--app-control-border)] bg-[var(--app-panel-alt)] ${
+        className={`h-40 w-full touch-none rounded-lg border border-dashed border-[var(--app-control-border)] bg-white ${
           disabled ? "cursor-not-allowed opacity-60" : "cursor-crosshair"
         }`}
         aria-label="Draw appraiser signature"
@@ -368,10 +405,14 @@ export default function PreviewModal({
   const [uploadingLotKey, setUploadingLotKey] = useState<string | null>(null);
   const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [lotPage, setLotPage] = useState(1);
+  const [selectedLotIndexes, setSelectedLotIndexes] = useState<Set<number>>(
+    () => new Set()
+  );
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
   const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
+  const isDesktopLayout = useDesktopPreviewLayout();
   const {
     isLocationReady,
     locationAttribution,
@@ -432,7 +473,7 @@ export default function PreviewModal({
         // Ignore inputs that don't support text selection.
       }
     }
-  }, [isOpen, previewData]);
+  }, [expandedLotTextEditor, isDesktopLayout, isOpen, loading, lotPage]);
 
   useEffect(() => {
     if (!expandedLotTextEditor) return;
@@ -518,6 +559,8 @@ export default function PreviewModal({
       setGroupingMode(response.data.grouping_mode);
       setImageCount(response.data.image_count);
       setImageUrls(response.data.imageUrls || []);
+      setLotPage(1);
+      setSelectedLotIndexes(new Set());
     } catch (error: any) {
       toast.error(error.response?.data?.message || "Failed to load preview data");
       onClose();
@@ -548,6 +591,10 @@ export default function PreviewModal({
         mergeSubmittedPreviewData(saved?.data, previewForRequest)
       );
       setPreviewData(savedPreview);
+      // The server may normalize lot ordering. Clear transient index-based
+      // selection after a successful round trip so a later bulk action cannot
+      // target a different lot.
+      setSelectedLotIndexes(new Set());
       if (Array.isArray(saved?.imageUrls)) {
         setImageUrls(saved.imageUrls);
         setImageCount(saved.imageUrls.length);
@@ -785,6 +832,58 @@ export default function PreviewModal({
     setHasChanges(true);
   };
 
+  const updateLotLegalSelection = (index: number, value: string) => {
+    setPreviewData((prev: any) => {
+      const newLots = [...(prev?.lots || [])];
+      const lot = { ...(newLots[index] || {}) };
+      lot.condition_report_selections = {
+        ...(lot.condition_report_selections || {}),
+        legal: value,
+      };
+      newLots[index] = lot;
+      return { ...prev, lots: newLots };
+    });
+    setHasChanges(true);
+  };
+
+  const applyLegalSelectionToSelectedLots = (value: string) => {
+    const lotCount = Array.isArray(previewData?.lots)
+      ? previewData.lots.length
+      : 0;
+    const targetIndexes = new Set(
+      Array.from(selectedLotIndexes).filter(
+        (index) => index >= 0 && index < lotCount
+      )
+    );
+    if (targetIndexes.size === 0) {
+      toast.info("Select at least one lot before applying a Legal value.");
+      return;
+    }
+
+    setPreviewData((prev: any) => ({
+      ...prev,
+      lots: Array.isArray(prev?.lots)
+        ? prev.lots.map((rawLot: any, index: number) =>
+            targetIndexes.has(index)
+              ? {
+                  ...(rawLot || {}),
+                  condition_report_selections: {
+                    ...(rawLot?.condition_report_selections || {}),
+                    legal: value,
+                  },
+                }
+              : rawLot
+          )
+        : [],
+    }));
+    setHasChanges(true);
+    toast.success(
+      `${value} applied to ${targetIndexes.size} selected lot${
+        targetIndexes.size === 1 ? "" : "s"
+      }.`
+    );
+  };
+
   const updateLotSpec = (index: number, fieldName: string, value: string) => {
     setPreviewData((prev: any) => {
       const newLots = [...(prev?.lots || [])];
@@ -914,9 +1013,17 @@ export default function PreviewModal({
     ) {
       return;
     }
-    setPreviewData((prev: any) =>
-      removeLotPhotoReference(prev, lotIndex, entry)
-    );
+    setPreviewData((prev: any) => {
+      const next = removeLotPhotoReference(prev, lotIndex, entry);
+      const activeCandidates = collectAssetCoverImageUrls(next, imageUrls);
+      return {
+        ...next,
+        cover_image_urls: normalizeAssetCoverImageUrls(
+          next?.cover_image_urls,
+          activeCandidates
+        ),
+      };
+    });
     setGalleryLotImages((prev) => {
       if (!prev) return prev;
       const next = removeGalleryPhotoEntry(prev.entries, prev.currentIdx, {
@@ -944,6 +1051,7 @@ export default function PreviewModal({
       const response = await uploadLotImages(reportId, lotKey, files, previewData);
       if (response.data?.preview_data) {
         setPreviewData(applyDamageAnalysisLotPolicy(response.data.preview_data));
+        setSelectedLotIndexes(new Set());
       }
       if (Array.isArray(response.data?.imageUrls)) {
         setImageUrls(response.data.imageUrls);
@@ -1043,7 +1151,7 @@ export default function PreviewModal({
         readOnly
         onFocus={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
         onClick={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
-        className={`w-full cursor-text border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm leading-5 text-[var(--app-text)] transition-all placeholder:text-[var(--app-text-muted)] hover:border-blue-300 focus:border-transparent focus:ring-2 focus:ring-blue-500 ${
+        className={`w-full cursor-text border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm leading-5 text-[var(--app-text)] transition-all placeholder:text-[var(--app-text-muted)] hover:border-[var(--app-accent)] focus:border-transparent focus:ring-2 focus:ring-[var(--app-accent)] ${
           isDesktop
             ? "min-h-[104px] min-w-0 rounded-md resize-none"
             : "min-h-[120px] rounded-lg resize-y"
@@ -1056,6 +1164,15 @@ export default function PreviewModal({
   };
 
   const deleteLot = (index: number) => {
+    setSelectedLotIndexes((current) => {
+      if (current.size === 0) return current;
+      const next = new Set<number>();
+      for (const selectedIndex of current) {
+        if (selectedIndex === index) continue;
+        next.add(selectedIndex > index ? selectedIndex - 1 : selectedIndex);
+      }
+      return next;
+    });
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
       lots.splice(index, 1);
@@ -1065,6 +1182,7 @@ export default function PreviewModal({
   };
 
   const addLot = () => {
+    setLotPage(Math.max(1, Math.ceil((lotsArray.length + 1) / LOTS_PER_PAGE)));
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
       const usedNumbers = new Set(
@@ -1117,6 +1235,27 @@ export default function PreviewModal({
 
   // Group lots by mixed_group_index and determine sub-mode label
   const lotsArray: any[] = Array.isArray(previewData?.lots) ? previewData.lots : [];
+  const deletedImageUrls = previewData?.deleted_image_urls;
+  const deletedImageIndexes = previewData?.deleted_image_indexes;
+  const coverImageCandidates = React.useMemo(
+    () =>
+      collectAssetCoverImageUrls(
+        {
+          deleted_image_urls: deletedImageUrls,
+          deleted_image_indexes: deletedImageIndexes,
+        },
+        imageUrls
+      ),
+    [deletedImageIndexes, deletedImageUrls, imageUrls]
+  );
+  const selectedCoverImageUrls = React.useMemo(
+    () =>
+      normalizeAssetCoverImageUrls(
+        previewData?.cover_image_urls,
+        coverImageCandidates
+      ),
+    [coverImageCandidates, previewData?.cover_image_urls]
+  );
   const duplicateLotNumberKeys = React.useMemo(() => {
     const counts = new Map<string, number>();
     lotsArray.forEach((lot, index) => {
@@ -1134,14 +1273,80 @@ export default function PreviewModal({
       String(lot?.lot_number ?? getLotDisplayNumber(lot, index)).trim().toLowerCase()
     );
   const includeDamageAnalysis = previewData?.include_damage_analysis !== false;
-  const groupMap = new Map<number, { idx: number; lot: any }[]>();
-  for (let i = 0; i < lotsArray.length; i++) {
-    const lot = lotsArray[i];
-    const gi = Number(lot?.mixed_group_index) || 0;
-    if (!groupMap.has(gi)) groupMap.set(gi, []);
-    groupMap.get(gi)!.push({ idx: i, lot });
-  }
-  const groupIds = Array.from(groupMap.keys()).sort((a, b) => a - b);
+  const lotPageCount = Math.max(1, Math.ceil(lotsArray.length / LOTS_PER_PAGE));
+  const activeLotPage = Math.min(lotPage, lotPageCount);
+  const firstVisibleLotIndex = (activeLotPage - 1) * LOTS_PER_PAGE;
+  const lastVisibleLotIndex = Math.min(
+    firstVisibleLotIndex + LOTS_PER_PAGE,
+    lotsArray.length
+  );
+  const visibleLotIndexes = React.useMemo(
+    () =>
+      Array.from(
+        { length: Math.max(0, lastVisibleLotIndex - firstVisibleLotIndex) },
+        (_, offset) => firstVisibleLotIndex + offset
+      ),
+    [firstVisibleLotIndex, lastVisibleLotIndex]
+  );
+  const validSelectedLotIndexes = React.useMemo(
+    () =>
+      new Set(
+        Array.from(selectedLotIndexes).filter(
+          (index) => index >= 0 && index < lotsArray.length
+        )
+      ),
+    [lotsArray.length, selectedLotIndexes]
+  );
+  const selectedLotCount = validSelectedLotIndexes.size;
+  const allLotsSelected =
+    lotsArray.length > 0 && selectedLotCount === lotsArray.length;
+  const allVisibleLotsSelected =
+    visibleLotIndexes.length > 0 &&
+    visibleLotIndexes.every((index) => validSelectedLotIndexes.has(index));
+
+  useEffect(() => {
+    setLotPage((current) => Math.min(Math.max(current, 1), lotPageCount));
+  }, [lotPageCount]);
+
+  useEffect(() => {
+    setSelectedLotIndexes((current) => {
+      const next = new Set(
+        Array.from(current).filter(
+          (index) => index >= 0 && index < lotsArray.length
+        )
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [lotsArray.length]);
+
+  const toggleLotSelection = (index: number) => {
+    setSelectedLotIndexes((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleAllLotSelection = () => {
+    setSelectedLotIndexes(
+      allLotsSelected
+        ? new Set()
+        : new Set(lotsArray.map((_, index) => index))
+    );
+  };
+
+  const toggleVisibleLotSelection = () => {
+    setSelectedLotIndexes((current) => {
+      const next = new Set(current);
+      for (const index of visibleLotIndexes) {
+        if (allVisibleLotsSelected) next.delete(index);
+        else next.add(index);
+      }
+      return next;
+    });
+  };
+
   const labelForSubMode = (m?: string) => {
     const sm = String(m || "").trim();
     if (sm === "per_item") return "Per Item";
@@ -1154,14 +1359,284 @@ export default function PreviewModal({
     if (gm === "single_lot") return "Bundle";
     return "Assets";
   };
-  const groupedLots = groupIds.map((gid) => {
-    const items = groupMap.get(gid) || [];
-    const first = items[0]?.lot || {};
-    const inferredMode =
-      first?.sub_mode ||
-      ((first?.tags || []).find?.((t: string) => typeof t === "string" && t.startsWith("mode:"))?.split?.(":")?.[1] || undefined);
-    return { gid, subMode: inferredMode, items };
-  });
+  const groupedLots = React.useMemo(() => {
+    const groupMap = new Map<number, { idx: number; lot: any }[]>();
+    lotsArray
+      .slice(firstVisibleLotIndex, lastVisibleLotIndex)
+      .forEach((lot, offset) => {
+        const gid = Number(lot?.mixed_group_index) || 0;
+        if (!groupMap.has(gid)) groupMap.set(gid, []);
+        groupMap.get(gid)!.push({ idx: firstVisibleLotIndex + offset, lot });
+      });
+
+    return Array.from(groupMap.keys())
+      .sort((a, b) => a - b)
+      .map((gid) => {
+        const items = groupMap.get(gid) || [];
+        const first = items[0]?.lot || {};
+        const inferredMode =
+          first?.sub_mode ||
+          ((first?.tags || [])
+            .find?.(
+              (tag: string) =>
+                typeof tag === "string" && tag.startsWith("mode:")
+            )
+            ?.split?.(":")?.[1] || undefined);
+        return { gid, subMode: inferredMode, items };
+      });
+  }, [firstVisibleLotIndex, lastVisibleLotIndex, lotsArray]);
+
+  const sharedSelectedLegalSelection = React.useMemo(() => {
+    const selectedIndexes = Array.from(validSelectedLotIndexes);
+    if (selectedIndexes.length === 0) return "";
+    const first = normalizeLegalSelection(
+      lotsArray[selectedIndexes[0]]?.condition_report_selections?.legal
+    );
+    if (
+      !first ||
+      !LEGAL_SELECTION_OPTIONS.some(
+        (option) => normalizeLegalSelection(option) === first
+      )
+    ) {
+      return "";
+    }
+    return selectedIndexes.every(
+      (index) =>
+        normalizeLegalSelection(
+          lotsArray[index]?.condition_report_selections?.legal
+        ) === first
+    )
+      ? first
+      : "";
+  }, [lotsArray, validSelectedLotIndexes]);
+
+  const renderLegalSelection = (
+    lot: any,
+    index: number,
+    variant: "mobile" | "desktop"
+  ) => {
+    const selectedValue = normalizeLegalSelection(
+      lot?.condition_report_selections?.legal
+    );
+
+    return (
+      <fieldset className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] p-2.5">
+        <legend className="px-1 text-[11px] font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
+          Legal
+        </legend>
+        <div className="flex flex-wrap gap-1.5">
+          {LEGAL_SELECTION_OPTIONS.map((option) => {
+            const checked =
+              selectedValue === normalizeLegalSelection(option);
+            return (
+              <label
+                key={option}
+                className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                  checked
+                    ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
+                    : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-[var(--app-accent)] hover:text-[var(--app-text)]"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`asset-lot-${index}-${variant}-legal`}
+                  checked={checked}
+                  onChange={() => updateLotLegalSelection(index, option)}
+                  className="h-3.5 w-3.5 accent-[var(--app-accent)]"
+                />
+                {option}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+    );
+  };
+
+  const renderLotSelectionCheckbox = (
+    lot: any,
+    index: number,
+    variant: "mobile" | "desktop"
+  ) => {
+    if (lotsArray.length < 2) return null;
+    const lotLabel = getLotDisplayNumber(lot, index);
+    const selected = validSelectedLotIndexes.has(index);
+
+    return (
+      <label
+        className={`inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs font-semibold transition-colors ${
+          selected
+            ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
+            : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-[var(--app-control-border-hover)] hover:text-[var(--app-text)]"
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => toggleLotSelection(index)}
+          aria-label={`Select lot ${lotLabel}, row ${index + 1}`}
+          className="h-4 w-4 shrink-0 accent-[var(--app-accent)]"
+        />
+        {variant === "mobile" ? (
+          <span>{selected ? "Selected" : "Select"}</span>
+        ) : null}
+      </label>
+    );
+  };
+
+  const renderBulkLegalSelection = () => {
+    if (lotsArray.length < 2) return null;
+
+    return (
+      <section
+        aria-label="Bulk Legal assignment"
+        className="rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-3"
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h4 className="text-sm font-bold text-[var(--app-text-strong)]">
+                Bulk Legal assignment
+              </h4>
+              <p
+                className="text-xs text-[var(--app-text-muted)]"
+                aria-live="polite"
+              >
+                {selectedLotCount > 0
+                  ? `${selectedLotCount} of ${lotsArray.length} lots selected. Apply a value below or adjust any lot individually.`
+                  : "Select the lots that should receive the same Legal value."}
+              </p>
+            </div>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Select lots for bulk Legal assignment"
+            >
+              {lotPageCount > 1 ? (
+                <button
+                  type="button"
+                  onClick={toggleVisibleLotSelection}
+                  aria-pressed={allVisibleLotsSelected}
+                  aria-label={`${
+                    allVisibleLotsSelected ? "Unselect" : "Select"
+                  } ${visibleLotIndexes.length} lots on this page`}
+                  className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
+                    allVisibleLotsSelected
+                      ? "app-button--primary"
+                      : "app-button--secondary"
+                  }`}
+                >
+                  {allVisibleLotsSelected ? "Unselect page" : "Select page"}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={toggleAllLotSelection}
+                aria-pressed={allLotsSelected}
+                aria-label={`${allLotsSelected ? "Unselect" : "Select"} all ${
+                  lotsArray.length
+                } lots`}
+                className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
+                  allLotsSelected
+                    ? "app-button--primary"
+                    : "app-button--secondary"
+                }`}
+              >
+                {allLotsSelected
+                  ? "Unselect all"
+                  : `Select all (${lotsArray.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedLotIndexes(new Set())}
+                disabled={selectedLotCount === 0}
+                className="app-button app-button--secondary !min-h-8 !px-3 !py-1.5 !text-xs"
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-[var(--app-info-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-xs font-bold text-[var(--app-text-strong)]">
+              Apply to selected lots
+            </span>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Apply Legal value to selected lots"
+            >
+              {LEGAL_SELECTION_OPTIONS.map((option) => {
+                const selected =
+                  selectedLotCount > 0 &&
+                  sharedSelectedLegalSelection ===
+                    normalizeLegalSelection(option);
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => applyLegalSelectionToSelectedLots(option)}
+                    disabled={selectedLotCount === 0}
+                    aria-pressed={selected}
+                    aria-label={`Apply ${option} to ${selectedLotCount} selected lot${
+                      selectedLotCount === 1 ? "" : "s"
+                    }`}
+                    className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
+                      selected
+                        ? "app-button--primary"
+                        : "app-button--secondary"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
+
+  const renderLotPagination = () => {
+    if (lotPageCount <= 1) return null;
+    return (
+      <nav
+        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2"
+        aria-label="Asset lots pagination"
+      >
+        <span className="text-xs font-medium text-[var(--app-text-muted)]">
+          Showing {firstVisibleLotIndex + 1}–{lastVisibleLotIndex} of {lotsArray.length} lots
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="app-button app-button--secondary !min-h-8 !px-2.5 !py-1.5 !text-xs"
+            onClick={() => setLotPage((current) => Math.max(1, current - 1))}
+            disabled={activeLotPage === 1}
+            aria-label="Previous lots page"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Previous
+          </button>
+          <span className="min-w-16 text-center text-xs font-semibold text-[var(--app-text)]">
+            {activeLotPage} / {lotPageCount}
+          </span>
+          <button
+            type="button"
+            className="app-button app-button--secondary !min-h-8 !px-2.5 !py-1.5 !text-xs"
+            onClick={() =>
+              setLotPage((current) => Math.min(lotPageCount, current + 1))
+            }
+            disabled={activeLotPage === lotPageCount}
+            aria-label="Next lots page"
+          >
+            Next
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </nav>
+    );
+  };
 
   const workflowLocked = filesGenerating || filesRegenerating;
   const specPdfUrl = previewFiles?.spec_pdf;
@@ -1328,7 +1803,7 @@ export default function PreviewModal({
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--app-accent)] border-t-transparent"></div>
         </div>
       ) : (
         <>
@@ -1342,7 +1817,7 @@ export default function PreviewModal({
             {/* Basic Information Section */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
-                <span className="text-blue-600">👤</span>
+                <span className="text-[var(--app-accent)]">👤</span>
                 Basic Information
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1355,7 +1830,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("client_name")}
                     value={previewData?.client_name || ""}
                     onChange={(e) => updateField("client_name", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., ABC Corporation"
                   />
                   {!previewData?.client_name && (
@@ -1371,7 +1846,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("owner_name")}
                     value={previewData?.owner_name || ""}
                     onChange={(e) => updateField("owner_name", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., John Smith"
                   />
                 </div>
@@ -1384,7 +1859,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("contract_no")}
                     value={previewData?.contract_no || ""}
                     onChange={(e) => updateField("contract_no", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., C-2024-001"
                   />
                 </div>
@@ -1404,7 +1879,7 @@ export default function PreviewModal({
                       onChange={(event) => updateLocation(event.target.value)}
                       aria-describedby="asset-preview-location-status"
                       aria-invalid={!isLocationReady}
-                      className="min-w-0 flex-1 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="min-w-0 flex-1 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                       placeholder="Street address, city, province/state, country"
                     />
                     <button
@@ -1475,7 +1950,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("industry")}
                     value={previewData?.industry || ""}
                     onChange={(e) => updateField("industry", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., Construction, Manufacturing"
                   />
                 </div>
@@ -1485,7 +1960,7 @@ export default function PreviewModal({
             {/* Dates & Financial Section */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
-                <span className="text-green-600">📅</span>
+                <span className="text-[var(--app-success)]">📅</span>
                 Dates & Financial
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1498,7 +1973,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("effective_date")}
                     value={previewData?.effective_date?.split("T")[0] || ""}
                     onChange={(e) => updateField("effective_date", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                   />
                 </div>
                 <div>
@@ -1510,7 +1985,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("inspection_date")}
                     value={previewData?.inspection_date?.split("T")[0] || ""}
                     onChange={(e) => updateField("inspection_date", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                   />
                 </div>
                 <div>
@@ -1521,7 +1996,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("currency")}
                     value={previewData?.currency || "CAD"}
                     onChange={(e) => handleCurrencyChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                   >
                     <option value="CAD">CAD - Canadian Dollar</option>
                     <option value="USD">USD - US Dollar</option>
@@ -1539,7 +2014,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("total_appraised_value")}
                     value={previewData?.total_appraised_value || previewData?.total_value || ""}
                     onChange={(e) => updateField("total_appraised_value", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., $100,000 or CAD 100,000"
                   />
                 </div>
@@ -1549,7 +2024,7 @@ export default function PreviewModal({
             {/* Appraisal Details Section */}
             <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
               <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
-                <span className="text-purple-600">📋</span>
+                <span className="text-[var(--app-info)]">📋</span>
                 Appraisal Details
               </h3>
               <div className="grid grid-cols-1 gap-4">
@@ -1562,7 +2037,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("appraisal_purpose")}
                     value={previewData?.appraisal_purpose || ""}
                     onChange={(e) => updateField("appraisal_purpose", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., Insurance, Sale, Financing, Internal Review"
                   />
                 </div>
@@ -1576,7 +2051,7 @@ export default function PreviewModal({
                       {...getFocusTrackingProps("appraiser")}
                       value={previewData?.appraiser || ""}
                       onChange={(e) => updateField("appraiser", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                       placeholder="e.g., John Appraiser, CPA"
                     />
                   </div>
@@ -1589,7 +2064,7 @@ export default function PreviewModal({
                       {...getFocusTrackingProps("appraisal_company")}
                       value={previewData?.appraisal_company || ""}
                       onChange={(e) => updateField("appraisal_company", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                       placeholder="e.g., Asset Insight Appraisals"
                     />
                   </div>
@@ -1620,7 +2095,7 @@ export default function PreviewModal({
                     {...getFocusTrackingProps("prepared_for")}
                     value={previewData?.prepared_for || ""}
                     onChange={(e) => updateField("prepared_for", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="e.g., Client Contact / Company"
                   />
                 </div>
@@ -1633,7 +2108,7 @@ export default function PreviewModal({
                     value={previewData?.factors_age_condition || ""}
                     onChange={(e) => updateField("factors_age_condition", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="Describe age and condition..."
                   />
                 </div>
@@ -1646,7 +2121,7 @@ export default function PreviewModal({
                     value={previewData?.factors_quality || ""}
                     onChange={(e) => updateField("factors_quality", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="Describe quality..."
                   />
                 </div>
@@ -1659,7 +2134,7 @@ export default function PreviewModal({
                     value={previewData?.factors_analysis || ""}
                     onChange={(e) => updateField("factors_analysis", e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all"
                     placeholder="Provide overall analysis..."
                   />
                 </div>
@@ -1669,35 +2144,42 @@ export default function PreviewModal({
             {/* Software narrative fields removed to match DOCX inputs */}
 
             {/* Quick Stats */}
-            <div className="bg-[var(--app-panel)] from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
+            <div className="rounded-xl border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-4">
               <h4 className="text-sm font-bold text-[var(--app-text)] mb-3">📊 Report Statistics</h4>
               <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{previewData?.lots?.length || 0}</div>
+                  <div className="text-2xl font-bold text-[var(--app-accent)]">{previewData?.lots?.length || 0}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Total Lots</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{previewData?.currency || "CAD"}</div>
+                  <div className="text-2xl font-bold text-[var(--app-success)]">{previewData?.currency || "CAD"}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Currency</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{previewData?.language?.toUpperCase() || "EN"}</div>
+                  <div className="text-2xl font-bold text-[var(--app-info)]">{previewData?.language?.toUpperCase() || "EN"}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Language</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{previewData?.total_appraised_value ? "✓" : "-"}</div>
+                  <div className="text-2xl font-bold text-[var(--app-accent)]">{previewData?.total_appraised_value ? "✓" : "-"}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Value Set</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-semibold text-blue-700">{(groupingMode || previewData?.grouping_mode || "mixed").toString()}</div>
+                  <div className="text-sm font-semibold text-[var(--app-accent)]">{(groupingMode || previewData?.grouping_mode || "mixed").toString()}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Grouping</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-cyan-600">{imageCount ?? "-"}</div>
+                  <div className="text-2xl font-bold text-[var(--app-info)]">{imageCount ?? "-"}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Images</div>
                 </div>
               </div>
             </div>
+
+            <AssetCoverImagePicker
+              candidateUrls={coverImageCandidates}
+              value={selectedCoverImageUrls}
+              onChange={(urls) => updateField("cover_image_urls", urls)}
+              disabled={workflowLocked || saving || submitting}
+            />
 
 
           </div>
@@ -1726,7 +2208,7 @@ export default function PreviewModal({
                       const current = galleryLotImages.entries[galleryLotImages.currentIdx];
                       if (current) deleteLotImage(current.lotIndex, current);
                     }}
-                    className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white shadow transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--app-danger)] px-3 py-2 text-sm font-bold text-white shadow transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--app-danger-ring)]"
                     aria-label={`Remove photo ${galleryLotImages.currentIdx + 1}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1769,6 +2251,7 @@ export default function PreviewModal({
                 <img
                   src={galleryLotImages.entries[galleryLotImages.currentIdx]?.url}
                   alt={`Photo ${galleryLotImages.currentIdx + 1}`}
+                  decoding="async"
                   className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-sm"
                 />
               </div>
@@ -1788,7 +2271,13 @@ export default function PreviewModal({
                       }`}
                     >
                       { }
-                      <img src={entry.url} alt={`Photo ${i + 1} thumbnail`} className="w-full h-full object-cover" />
+                      <img
+                        src={entry.url}
+                        alt={`Photo ${i + 1} thumbnail`}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
                     </button>
                   ))}
                 </div>
@@ -1808,10 +2297,12 @@ export default function PreviewModal({
                 Add Lot
               </button>
             </div>
+            {renderBulkLegalSelection()}
+            {renderLotPagination()}
             {groupedLots.length ? (
               <>
                 {/* Mobile: card list grouped by sub-mode */}
-                <div className="md:hidden space-y-5">
+                {!isDesktopLayout ? <div className="space-y-5">
                   {groupedLots.map((group) => (
                     <div key={group.gid}>
                       <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
@@ -1826,9 +2317,19 @@ export default function PreviewModal({
                             previewData?.valuation_data?.methods
                           );
                           return (
-                          <div key={idx} className="rounded-[1.25rem] border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-3 shadow-sm">
+                          <div
+                            key={idx}
+                            className={`app-render-row rounded-[1.25rem] border bg-[var(--app-panel-soft)] p-3 shadow-sm transition-colors ${
+                              validSelectedLotIndexes.has(idx)
+                                ? "border-[var(--app-accent)]"
+                                : "border-[var(--app-border)]"
+                            }`}
+                          >
                             <div className="flex items-center justify-between mb-2">
-                              <div className="text-sm font-semibold text-[var(--app-text)]">Lot {getLotDisplayNumber(lot, idx)}</div>
+                              <div className="flex items-center gap-2">
+                                {renderLotSelectionCheckbox(lot, idx, "mobile")}
+                                <div className="text-sm font-semibold text-[var(--app-text)]">Lot {getLotDisplayNumber(lot, idx)}</div>
+                              </div>
                               <button
                                 onClick={() => deleteLot(idx)}
                                 aria-label={`Delete lot ${idx + 1}`}
@@ -1882,11 +2383,17 @@ export default function PreviewModal({
                                       {lotImages.slice(0, 20).map(({ url, globalIndex }, imgIdx) => (
                                         <div
                                           key={imgIdx}
-                                          className="group relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-blue-500 hover:shadow-md transition-all"
+                                          className="group relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-[var(--app-accent)] hover:shadow-md transition-all"
                                           onClick={() => openLotGallery(imgIdx)}
                                         >
                                           { }
-                                          <img src={url} alt={`Photo ${imgIdx + 1}`} className="w-full h-full object-cover" />
+                                          <img
+                                            src={url}
+                                            alt={`Photo ${imgIdx + 1}`}
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-cover"
+                                          />
                                           <button
                                             type="button"
                                             onClick={(event) => {
@@ -1894,7 +2401,7 @@ export default function PreviewModal({
                                               event.stopPropagation();
                                               deleteLotImage(idx, { globalIndex, url });
                                             }}
-                                            className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-red-600 text-xs font-black text-white opacity-95 shadow"
+                                            className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--app-danger)] text-xs font-black text-white opacity-95 shadow"
                                             aria-label={`Remove photo ${imgIdx + 1}`}
                                           >
                                             x
@@ -1928,7 +2435,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-mobile`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
+                                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm ${
                                     isDuplicateLotNumber(lot, idx)
                                       ? "border-[var(--app-warning)] bg-[var(--app-warning-soft)]"
                                       : "border-[var(--app-border)]"
@@ -1946,7 +2453,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-title-mobile`)}
                                   value={lot.title || ""}
                                   onChange={(e) => updateLot(idx, "title", e.target.value)}
-                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Title"
                                 />
                               </div>
@@ -1961,10 +2468,11 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-category-mobile`)}
                                   value={lot.categories || ""}
                                   onChange={(e) => updateLot(idx, "categories", e.target.value)}
-                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Auctioneer Import category"
                                 />
                               </div>
+                              {renderLegalSelection(lot, idx, "mobile")}
                               <div>
                                 <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
                                 {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
@@ -2001,7 +2509,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-mobile`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
-                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
                                 <div className="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3">
@@ -2021,16 +2529,16 @@ export default function PreviewModal({
                       </div>
                     </div>
                   ))}
-                </div>
+                </div> : null}
 
                 {/* Desktop: table per group */}
-                <div className="hidden md:block space-y-6">
+                {isDesktopLayout ? <div className="space-y-6">
                   {groupedLots.map((group) => (
-                    <div key={group.gid} className="overflow-hidden">
+                    <div key={group.gid} className="app-render-row overflow-x-auto rounded-lg">
                       <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
                         Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
                       </div>
-                      <table className="w-full table-fixed text-sm border border-[var(--app-border)] rounded-lg overflow-hidden">
+                      <table className="w-full min-w-[1280px] table-fixed text-sm border border-[var(--app-border)] rounded-lg overflow-hidden">
                         <thead className="bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
                           <tr>
                             <th className="w-[7%] px-2 py-2 text-left">Lot #</th>
@@ -2039,7 +2547,7 @@ export default function PreviewModal({
                             <th className="w-[13%] px-2 py-2 text-left">Category</th>
                             <th className="w-[15%] px-2 py-2 text-left">Description</th>
                             <th className="w-[14%] px-2 py-2 text-left">Specs</th>
-                            <th className="w-[11%] px-2 py-2 text-left">Selections</th>
+                            <th className="w-[11%] px-2 py-2 text-left">Legal / valuations</th>
                             <th className="w-[11%] px-2 py-2 text-left">Value</th>
                             <th className="w-[4%] px-2 py-2 text-left">Actions</th>
                           </tr>
@@ -2063,14 +2571,25 @@ export default function PreviewModal({
                             };
                             return (
                             <React.Fragment key={idx}>
-                            <tr className={i % 2 === 0 ? "bg-[var(--app-panel)]" : "bg-[var(--app-panel-alt)]"}>
+                            <tr
+                              className={
+                                validSelectedLotIndexes.has(idx)
+                                  ? "bg-[var(--app-accent-soft)]"
+                                  : i % 2 === 0
+                                    ? "bg-[var(--app-panel)]"
+                                    : "bg-[var(--app-panel-alt)]"
+                              }
+                            >
                               <td className="px-2 py-2 text-[var(--app-text)] font-medium align-top">
+                                <div className="mb-1">
+                                  {renderLotSelectionCheckbox(lot, idx, "desktop")}
+                                </div>
                                 <input
                                   type="text"
                                   {...getFocusTrackingProps(`lot-${idx}-lot-number-desktop`)}
                                   value={String(lot.lot_number ?? getLotDisplayNumber(lot, idx))}
                                   onChange={(e) => updateLot(idx, "lot_number", e.target.value)}
-                                  className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-semibold ${
+                                  className={`w-full min-w-0 px-2 py-1.5 border rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm font-semibold ${
                                     isDuplicateLotNumber(lot, idx)
                                       ? "border-[var(--app-warning)] bg-[var(--app-warning-soft)]"
                                       : "border-[var(--app-border)]"
@@ -2097,11 +2616,17 @@ export default function PreviewModal({
                                       {lotImages.slice(0, 6).map(({ url, globalIndex }, imgI) => (
                                         <div
                                           key={imgI}
-                                          className="relative w-14 h-14 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-blue-500 hover:shadow-md transition-all flex-shrink-0"
+                                          className="relative w-14 h-14 rounded-lg overflow-hidden border border-[var(--app-border)] cursor-pointer hover:border-[var(--app-accent)] hover:shadow-md transition-all flex-shrink-0"
                                           onClick={() => openLotGallery(imgI)}
                                         >
                                           { }
-                                          <img src={url} alt={`Photo ${imgI + 1}`} className="w-full h-full object-cover" />
+                                          <img
+                                            src={url}
+                                            alt={`Photo ${imgI + 1}`}
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="h-full w-full object-cover"
+                                          />
                                           <button
                                             type="button"
                                             onClick={(event) => {
@@ -2109,7 +2634,7 @@ export default function PreviewModal({
                                               event.stopPropagation();
                                               deleteLotImage(idx, { globalIndex, url });
                                             }}
-                                            className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-black text-white shadow"
+                                            className="absolute right-0.5 top-0.5 grid h-5 w-5 place-items-center rounded-full bg-[var(--app-danger)] text-[10px] font-black text-white shadow"
                                             aria-label={`Remove photo ${imgI + 1}`}
                                           >
                                             x
@@ -2158,7 +2683,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-title-desktop`)}
                                   value={lot.title || ""}
                                   onChange={(e) => updateLot(idx, "title", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Title"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "title", "desktop")}</div>
@@ -2170,7 +2695,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-category-desktop`)}
                                   value={lot.categories || ""}
                                   onChange={(e) => updateLot(idx, "categories", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Category"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "categories", "desktop")}</div>
@@ -2182,7 +2707,10 @@ export default function PreviewModal({
                                 {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
                               </td>
                               <td className="px-2 py-2 align-top">
+                                {renderLegalSelection(lot, idx, "desktop")}
+                                <div className="mt-2">
                                 <SelectedValuationMethods lines={valuationLines} lotLabel={lotLabel} />
+                                </div>
                               </td>
                               <td className="px-2 py-2 align-top">
                                 <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
@@ -2194,7 +2722,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`lot-${idx}-estimated_value-desktop`)}
                                   value={lot.estimated_value || ""}
                                   onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="e.g., $25,000"
                                 />
                                 <div className="mt-1">{renderFieldEditorButton(idx, "estimated_value", "desktop")}</div>
@@ -2241,7 +2769,7 @@ export default function PreviewModal({
                       </table>
                     </div>
                   ))}
-                </div>
+                </div> : null}
               </>
             ) : (
               <div className="text-center py-16 bg-[var(--app-panel-alt)] rounded-xl border border-dashed border-[var(--app-border)]">
@@ -2267,15 +2795,15 @@ export default function PreviewModal({
             </div>
             {previewData?.include_valuation_table ? (
               <>
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-semibold text-blue-900 mb-2">
+                <div className="rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-4">
+                  <h4 className="mb-2 font-semibold text-[var(--app-text-strong)]">
                     Valuation Methods Selected
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {previewData?.valuation_methods?.map((method: string) => (
                       <span
                         key={method}
-                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium"
+                        className="rounded-full border border-[var(--app-info-border)] bg-[var(--app-panel)] px-3 py-1 text-sm font-medium text-[var(--app-info)]"
                       >
                         {method}
                       </span>
@@ -2295,7 +2823,7 @@ export default function PreviewModal({
                         {...getFocusTrackingProps("valuation-baseFMV")}
                         value={Number(previewData.valuation_data.baseFMV || 0)}
                         onChange={(e) => updateValuationBase(Number(e.target.value))}
-                        className="w-56 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all tabular-nums"
+                        className="w-56 px-3 py-2 text-sm border border-[var(--app-border)] rounded-lg focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent transition-all tabular-nums"
                       />
                     </div>
                   </div>
@@ -2324,19 +2852,19 @@ export default function PreviewModal({
                                     {...getFocusTrackingProps(`valuation-${i}-fullName`)}
                                     value={m.fullName || ""}
                                     onChange={(e) => updateValuationMethod(i, "fullName", e.target.value)}
-                                    className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                    className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                     placeholder="Full method name"
                                   />
                                 </div>
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="inline-flex items-center rounded-md bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-semibold">{m.method || "—"}</span>
+                                  <span className="inline-flex items-center rounded-md border border-[var(--app-info-border)] bg-[var(--app-info-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--app-info)]">{m.method || "—"}</span>
                                   <span className="text-[11px] text-[var(--app-text-muted)]">Code</span>
                                 </div>
                                 <textarea
                                   {...getFocusTrackingProps(`valuation-${i}-description`)}
                                   value={m.description || ""}
                                   onChange={(e) => updateValuationMethod(i, "description", e.target.value)}
-                                  className="mt-1 w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
+                                  className="mt-1 w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
                                   placeholder="Short description"
                                   rows={2}
                                 />
@@ -2350,7 +2878,7 @@ export default function PreviewModal({
                                     {...getFocusTrackingProps(`valuation-${i}-value`)}
                                     value={Number(m.value || 0)}
                                     onChange={(e) => updateValuationMethod(i, "value", Number(e.target.value))}
-                                    className="w-44 px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm tabular-nums"
+                                    className="w-44 px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm tabular-nums"
                                   />
                                 </div>
                               </td>
@@ -2359,7 +2887,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-saleConditions`)}
                                   value={m.saleConditions || ""}
                                   onChange={(e) => updateValuationMethod(i, "saleConditions", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-xs leading-5 resize-none min-h-[56px]"
                                   placeholder="Conditions"
                                   rows={2}
                                 />
@@ -2370,7 +2898,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-timeline`)}
                                   value={m.timeline || ""}
                                   onChange={(e) => updateValuationMethod(i, "timeline", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Timeline"
                                 />
                               </td>
@@ -2380,7 +2908,7 @@ export default function PreviewModal({
                                   {...getFocusTrackingProps(`valuation-${i}-useCase`)}
                                   value={m.useCase || ""}
                                   onChange={(e) => updateValuationMethod(i, "useCase", e.target.value)}
-                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  className="w-full px-2 py-1.5 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-[var(--app-accent)] focus:border-transparent text-sm"
                                   placeholder="Use Case"
                                 />
                               </td>

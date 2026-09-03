@@ -215,6 +215,55 @@ async function mockAuthenticatedApi(
           },
         },
       };
+    } else if (path.endsWith("/api/asset/category-specs")) {
+      body = {
+        message: "ok",
+        data: { categories: [], specs: [] },
+      };
+    } else if (path.endsWith("/api/asset/e2e-asset-preview/preview")) {
+      const coverImages = Array.from(
+        { length: 5 },
+        (_, index) => `${reportThumbnailUrl}#cover-${index + 1}`
+      );
+      const previewData = {
+        client_name: "E2E Asset Preview",
+        location: "Leeds Equipment Yard, United Kingdom",
+        currency: "GBP",
+        grouping_mode: "per_item",
+        valuation_methods: [],
+        valuation_data: { methods: [] },
+        lots: Array.from({ length: 45 }, (_, index) => ({
+          lot_id: `e2e-lot-${index + 1}`,
+          lot_number: String(index + 1),
+          title: `E2E Asset ${index + 1}`,
+          categories: "Construction Equipment",
+          description: "Responsive preview test asset",
+          details: "Maintained field equipment",
+          estimated_value: "GBP 1,000",
+          mixed_group_index: 1,
+          sub_mode: "per_item",
+          image_indexes: [index % coverImages.length],
+          image_urls: [coverImages[index % coverImages.length]],
+          condition_report_specs: {},
+        })),
+      };
+      body =
+        request.method() === "PUT"
+          ? {
+              message: "Saved",
+              data: request.postDataJSON()?.preview_data || previewData,
+              imageUrls: coverImages,
+              image_count: coverImages.length,
+            }
+          : {
+              data: {
+                status: "preview",
+                grouping_mode: "per_item",
+                image_count: coverImages.length,
+                imageUrls: coverImages,
+                preview_data: previewData,
+              },
+            };
     } else if (path.endsWith("/api/asset")) {
       body = {
         message: "ok",
@@ -935,6 +984,111 @@ test("mobile preview actions remain visible without page overflow", async ({
       name: "Preview Lot Listing report: CV-E2E-LOT-PREVIEW",
     })
   ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("asset preview cover and bulk Legal controls stay responsive in both themes", async ({
+  page,
+}, testInfo) => {
+  test.skip(!["desktop", "mobile"].includes(testInfo.project.name));
+  const theme: ThemeMode = testInfo.project.name === "mobile" ? "dark" : "light";
+  await initializeTheme(page, theme);
+  await mockAuthenticatedApi(page);
+  await page.goto("/previews");
+
+  await page
+    .getByRole("button", {
+      name: "Preview Asset report: E2E Asset Preview",
+    })
+    .click();
+
+  const preview = page.getByRole("dialog", { name: "Preview & Edit Report" });
+  await expect(preview).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+  await expect(
+    preview.getByRole("region", { name: "Appraiser document cover images" })
+  ).toBeVisible();
+
+  await preview.getByRole("button", { name: "Select cover images" }).click();
+  const picker = page.getByRole("dialog", { name: "Select cover images" });
+  await expect(picker.getByRole("img", { name: /Report image/ })).toHaveCount(5);
+  await picker.getByRole("button", { name: "Select cover image 2" }).click();
+  await picker.getByRole("button", { name: "Select cover image 1" }).click();
+  await picker.getByRole("button", { name: "Apply cover images" }).click();
+  await expect(preview.getByText("2 of 4 cover images selected.")).toBeVisible();
+
+  for (const lotNumber of [4, 8, 9]) {
+    await preview
+      .getByRole("checkbox", {
+        name: `Select lot ${lotNumber}, row ${lotNumber}`,
+      })
+      .click();
+  }
+  await expect(
+    preview.getByText(
+      "3 of 45 lots selected. Apply a value below or adjust any lot individually."
+    )
+  ).toBeVisible();
+
+  const bulkLegal = preview.getByRole("group", {
+    name: "Apply Legal value to selected lots",
+  });
+  await bulkLegal
+    .getByRole("button", { name: "Apply N/A to 3 selected lots" })
+    .click();
+  await expect(
+    bulkLegal.getByRole("button", { name: "Apply N/A to 3 selected lots" })
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const selectionControl = preview.getByRole("group", {
+    name: "Select lots for bulk Legal assignment",
+  });
+  await selectionControl
+    .getByRole("button", { name: "Select all 45 lots" })
+    .click();
+  await expect(
+    preview.getByText(
+      "45 of 45 lots selected. Apply a value below or adjust any lot individually."
+    )
+  ).toBeVisible();
+  await bulkLegal
+    .getByRole("button", { name: "Apply No Title to 45 selected lots" })
+    .click();
+  await expect(
+    bulkLegal.getByRole("button", {
+      name: "Apply No Title to 45 selected lots",
+    })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    selectionControl.getByRole("button", { name: "Unselect all 45 lots" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    preview.getByRole("checkbox", { name: "Select lot 4, row 4" })
+  ).toBeChecked();
+  await expect(
+    preview.getByRole("checkbox", { name: "Select lot 8, row 8" })
+  ).toBeChecked();
+  await expect(
+    preview.getByRole("checkbox", { name: "Select lot 9, row 9" })
+  ).toBeChecked();
+  await expect(
+    preview.getByText("Showing 1–20 of 45 lots")
+  ).toBeVisible();
+  await preview.getByRole("button", { name: "Next lots page" }).click();
+  await expect(
+    preview.getByText("Showing 21–40 of 45 lots")
+  ).toBeVisible();
+  await expect(
+    preview.getByRole("checkbox", { name: "Select lot 21, row 21" })
+  ).toBeChecked();
+  await expect(
+    bulkLegal.getByRole("button", {
+      name: "Apply No Title to 45 selected lots",
+    })
+  ).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
   await expectNoHorizontalOverflow(page);
 });
 

@@ -139,8 +139,8 @@ describe("PreviewModal valuation methods", () => {
     const valueGroups = screen.getAllByLabelText(
       "Valuation method values for lot 1"
     );
-    expect(methodGroups).toHaveLength(2);
-    expect(valueGroups).toHaveLength(2);
+    expect(methodGroups).toHaveLength(1);
+    expect(valueGroups).toHaveLength(1);
 
     for (const method of ["FML", "TKV", "OLV", "FLV"]) {
       expect(within(methodGroups[0]).getByText(method)).toBeInTheDocument();
@@ -157,12 +157,257 @@ describe("PreviewModal valuation methods", () => {
     const baseFields = screen.getAllByRole("textbox", {
       name: "Base market value for lot 1",
     });
-    expect(baseFields).toHaveLength(2);
+    expect(baseFields).toHaveLength(1);
     fireEvent.change(baseFields[0], { target: { value: "US$50,000" } });
 
     await waitFor(() => {
       expect(within(valueGroups[0]).getByText("US$35,000")).toBeInTheDocument();
     });
+  });
+
+  it("renders only the compact lot editor on mobile viewports", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: "(min-width: 768px)",
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }))
+    );
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-mobile"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(makePreviewResponse())}
+      />
+    );
+
+    expect(
+      await screen.findByLabelText("Selected valuation methods for lot 1")
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByLabelText("Selected valuation methods for lot 1")
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("textbox", { name: "Base market value for lot 1" })
+    ).toBeInTheDocument();
+  });
+
+  it("applies Legal only to lots 4, 8, and 9 while preserving individual overrides", async () => {
+    const response = makePreviewResponse();
+    response.data.preview_data.lots = Array.from({ length: 10 }, (_, index) => ({
+      ...response.data.preview_data.lots[0],
+      lot_number: String(index + 1),
+      title: `Asset ${index + 1}`,
+      condition_report_selections: { legal: "" },
+    }));
+    const updatePreview = vi.fn().mockImplementation(async (_id, previewData) => ({
+      message: "Saved",
+      data: previewData,
+    }));
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-selected-lots"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+      />
+    );
+
+    await screen.findByDisplayValue("Asset 1");
+    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    const applyControl = screen.getByRole("group", {
+      name: "Apply Legal value to selected lots",
+    });
+    expect(saveButton).toBeDisabled();
+    expect(
+      within(applyControl).getByRole("button", {
+        name: "Apply N/A to 0 selected lots",
+      })
+    ).toBeDisabled();
+
+    for (const lotNumber of [4, 8, 9]) {
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: `Select lot ${lotNumber}, row ${lotNumber}`,
+        })
+      );
+    }
+
+    expect(
+      screen.getByText(
+        "3 of 10 lots selected. Apply a value below or adjust any lot individually."
+      )
+    ).toBeInTheDocument();
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(
+      within(applyControl).getByRole("button", {
+        name: "Apply N/A to 3 selected lots",
+      })
+    );
+    expect(saveButton).toBeEnabled();
+
+    const legalControls = screen.getAllByRole("group", { name: "Legal" });
+    expect(
+      within(legalControls[0]).getByRole("radio", { name: "N/A" })
+    ).not.toBeChecked();
+    for (const index of [3, 7, 8]) {
+      expect(
+        within(legalControls[index]).getByRole("radio", { name: "N/A" })
+      ).toBeChecked();
+    }
+
+    fireEvent.click(
+      within(legalControls[7]).getByRole("radio", { name: "No Title" })
+    );
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
+    const savedPreview = updatePreview.mock.calls[0][1];
+    expect(
+      savedPreview.lots.map(
+        (lot: any) => lot.condition_report_selections?.legal || ""
+      )
+    ).toEqual(["", "", "", "N/A", "", "", "", "No Title", "N/A", ""]);
+    await waitFor(() => {
+      expect(
+        screen.getByText("Select the lots that should receive the same Legal value.")
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(applyControl).getByRole("button", {
+        name: "Apply N/A to 0 selected lots",
+      })
+    ).toBeDisabled();
+  });
+
+  it("pages large reports, preserves focus, and selects every off-page lot", async () => {
+    const response = makePreviewResponse();
+    response.data.preview_data.lots = Array.from({ length: 205 }, (_, index) => ({
+      ...response.data.preview_data.lots[0],
+      lot_number: String(index + 1),
+      title: `Asset ${index + 1}`,
+      condition_report_selections: {
+        legal: index === 0 ? "No Title" : "",
+      },
+    }));
+    const updatePreview = vi.fn().mockImplementation(async (_id, previewData) => ({
+      message: "Saved",
+      data: previewData,
+    }));
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-large"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+      />
+    );
+
+    const firstTitle = await screen.findByDisplayValue("Asset 1");
+    expect(screen.queryByDisplayValue("Asset 21")).toBeNull();
+    expect(screen.getByText("Showing 1–20 of 205 lots")).toBeInTheDocument();
+
+    firstTitle.focus();
+    fireEvent.change(firstTitle, { target: { value: "Focused asset" } });
+    expect(firstTitle).toHaveFocus();
+
+    const selectionControl = screen.getByRole("group", {
+      name: "Select lots for bulk Legal assignment",
+    });
+    fireEvent.click(
+      within(selectionControl).getByRole("button", {
+        name: "Select all 205 lots",
+      })
+    );
+    expect(
+      screen.getByText(
+        "205 of 205 lots selected. Apply a value below or adjust any lot individually."
+      )
+    ).toBeInTheDocument();
+
+    const applyControl = screen.getByRole("group", {
+      name: "Apply Legal value to selected lots",
+    });
+    fireEvent.click(
+      within(applyControl).getByRole("button", {
+        name: "Apply N/A to 205 selected lots",
+      })
+    );
+    const firstLegalControl = screen.getAllByRole("group", { name: "Legal" })[0];
+    expect(within(firstLegalControl).getByRole("radio", { name: "N/A" })).toBeChecked();
+
+    fireEvent.click(within(firstLegalControl).getByRole("radio", { name: "No Title" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
+    const savedPreview = updatePreview.mock.calls[0][1];
+    expect(savedPreview.lots[0].condition_report_selections.legal).toBe("No Title");
+    expect(savedPreview.lots[204].condition_report_selections.legal).toBe("N/A");
+    expect(
+      screen.getByText("Select the lots that should receive the same Legal value.")
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next lots page" }));
+    expect(await screen.findByDisplayValue("Asset 21")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Focused asset")).toBeNull();
+  });
+
+  it("saves the selected appraiser cover images in the chosen order", async () => {
+    const response: any = makePreviewResponse();
+    const coverImages = [
+      "https://images.test/cover-one.jpg",
+      "https://images.test/cover-two.jpg",
+      "https://images.test/cover-three.jpg",
+    ];
+    response.data.imageUrls = coverImages;
+    response.data.image_count = coverImages.length;
+    Object.assign(response.data.preview_data.lots[0], {
+      image_urls: coverImages.slice(0, 2),
+      image_indexes: [0, 1],
+    });
+    const updatePreview = vi.fn().mockImplementation(async (_id, previewData) => ({
+      message: "Saved",
+      data: previewData,
+      imageUrls: coverImages,
+    }));
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="report-cover"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+      />
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select cover images" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select cover image 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select cover image 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply cover images" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
+    expect(updatePreview.mock.calls[0][1].cover_image_urls).toEqual([
+      coverImages[1],
+      coverImages[0],
+    ]);
+    expect(screen.getByText("2 of 4 cover images selected.")).toBeInTheDocument();
   });
 
   it("resolves a legacy coordinate-only preview before showing a location", async () => {
