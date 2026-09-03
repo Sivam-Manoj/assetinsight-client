@@ -76,6 +76,36 @@ describe("MixedSection workflow", () => {
     expect(addPhotos).toBeEnabled();
   });
 
+  it("explains the terminal lot-number card and high-number sampling policy", () => {
+    render(
+      <Harness
+        initial={[
+          {
+            id: "lot-1",
+            files: [photo("asset.jpg", 1), photo("lot-number.jpg", 2)],
+            extraFiles: [],
+            coverIndex: 0,
+            mode: "single_lot",
+          },
+        ]}
+      />
+    );
+
+    expect(
+      screen.getByText(/lot-number card as the final main photo/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Bundle lots numbered 1000 or higher, only the first 10 main photos are analyzed for asset details/i
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /If no valid number is found, lots follow their current order; you can edit each number in Preview/i
+      )
+    ).toBeInTheDocument();
+  });
+
   it("enforces a combined per-lot photo boundary and locks mode after upload", async () => {
     const { container } = render(<Harness maxTotalImages={2} />);
     fireEvent.click(screen.getByRole("button", { name: /new lot/i }));
@@ -120,7 +150,7 @@ describe("MixedSection workflow", () => {
 
     expect(
       screen.getByText(
-        /Only the first 50 main photos are analyzed\. All 51 main photos remain included/i
+        /At most the first 50 main photos are analyzed\. All 51 main photos remain included/i
       )
     ).toBeInTheDocument();
     expect(

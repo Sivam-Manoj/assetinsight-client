@@ -77,7 +77,7 @@ function getModeLabel(mode?: MixedMode) {
 type Props = {
   value: MixedLot[];
   onChange: (lots: MixedLot[]) => void;
-  maxImagesPerLot?: number; // No limit (first 50 analyzed by AI)
+  maxImagesPerLot?: number; // No storage limit; backend applies mode-specific AI caps.
   maxExtraImagesPerLot?: number; // No limit
   maxTotalImages?: number; // No limit
   downloadPrefix?: string; // optional: used for saving captured images locally
@@ -99,7 +99,7 @@ type RemovedMedia = {
 export default function MixedSection({
   value,
   onChange,
-  maxImagesPerLot = Number.MAX_SAFE_INTEGER, // Unlimited (AI analyzes first 50)
+  maxImagesPerLot = Number.MAX_SAFE_INTEGER,
   maxExtraImagesPerLot = Number.MAX_SAFE_INTEGER, // Unlimited
   maxTotalImages = Number.MAX_SAFE_INTEGER, // Unlimited
   downloadPrefix,
@@ -1952,15 +1952,18 @@ export default function MixedSection({
                     className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-xs leading-5 text-sky-900 dark:text-sky-100"
                     role="note"
                   >
-                    Make the lot-number card the first main photo. Bundle lots
-                    numbered 1000 or higher analyze only the first 5 photos. All
-                    photos remain included.
+                    Keep the lot-number card as the final main photo. Software
+                    checks that final photo for the lot number. If no valid
+                    number is found, lots follow their current order; you can
+                    edit each number in Preview. For Bundle lots numbered 1000
+                    or higher, only the first 10 main photos are analyzed for
+                    asset details. All photos remain included.
                   </div>
                 ) : null}
 
                 {analysisImageLimit && activeLot.files.length > analysisImageLimit ? (
                   <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-5 text-amber-800 dark:text-amber-200" role="note">
-                    Only the first {analysisImageLimit} main photos are analyzed. All {activeLot.files.length} main photos remain included in the report.
+                    At most the first {analysisImageLimit} main photos are analyzed. All {activeLot.files.length} main photos remain included in the report.
                   </div>
                 ) : null}
 
@@ -2864,7 +2867,9 @@ export default function MixedSection({
                             0
                           )} images | Lot ${activeIdx + 1}: ${
                             lots[activeIdx]?.files.length ?? 0
-                          } main (first 50 analyzed by Software) | Extra: ${
+                          } main (${lots[activeIdx]?.mode === "single_lot"
+                            ? "final photo checked for lot number; first 10 analyzed for lots 1000+, otherwise up to 50"
+                            : "up to the first 50 analyzed by Software"}) | Extra: ${
                             lots[activeIdx]?.extraFiles.length ?? 0
                           } | Mode: ${
                             lots[activeIdx]?.mode === "single_lot"
