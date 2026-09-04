@@ -221,6 +221,7 @@ export async function uploadLotListingPreviewLotImages(
     imageUrls?: string[];
     image_count?: number;
     added?: Array<{ index: number; url: string; name: string }>;
+    duplicatesSkipped?: number;
     lotIndex?: number;
     files_generating?: boolean;
     files_regenerating?: boolean;

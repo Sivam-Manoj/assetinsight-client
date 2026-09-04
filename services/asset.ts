@@ -1,6 +1,10 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
-import { uploadReportFilesDirectToR2, type DirectUploadFile } from "./directUpload";
+import {
+  isUploadSessionUnsupportedError,
+  uploadReportFilesDirectToR2,
+  type DirectUploadFile,
+} from "./directUpload";
 
 export type AssetGroupingMode =
   | "single_lot"
@@ -111,12 +115,9 @@ export const AssetService = {
     videos?: File[] | undefined,
     options?: CreateOptions
   ): Promise<AssetCreateResponse> {
-    const filesToSend =
-      details.grouping_mode === "catalogue" ||
-      details.grouping_mode === "combined" ||
-      details.grouping_mode === "mixed"
-        ? images
-        : images.slice(0, 10);
+    // Transport every selected image. Any AI inspection cap is a server-side
+    // analysis concern and must not silently drop photos from the report.
+    const filesToSend = images;
     const videoFiles = Array.isArray(videos) ? videos : [];
 
     try {
@@ -143,8 +144,7 @@ export const AssetService = {
       });
     } catch (error: any) {
       if (options?.signal?.aborted) throw options.signal.reason || error;
-      const status = Number(error?.response?.status || 0);
-      if (![404, 405, 501].includes(status)) throw error;
+      if (!isUploadSessionUnsupportedError(error)) throw error;
       console.warn("[AssetService] Direct upload is unsupported; using legacy multipart upload.");
     }
 

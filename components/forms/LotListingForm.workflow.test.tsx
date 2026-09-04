@@ -107,6 +107,9 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/services/directUpload", () => ({
+  isUploadSessionUnsupportedError: (error: unknown) =>
+    (error as { code?: string } | null)?.code ===
+    "UPLOAD_SESSION_UNSUPPORTED",
   uploadReportFilesDirectToR2: mocks.uploadReportFilesDirectToR2,
 }));
 
@@ -339,6 +342,54 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(screen.getByText("Draft save cancelled")).toBeInTheDocument();
   });
 
+  it("makes rapid Save Draft then Submit one cancellable draft-save intent", async () => {
+    const pendingSave = deferred<Record<string, unknown>>();
+    let saveSignal: AbortSignal | undefined;
+    mocks.upsertWithMedia.mockImplementation(
+      (_input, _lots, _onProgress, signal: AbortSignal) => {
+        saveSignal = signal;
+        signal.addEventListener(
+          "abort",
+          () => pendingSave.reject(new DOMException("Cancelled", "AbortError")),
+          { once: true }
+        );
+        return pendingSave.promise;
+      }
+    );
+
+    render(<LotListingForm />);
+    await waitForResolvedLotLocation();
+    addValidListing();
+    const saveButton = screen.getAllByRole("button", { name: "Save Draft" })[0];
+    const submitButton = screen.getByRole("button", { name: "Create Lot Listing" });
+    act(() => {
+      saveButton.click();
+      submitButton.click();
+    });
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Saving your draft",
+    });
+    expect(mocks.upsertWithMedia).toHaveBeenCalledOnce();
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel save" }));
+    await waitFor(() => expect(saveSignal?.aborted).toBe(true));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Saving your draft" })
+      ).not.toBeInTheDocument()
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("dialog", { name: "Uploading your report" })
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the real more-actions menu and wires clear to confirmation", async () => {
     render(<LotListingForm />);
 
@@ -499,6 +550,53 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(screen.getByTestId("test-lot-count")).toHaveTextContent("1");
   });
 
+  it("carries the rejected upload identity into an explicit force-new replacement", async () => {
+    mocks.uploadReportFilesDirectToR2
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: { code: "ACTIVE_REPORT_EXISTS" },
+        },
+      })
+      .mockResolvedValueOnce({
+        message: "Accepted",
+        reportId: "replacement-lot-report",
+        jobId: "replacement-lot-job",
+        status: "processing",
+      });
+    render(<LotListingForm />);
+    await waitForResolvedLotLocation();
+    addValidListing();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Lot Listing" })
+    );
+
+    const conflict = await screen.findByRole("dialog", {
+      name: "Report already processing",
+    });
+    const firstDetails =
+      mocks.uploadReportFilesDirectToR2.mock.calls[0][0].details;
+    fireEvent.click(
+      within(conflict).getByRole("button", {
+        name: "Create Separate Report",
+      })
+    );
+
+    await waitFor(() =>
+      expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledTimes(2)
+    );
+    const replacementDetails =
+      mocks.uploadReportFilesDirectToR2.mock.calls[1][0].details;
+    expect(replacementDetails.force_new).toBe(true);
+    expect(replacementDetails.supersedes_client_submission_id).toBe(
+      firstDetails.client_submission_id
+    );
+    expect(replacementDetails.client_submission_id).not.toBe(
+      firstDetails.client_submission_id
+    );
+  });
+
   it("removes cancellation after acceptance while final cleanup is pending", async () => {
     const cleanup = deferred<void>();
     mocks.uploadReportFilesDirectToR2.mockResolvedValueOnce({
@@ -541,7 +639,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     let fallbackSignal: AbortSignal | undefined;
     const pendingFallback = deferred<Record<string, unknown>>();
     mocks.uploadReportFilesDirectToR2.mockRejectedValueOnce({
-      response: { status: 404 },
+      code: "UPLOAD_SESSION_UNSUPPORTED",
     });
     mocks.apiPost.mockImplementation(
       (
@@ -593,6 +691,26 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(
       screen.getByRole("textbox", { name: /contract number/i })
     ).toHaveValue("LOT-TEST-1");
+    expect(screen.getByTestId("test-lot-count")).toHaveTextContent("1");
+  });
+
+  it("does not start a legacy listing submission for a later session-file 404", async () => {
+    mocks.uploadReportFilesDirectToR2.mockRejectedValueOnce({
+      response: { status: 404 },
+    });
+
+    render(<LotListingForm />);
+    await waitForResolvedLotLocation();
+    addValidListing();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Lot Listing" })
+    );
+
+    await waitFor(() =>
+      expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce()
+    );
+    await screen.findByText("Failed to create lot listing.");
+    expect(mocks.apiPost).not.toHaveBeenCalled();
     expect(screen.getByTestId("test-lot-count")).toHaveTextContent("1");
   });
 

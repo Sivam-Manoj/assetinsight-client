@@ -427,6 +427,58 @@ describe("AssetForm manual save and submission workflow", () => {
     );
   });
 
+  it("makes rapid Save draft then Submit one cancellable draft-save intent", async () => {
+    let saveSignal: AbortSignal | undefined;
+    mocks.upsertWithMedia.mockImplementation(
+      (
+        _input: unknown,
+        _lots: unknown,
+        _onProgress?: DraftProgressCallback,
+        signal?: AbortSignal
+      ) => {
+        saveSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      }
+    );
+    render(<AssetForm />);
+    await waitForResolvedAssetLocation();
+    fillRequiredReportFields();
+    addTestMedia();
+
+    const saveButton = screen.getByRole("button", { name: /Save draft/i });
+    const submitButton = screen.getByRole("button", { name: "Create report" });
+    act(() => {
+      saveButton.click();
+      submitButton.click();
+    });
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Saving your draft",
+    });
+    expect(mocks.upsertWithMedia).toHaveBeenCalledOnce();
+    expect(mocks.createAsset).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel save" }));
+    await waitFor(() => expect(saveSignal?.aborted).toBe(true));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Saving your draft" })
+      ).not.toBeInTheDocument()
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.createAsset).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("dialog", { name: "Uploading your report" })
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the real more-actions menu and wires discard to confirmation", async () => {
     render(<AssetForm />);
 
@@ -593,6 +645,43 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(screen.getByLabelText(/Client name/i)).toHaveValue("Workflow Client");
     expect(screen.getByTestId("selected-asset-media")).toHaveTextContent(
       "asset-photo.jpg"
+    );
+  });
+
+  it("carries the rejected upload identity into an explicit force-new replacement", async () => {
+    mocks.createAsset
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: { code: "ACTIVE_REPORT_EXISTS" },
+        },
+      })
+      .mockResolvedValueOnce({ message: "Accepted" });
+    render(<AssetForm />);
+    await waitForResolvedAssetLocation();
+    fillRequiredReportFields();
+    addTestMedia();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+
+    const conflict = await screen.findByRole("dialog", {
+      name: "Report already processing",
+    });
+    const firstDetails = mocks.createAsset.mock.calls[0][0];
+    fireEvent.click(
+      within(conflict).getByRole("button", {
+        name: "Create Separate Report",
+      })
+    );
+
+    await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledTimes(2));
+    const replacementDetails = mocks.createAsset.mock.calls[1][0];
+    expect(replacementDetails.force_new).toBe(true);
+    expect(replacementDetails.supersedes_client_submission_id).toBe(
+      firstDetails.client_submission_id
+    );
+    expect(replacementDetails.client_submission_id).not.toBe(
+      firstDetails.client_submission_id
     );
   });
 

@@ -36,6 +36,7 @@ import {
 import { BrowserLocationService } from "@/services/browserLocation";
 import { useAuthContext } from "@/context/AuthContext";
 import {
+  isUploadSessionUnsupportedError,
   uploadReportFilesDirectToR2,
   type DirectUploadFile,
 } from "@/services/directUpload";
@@ -371,6 +372,7 @@ export default function LotListingForm({
   const supersededSubmissionIdRef = useRef<string | null>(null);
   const forceNewSubmissionRef = useRef(false);
   const submitLockRef = useRef(false);
+  const activeFormOperationRef = useRef<"draft-save" | "submit" | null>(null);
   const reportEventSentRef = useRef(false);
   const draftProgressClearTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1200,6 +1202,7 @@ export default function LotListingForm({
 
   const handleSaveDraft = useCallback(async () => {
     if (
+      activeFormOperationRef.current ||
       submitting ||
       restoringDraft ||
       draftSaveAbortRef.current ||
@@ -1207,6 +1210,7 @@ export default function LotListingForm({
     ) {
       return;
     }
+    activeFormOperationRef.current = "draft-save";
     requestedRevisionRef.current += 1;
     const controller = new AbortController();
     draftSaveAbortRef.current = controller;
@@ -1225,6 +1229,9 @@ export default function LotListingForm({
     } finally {
       if (draftSaveAbortRef.current === controller) {
         draftSaveAbortRef.current = null;
+      }
+      if (activeFormOperationRef.current === "draft-save") {
+        activeFormOperationRef.current = null;
       }
       setDraftSaveActive(false);
       setCancellingOperation(false);
@@ -1384,7 +1391,7 @@ export default function LotListingForm({
   const onSubmit = useCallback(
     async (event?: React.FormEvent) => {
       event?.preventDefault();
-      if (submitLockRef.current) return;
+      if (activeFormOperationRef.current || submitLockRef.current) return;
       setError(null);
 
       if (!validateForm()) {
@@ -1394,6 +1401,7 @@ export default function LotListingForm({
         return;
       }
 
+      activeFormOperationRef.current = "submit";
       submitLockRef.current = true;
       reportEventSentRef.current = false;
       autosaveBlockedRef.current = true;
@@ -1536,8 +1544,7 @@ export default function LotListingForm({
             signal: controller.signal,
           });
         } catch (directError: any) {
-          const status = Number(directError?.response?.status || 0);
-          if (![404, 405, 501].includes(status)) throw directError;
+          if (!isUploadSessionUnsupportedError(directError)) throw directError;
 
           const formData = new FormData();
           filesToSend.forEach((file) => formData.append("images", file));
@@ -1587,6 +1594,9 @@ export default function LotListingForm({
         autosaveBlockedRef.current = false;
         setSubmitting(false);
         submitLockRef.current = false;
+        if (activeFormOperationRef.current === "submit") {
+          activeFormOperationRef.current = null;
+        }
         if (submitAbortRef.current === controller) submitAbortRef.current = null;
         setCancellingOperation(false);
         setSubmissionFinalizing(false);
@@ -1632,6 +1642,9 @@ export default function LotListingForm({
 
       setSubmitting(false);
       submitLockRef.current = false;
+      if (activeFormOperationRef.current === "submit") {
+        activeFormOperationRef.current = null;
+      }
       if (submitAbortRef.current === controller) submitAbortRef.current = null;
       setCancellingOperation(false);
       setSubmissionFinalizing(false);
@@ -1710,10 +1723,14 @@ export default function LotListingForm({
   const transferActive = draftSaving || submitting;
 
   const cancelActiveOperation = () => {
-    const controller = draftSaveAbortRef.current || submitAbortRef.current;
-    if (!controller || controller.signal.aborted) return;
+    const controllers = [draftSaveAbortRef.current, submitAbortRef.current].filter(
+      (controller): controller is AbortController => Boolean(controller)
+    );
+    if (!controllers.some((controller) => !controller.signal.aborted)) return;
     setCancellingOperation(true);
-    controller.abort();
+    controllers.forEach((controller) => {
+      if (!controller.signal.aborted) controller.abort();
+    });
   };
 
   useEffect(() => {
@@ -2232,7 +2249,11 @@ export default function LotListingForm({
         }}
         onCreateSeparate={() => {
           setActiveReportConflict(false);
-          supersededSubmissionIdRef.current = null;
+          // Preserve the rejected upload identity. It may reference a
+          // completed session whose placeholder lost the contract-claim race;
+          // the backend can supersede and clean that session only when the
+          // replacement explicitly carries this alias.
+          supersededSubmissionIdRef.current = jobIdRef.current;
           jobIdRef.current =
             typeof crypto !== "undefined" && crypto.randomUUID
               ? crypto.randomUUID()

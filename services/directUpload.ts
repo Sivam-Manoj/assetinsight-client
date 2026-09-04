@@ -34,6 +34,52 @@ const SERVER_FALLBACK_RETRIES = 2;
 const COMPLETE_SESSION_RETRIES = 4;
 const DIRECT_UPLOAD_CIRCUIT_TTL_MS = 10 * 60 * 1000;
 const CLOUDFLARE_R2_HOST_SUFFIX = ".r2.cloudflarestorage.com";
+const UPLOAD_SESSION_UNSUPPORTED_CODE = "UPLOAD_SESSION_UNSUPPORTED";
+
+export class UploadSessionUnsupportedError extends Error {
+  readonly code = UPLOAD_SESSION_UNSUPPORTED_CODE;
+  readonly endpoint: "/asset" | "/lot-listing";
+  readonly originalError: unknown;
+
+  constructor(
+    endpoint: "/asset" | "/lot-listing",
+    originalError: unknown
+  ) {
+    super(`Upload sessions are unsupported for ${endpoint}.`);
+    this.name = "UploadSessionUnsupportedError";
+    this.endpoint = endpoint;
+    this.originalError = originalError;
+  }
+}
+
+export function isUploadSessionUnsupportedError(
+  error: unknown
+): error is UploadSessionUnsupportedError {
+  return (
+    error instanceof UploadSessionUnsupportedError ||
+    (error as { code?: unknown } | null)?.code ===
+      UPLOAD_SESSION_UNSUPPORTED_CODE
+  );
+}
+
+function isInitialUploadSessionCapabilityError(error: unknown): boolean {
+  const response = (error as any)?.response;
+  const status = Number(response?.status || 0);
+  if (status === 405 || status === 501) return true;
+  if (status !== 404) return false;
+
+  const data = response?.data;
+  const code = String(data?.code || "").trim();
+  if (code === UPLOAD_SESSION_UNSUPPORTED_CODE) return true;
+  const message = typeof data === "string"
+    ? data
+    : String(data?.message || "");
+  // Express returns an HTML/text "Cannot POST ..." response when an older
+  // deployment genuinely has no upload-session route. A structured 404 from
+  // report/Auctioneer validation is a business error and must never authorize
+  // a second legacy submission.
+  return /cannot\s+post\b.*\/upload-session/i.test(message);
+}
 
 function abortReason(signal?: AbortSignal) {
   return (
@@ -488,17 +534,25 @@ export async function mapWithConcurrency<T>(
   throwIfAborted(signal);
   const limit = Math.max(1, Math.min(concurrency, items.length || 1));
   let nextIndex = 0;
+  let firstError: unknown;
+  let failed = false;
   await Promise.all(
     Array.from({ length: limit }, async () => {
-      while (true) {
-        throwIfAborted(signal);
+      while (!failed) {
         const index = nextIndex;
         nextIndex += 1;
         if (index >= items.length) break;
-        await worker(items[index], index);
+        try {
+          throwIfAborted(signal);
+          await worker(items[index], index);
+        } catch (error) {
+          if (!failed) firstError = error;
+          failed = true;
+        }
       }
     })
   );
+  if (failed) throw firstError;
 }
 
 export async function uploadReportFilesDirectToR2(args: {
@@ -528,14 +582,24 @@ export async function uploadReportFilesDirectToR2(args: {
     role: item.role || (item.fieldname === "videos" ? "video" : "main"),
   }));
 
-  const { data: sessionEnvelope } = await postWithSignal<{ data: UploadSession }>(
-    `${args.endpoint}/upload-session`,
-    {
-      details: args.details,
-      files: manifest,
-    },
-    args.signal
-  );
+  let sessionEnvelope: { data: UploadSession };
+  try {
+    const response = await postWithSignal<{ data: UploadSession }>(
+      `${args.endpoint}/upload-session`,
+      {
+        details: args.details,
+        files: manifest,
+      },
+      args.signal
+    );
+    sessionEnvelope = response.data;
+  } catch (error) {
+    if (args.signal?.aborted) throw abortReason(args.signal);
+    if (isInitialUploadSessionCapabilityError(error)) {
+      throw new UploadSessionUnsupportedError(args.endpoint, error);
+    }
+    throw error;
+  }
   const session = sessionEnvelope.data;
   if (session.alreadyQueued && session.reportId) {
     args.onUploadProgress?.(1);
@@ -552,34 +616,62 @@ export async function uploadReportFilesDirectToR2(args: {
   const targetById = new Map(session.files.map((file) => [file.fileId, file]));
 
   if (!session.readyToComplete) {
-    await mapWithConcurrency(args.files, async (item, index) => {
-      const target = targetById.get(manifest[index].fileId);
-      if (!target) throw new Error(`Missing upload target for ${item.file.name}`);
-      let fileLoaded = 0;
-      await uploadFileToReportSession({
-        endpoint: args.endpoint,
-        sessionId: session.sessionId,
-        fileId: manifest[index].fileId,
-        uploadUrl: target.uploadUrl,
-        file: item.file,
-        contentType: target.contentType,
-        headers: target.headers,
-        signal: args.signal,
-        onDelta: (delta) => {
-          const nextLoaded = Math.min(item.file.size, fileLoaded + delta);
-          uploadedBytes += Math.max(0, nextLoaded - fileLoaded);
-          fileLoaded = nextLoaded;
+    const uploadController = new AbortController();
+    let terminalUploadError: unknown;
+    const forwardCallerAbort = () =>
+      uploadController.abort(abortReason(args.signal));
+    args.signal?.addEventListener("abort", forwardCallerAbort, { once: true });
+    try {
+      throwIfAborted(args.signal);
+      await mapWithConcurrency(args.files, async (item, index) => {
+        const target = targetById.get(manifest[index].fileId);
+        if (!target) {
+          const error = new Error(`Missing upload target for ${item.file.name}`);
+          terminalUploadError = error;
+          uploadController.abort(error);
+          throw error;
+        }
+        let fileLoaded = 0;
+        try {
+          await uploadFileToReportSession({
+            endpoint: args.endpoint,
+            sessionId: session.sessionId,
+            fileId: manifest[index].fileId,
+            uploadUrl: target.uploadUrl,
+            file: item.file,
+            contentType: target.contentType,
+            headers: target.headers,
+            signal: uploadController.signal,
+            onDelta: (delta) => {
+              const nextLoaded = Math.min(item.file.size, fileLoaded + delta);
+              uploadedBytes += Math.max(0, nextLoaded - fileLoaded);
+              fileLoaded = nextLoaded;
+              args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
+            },
+          });
+        } catch (error) {
+          if (!uploadController.signal.aborted) {
+            terminalUploadError = error;
+            uploadController.abort(error);
+          }
+          throw error;
+        }
+        // Direct progress events may be unavailable, and server fallback has no
+        // browser upload progress. Count the file as complete exactly once.
+        if (fileLoaded < item.file.size) {
+          uploadedBytes += item.file.size - fileLoaded;
+          fileLoaded = item.file.size;
           args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
-        },
+        }
+      }, DIRECT_UPLOAD_CONCURRENCY, uploadController.signal).catch((error) => {
+        // An aborted sibling can settle before the worker that discovered the
+        // actual failure. Preserve that first terminal cause for useful retry
+        // guidance instead of surfacing an internal AbortError.
+        throw terminalUploadError || error;
       });
-      // Direct progress events may be unavailable, and server fallback has no
-      // browser upload progress. Count the file as complete exactly once.
-      if (fileLoaded < item.file.size) {
-        uploadedBytes += item.file.size - fileLoaded;
-        fileLoaded = item.file.size;
-        args.onUploadProgress?.(Math.max(0, Math.min(0.9, uploadedBytes / totalBytes)));
-      }
-    }, DIRECT_UPLOAD_CONCURRENCY, args.signal);
+    } finally {
+      args.signal?.removeEventListener("abort", forwardCallerAbort);
+    }
   }
 
   throwIfAborted(args.signal);

@@ -2,6 +2,16 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PreviewModal from "./PreviewModal";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 const mocks = vi.hoisted(() => ({
   getAssetCategorySpecs: vi.fn(),
   reverseGeocode: vi.fn(),
@@ -9,12 +19,13 @@ const mocks = vi.hoisted(() => ({
   toastInfo: vi.fn(),
   toastSuccess: vi.fn(),
   promoteDraftPreview: vi.fn(),
+  submitForApproval: vi.fn(),
 }));
 
 vi.mock("@/services/assets", () => ({
   getPreviewData: vi.fn(),
   updatePreviewData: vi.fn(),
-  submitForApproval: vi.fn(),
+  submitForApproval: mocks.submitForApproval,
   getSubmittedPreviewData: vi.fn(),
   resubmitReport: vi.fn(),
   getAssetCategorySpecs: mocks.getAssetCategorySpecs,
@@ -113,10 +124,55 @@ describe("PreviewModal valuation methods", () => {
       status: "pending_approval",
       files_generating: true,
     });
+    mocks.submitForApproval.mockReset();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("reloads for a mode switch and ignores the older in-flight preview", async () => {
+    const olderRequest = deferred<ReturnType<typeof makePreviewResponse>>();
+    const submittedResponse = makePreviewResponse();
+    submittedResponse.data.status = "pending_approval";
+    submittedResponse.data.preview_data.client_name = "Submitted snapshot";
+    const loadPreview = vi
+      .fn()
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockResolvedValueOnce(submittedResponse);
+    const onClose = vi.fn();
+
+    const { rerender } = render(
+      <PreviewModal
+        isOpen
+        reportId="asset-mode-switch"
+        isResubmitMode={false}
+        onClose={onClose}
+        loadPreviewDataOverride={loadPreview}
+      />
+    );
+    await waitFor(() => expect(loadPreview).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <PreviewModal
+        isOpen
+        reportId="asset-mode-switch"
+        isResubmitMode
+        onClose={onClose}
+        loadPreviewDataOverride={loadPreview}
+      />
+    );
+
+    await waitFor(() => expect(loadPreview).toHaveBeenCalledTimes(2));
+    expect(await screen.findAllByDisplayValue("Submitted snapshot")).not.toHaveLength(0);
+
+    const olderResponse = makePreviewResponse();
+    olderResponse.data.preview_data.client_name = "Older preview snapshot";
+    olderRequest.resolve(olderResponse);
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Older preview snapshot")).toBeNull();
+      expect(screen.getAllByDisplayValue("Submitted snapshot")).not.toHaveLength(0);
+    });
   });
 
   it("renders every selected method and recalculates each lot value from the editable base", async () => {
@@ -563,6 +619,186 @@ describe("PreviewModal valuation methods", () => {
     await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
     expect(refreshSpecPdf).not.toHaveBeenCalled();
     expect(mocks.promoteDraftPreview).not.toHaveBeenCalled();
+  });
+
+  it("serializes Save and Resubmit without starting a second client regeneration", async () => {
+    const response = makePreviewResponse();
+    response.data.status = "approved";
+    const pendingSave = deferred<{
+      message: string;
+      data: typeof response.data.preview_data;
+      files_regeneration_queued?: boolean;
+    }>();
+    const updatePreview = vi.fn().mockReturnValue(pendingSave.promise);
+    const resubmit = vi.fn();
+    const uploadImages = vi.fn();
+    const refreshSpecPdf = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="approved-exclusive-save"
+        onClose={onClose}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+        resubmitReportOverride={resubmit}
+        uploadPreviewLotImagesOverride={uploadImages}
+        refreshAssetSpecPdfOverride={refreshSpecPdf}
+      />
+    );
+
+    const clientName = (await screen.findAllByDisplayValue("Test Client"))[0];
+    fireEvent.change(clientName, { target: { value: "Locked Client" } });
+    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    const resubmitButton = screen.getByRole("button", { name: "Resubmit report" });
+
+    fireEvent.click(saveButton);
+    fireEvent.click(saveButton);
+    fireEvent.click(resubmitButton);
+    fireEvent.change(document.querySelector('input[type="file"]')!, {
+      target: {
+        files: [new File(["photo"], "locked.jpg", { type: "image/jpeg" })],
+      },
+    });
+
+    expect(updatePreview).toHaveBeenCalledTimes(1);
+    expect(resubmit).not.toHaveBeenCalled();
+    expect(uploadImages).not.toHaveBeenCalled();
+    expect(saveButton).toBeDisabled();
+    expect(resubmitButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close panel" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Saving preview changes"
+    );
+    expect(document.querySelector(".preview-editor [inert]")).not.toBeNull();
+
+    pendingSave.resolve({
+      message: "Saved",
+      data: response.data.preview_data,
+      files_regeneration_queued: true,
+    });
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(refreshSpecPdf).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(resubmitButton).toBeDisabled();
+  });
+
+  it("keeps the server-normalized preview after Save when no newer edit exists", async () => {
+    const response = makePreviewResponse();
+    Object.assign(response.data.preview_data, {
+      latitude: 51.5007,
+      longitude: -0.1246,
+    });
+    Object.assign(response.data.preview_data.lots[0], {
+      location: "Test Yard, London",
+      latitude: 51.5007,
+      longitude: -0.1246,
+    });
+    const canonicalPreview = JSON.parse(JSON.stringify({
+      ...response.data.preview_data,
+      client_name: "Canonical Client",
+      location: "Canonical Asset Yard",
+      lots: [
+        {
+          ...response.data.preview_data.lots[0],
+          title: "Canonical server title",
+          location: "Canonical Asset Yard",
+          latitude: undefined,
+          longitude: undefined,
+        },
+      ],
+      latitude: undefined,
+      longitude: undefined,
+    }));
+    const updatePreview = vi.fn().mockResolvedValue({
+      message: "Saved",
+      data: canonicalPreview,
+    });
+    mocks.submitForApproval.mockResolvedValue({
+      message: "Submitted",
+      data: { reportId: "asset-canonical-save" },
+    });
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="asset-canonical-save"
+        onClose={vi.fn()}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(response)}
+        updatePreviewDataOverride={updatePreview}
+      />
+    );
+
+    const clientName = (await screen.findAllByDisplayValue("Test Client"))[0];
+    fireEvent.change(clientName, { target: { value: "Edited locally" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Inspection Location *" })).toHaveValue(
+        "Canonical Asset Yard"
+      );
+      expect(screen.getByDisplayValue("Canonical Client")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit report" }));
+    await waitFor(() => expect(mocks.submitForApproval).toHaveBeenCalledTimes(1));
+    const submittedPreview = mocks.submitForApproval.mock.calls[0]?.[1];
+    expect(submittedPreview).toMatchObject({
+      client_name: "Canonical Client",
+      location: "Canonical Asset Yard",
+      lots: [
+        expect.objectContaining({
+          title: "Canonical server title",
+          location: "Canonical Asset Yard",
+        }),
+      ],
+    });
+    expect(submittedPreview).not.toHaveProperty("latitude");
+    expect(submittedPreview).not.toHaveProperty("longitude");
+    expect(submittedPreview.lots[0]).not.toHaveProperty("latitude");
+    expect(submittedPreview.lots[0]).not.toHaveProperty("longitude");
+  });
+
+  it("submits a dirty preview snapshot once without requiring a file-generating Save", async () => {
+    const pendingSubmit = deferred<{
+      message: string;
+      data: { reportId: string };
+    }>();
+    const onClose = vi.fn();
+    mocks.submitForApproval.mockReturnValue(pendingSubmit.promise);
+
+    render(
+      <PreviewModal
+        isOpen
+        reportId="initial-submit-lock"
+        onClose={onClose}
+        loadPreviewDataOverride={vi.fn().mockResolvedValue(makePreviewResponse())}
+      />
+    );
+
+    const clientName = (await screen.findAllByDisplayValue("Test Client"))[0];
+    fireEvent.change(clientName, { target: { value: "Final Snapshot Client" } });
+    const submitButton = screen.getByRole("button", { name: "Submit report" });
+    expect(submitButton).toBeEnabled();
+
+    fireEvent.click(submitButton);
+    fireEvent.click(submitButton);
+
+    expect(mocks.submitForApproval).toHaveBeenCalledTimes(1);
+    expect(mocks.submitForApproval).toHaveBeenCalledWith(
+      "initial-submit-lock",
+      expect.objectContaining({ client_name: "Final Snapshot Client" })
+    );
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close panel" })).toBeDisabled();
+
+    pendingSubmit.resolve({
+      message: "Submitted",
+      data: { reportId: "initial-submit-lock" },
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it("keeps an approved hidden draft on the promotion path when saving and resubmitting", async () => {

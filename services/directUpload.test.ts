@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import API from "@/lib/api";
 import {
+  isUploadSessionUnsupportedError,
+  mapWithConcurrency,
   putFileWithProgress,
   resetDirectUploadCircuitBreakerForTests,
   uploadFileToReportSession,
@@ -89,6 +91,35 @@ class UnexpectedAbortDirectUploadRequest {
   }
 }
 
+class MixedOutcomeDirectUploadRequest {
+  static abortCount = 0;
+  upload: { onprogress?: (event: ProgressEvent) => void } = {};
+  status = 0;
+  responseText = "";
+  onload?: () => void;
+  onerror?: () => void;
+  onabort?: () => void;
+  private url = "";
+
+  open(_method: string, url: string) {
+    this.url = url;
+  }
+
+  setRequestHeader() {}
+
+  send() {
+    if (this.url.includes("fail.example.test")) {
+      this.status = 400;
+      this.onload?.();
+    }
+  }
+
+  abort() {
+    MixedOutcomeDirectUploadRequest.abortCount += 1;
+    this.onabort?.();
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
   globalThis.XMLHttpRequest = originalXmlHttpRequest;
@@ -97,6 +128,7 @@ afterEach(() => {
   PendingDirectUploadRequest.abortCount = 0;
   PendingDirectUploadRequest.sendCount = 0;
   UnexpectedAbortDirectUploadRequest.instance = null;
+  MixedOutcomeDirectUploadRequest.abortCount = 0;
   resetDirectUploadCircuitBreakerForTests();
 });
 
@@ -136,6 +168,243 @@ describe("report-session upload transport", () => {
         ],
       })
     );
+  });
+
+  it("marks only an unsupported initial session request as legacy-compatible", async () => {
+    const initialError = {
+      response: {
+        status: 404,
+        data: "Cannot POST /api/asset/upload-session",
+      },
+    };
+    vi.spyOn(API, "post").mockRejectedValueOnce(initialError);
+
+    let receivedError: unknown;
+    try {
+      await uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details: { client_submission_id: "unsupported-session" },
+        files: [],
+      });
+    } catch (error) {
+      receivedError = error;
+    }
+
+    expect(isUploadSessionUnsupportedError(receivedError)).toBe(true);
+    expect(receivedError).toMatchObject({
+      endpoint: "/asset",
+      originalError: initialError,
+    });
+  });
+
+  it("preserves an ambiguous empty initial 404 instead of risking a legacy duplicate", async () => {
+    const ambiguousError = { response: { status: 404, data: null } };
+    vi.spyOn(API, "post").mockRejectedValueOnce(ambiguousError);
+
+    await expect(
+      uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details: { client_submission_id: "ambiguous-empty-404" },
+        files: [],
+      })
+    ).rejects.toBe(ambiguousError);
+    expect(isUploadSessionUnsupportedError(ambiguousError)).toBe(false);
+  });
+
+  it("preserves a structured initial 404 instead of starting a legacy submission", async () => {
+    const businessError = {
+      response: {
+        status: 404,
+        data: {
+          code: "AUCTIONEER_WORK_ITEM_NOT_FOUND",
+          message: "The linked Auctioneer work item was not found.",
+        },
+      },
+    };
+    vi.spyOn(API, "post").mockRejectedValueOnce(businessError);
+
+    await expect(
+      uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details: { client_submission_id: "business-404" },
+        files: [],
+      })
+    ).rejects.toBe(businessError);
+    expect(isUploadSessionUnsupportedError(businessError)).toBe(false);
+  });
+
+  it("does not mark a per-file 404 as permission for a second legacy submission", async () => {
+    const fileUploadError = { response: { status: 404 } };
+    const apiPost = vi
+      .spyOn(API, "post")
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            sessionId: "session-file-404",
+            jobId: "job-file-404",
+            files: [
+              {
+                fileId: "images-0",
+                uploadUrl:
+                  "https://example.r2.cloudflarestorage.com/bucket/file",
+                method: "PUT",
+                contentType: "image/jpeg",
+              },
+            ],
+          },
+        },
+      })
+      .mockRejectedValueOnce(fileUploadError);
+
+    let receivedError: unknown;
+    try {
+      await uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details: { client_submission_id: "file-404" },
+        files: [
+          {
+            file: new File(["photo"], "photo.jpg", { type: "image/jpeg" }),
+            fieldname: "images",
+          },
+        ],
+      });
+    } catch (error) {
+      receivedError = error;
+    }
+
+    expect(receivedError).toBe(fileUploadError);
+    expect(isUploadSessionUnsupportedError(receivedError)).toBe(false);
+    expect(apiPost).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for already-running sibling work before rejecting", async () => {
+    let finishSibling!: () => void;
+    const sibling = new Promise<void>((resolve) => {
+      finishSibling = resolve;
+    });
+    const rootError = new Error("first upload failed");
+    let settled = false;
+
+    const running = mapWithConcurrency(
+      [0, 1],
+      async (item) => {
+        if (item === 0) throw rootError;
+        await sibling;
+      },
+      2
+    );
+    void running.catch(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finishSibling();
+    await expect(running).rejects.toBe(rootError);
+  });
+
+  it("aborts and awaits sibling browser uploads after a terminal file failure", async () => {
+    vi.useFakeTimers();
+    globalThis.XMLHttpRequest =
+      MixedOutcomeDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const apiPost = vi.spyOn(API, "post").mockImplementation((url) => {
+      if (url === "/asset/upload-session") {
+        return Promise.resolve({
+          data: {
+            data: {
+              sessionId: "session-sibling-abort",
+              jobId: "job-sibling-abort",
+              files: [
+                {
+                  fileId: "images-0",
+                  uploadUrl: "https://fail.example.test/file",
+                  method: "PUT",
+                  contentType: "image/jpeg",
+                },
+                {
+                  fileId: "images-1",
+                  uploadUrl: "https://pending.example.test/file",
+                  method: "PUT",
+                  contentType: "image/jpeg",
+                },
+              ],
+            },
+          },
+        });
+      }
+      if (url.endsWith("/files/images-0/verify")) {
+        return Promise.reject({ response: { status: 404 } });
+      }
+      if (url.endsWith("/files/images-0")) {
+        return Promise.reject({ response: { status: 400 } });
+      }
+      return Promise.reject(new Error(`Unexpected API call: ${url}`));
+    });
+
+    const upload = uploadReportFilesDirectToR2({
+      endpoint: "/asset",
+      details: { client_submission_id: "sibling-abort" },
+      files: [
+        {
+          file: new File(["first"], "first.jpg", { type: "image/jpeg" }),
+          fieldname: "images",
+        },
+        {
+          file: new File(["second"], "second.jpg", { type: "image/jpeg" }),
+          fieldname: "images",
+        },
+      ],
+    });
+    const uploadError = upload.catch((error) => error);
+    await vi.runAllTimersAsync();
+
+    await expect(uploadError).resolves.toMatchObject({
+      message: expect.stringContaining("R2 upload failed for first.jpg"),
+    });
+    expect(MixedOutcomeDirectUploadRequest.abortCount).toBe(1);
+    expect(apiPost.mock.calls.map(([url]) => url)).not.toContain(
+      "/asset/upload-session/session-sibling-abort/complete"
+    );
+  });
+
+  it("preserves a missing-target failure while aborting an active sibling upload", async () => {
+    globalThis.XMLHttpRequest =
+      PendingDirectUploadRequest as unknown as typeof XMLHttpRequest;
+    const apiPost = vi.spyOn(API, "post").mockResolvedValueOnce({
+      data: {
+        data: {
+          sessionId: "session-missing-target",
+          jobId: "job-missing-target",
+          files: [
+            {
+              fileId: "images-0",
+              uploadUrl: "https://uploads.example.test/first",
+              method: "PUT",
+              contentType: "image/jpeg",
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      uploadReportFilesDirectToR2({
+        endpoint: "/asset",
+        details: { client_submission_id: "missing-target" },
+        files: [
+          {
+            file: new File(["first"], "first.jpg", { type: "image/jpeg" }),
+            fieldname: "images",
+          },
+          {
+            file: new File(["second"], "second.jpg", { type: "image/jpeg" }),
+            fieldname: "images",
+          },
+        ],
+      })
+    ).rejects.toThrow("Missing upload target for second.jpg");
+    expect(PendingDirectUploadRequest.abortCount).toBe(1);
+    expect(apiPost).toHaveBeenCalledOnce();
   });
 
   it("forwards every signed upload header verbatim", async () => {

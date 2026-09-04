@@ -428,12 +428,12 @@ export default function DashboardPage() {
           <div className={styles.metricGrid}>
             <Metric
               label={`Reports · ${range === 183 ? "6 months" : `${range} days`}`}
-              value={analyticsLoading ? "—" : analytics?.totals.reports ?? 0}
+              value={analyticsLoading ? "—" : analytics?.totals?.reports ?? 0}
               icon={FileText}
             />
             <Metric
               label={`Lots · ${range === 183 ? "6 months" : `${range} days`}`}
-              value={analyticsLoading ? "—" : analytics?.totals.lots ?? 0}
+              value={analyticsLoading ? "—" : analytics?.totals?.lots ?? 0}
               icon={Layers3}
               emphasized
             />

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2, Save } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import {
@@ -8,7 +8,6 @@ import {
   getLotListingSubmittedPreview,
   updateLotListingPreview,
   uploadLotListingPreviewLotImages,
-  refreshLotListingSpecPdf,
   submitLotListingForApproval,
   resubmitLotListing,
   type LotListing,
@@ -38,6 +37,7 @@ import {
 } from "@/lib/previewSerialNumber";
 import { getPreviewLotPhotoEntries } from "@/lib/previewLotPhotos";
 import { ReportDraftService } from "@/services/reportDrafts";
+import { useExclusivePreviewMutation } from "@/components/reports/useExclusivePreviewMutation";
 
 interface LotListingPreviewModalProps {
   reportId: string;
@@ -247,7 +247,6 @@ export default function LotListingPreviewModal({
   updatePreviewDataOverride,
   resubmitReportOverride,
   uploadPreviewLotImagesOverride,
-  refreshSpecPdfOverride,
   draftPreviewId,
 }: LotListingPreviewModalProps) {
   const [loading, setLoading] = useState(true);
@@ -258,7 +257,26 @@ export default function LotListingPreviewModal({
   const [filesGenerating, setFilesGenerating] = useState(false);
   const [filesRegenerating, setFilesRegenerating] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
-  const [hasChanges, setHasChanges] = useState(false);
+  const previewDataRef = useRef<any>(null);
+  previewDataRef.current = previewData;
+  const loadRequestRef = useRef(0);
+  const previewContextRef = useRef("");
+  previewContextRef.current = JSON.stringify([
+    reportId,
+    isOpen,
+    draftPreviewId || "",
+    isAssignedApprovalMode,
+    isResubmitMode,
+  ]);
+  const {
+    activeMutation,
+    beginMutation,
+    finishMutation,
+    hasChanges,
+    hasEditsSince,
+    isMutationLocked,
+    setHasChanges,
+  } = useExclusivePreviewMutation();
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingLotKey, setUploadingLotKey] = useState<string | null>(null);
   const [previewFiles, setPreviewFiles] = useState<any>(null);
@@ -286,7 +304,10 @@ export default function LotListingPreviewModal({
     if (isOpen && reportId) {
       loadPreviewData();
     }
-  }, [isOpen, reportId]);
+    return () => {
+      loadRequestRef.current += 1;
+    };
+  }, [isOpen, reportId, isResubmitMode]);
 
   const applyLotListingState = (
     listing: any,
@@ -324,6 +345,8 @@ export default function LotListingPreviewModal({
   };
 
   const loadPreviewData = async () => {
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
     try {
       setLoading(true);
       const [response, categorySpecResponse] = await Promise.all([
@@ -334,27 +357,39 @@ export default function LotListingPreviewModal({
             : getLotListingPreview(reportId),
         getAssetCategorySpecs().catch(() => ({ categories: [], specs: [] })),
       ]);
+      if (loadRequestRef.current !== requestId) return;
       setCategorySpecs(categorySpecResponse.specs || []);
       applyLotListingState(response);
+      setHasChanges(false);
     } catch (error: any) {
+      if (loadRequestRef.current !== requestId) return;
       toast.error(error.response?.data?.message || "Failed to load preview data");
       onClose();
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
   };
 
   const handleSaveChanges = async () => {
+    if (isMutationLocked()) return;
     if (!isLocationReady) {
       toast.error(
         "Enter or resolve a readable inspection location before saving."
       );
       return;
     }
+    if (locationBusy) {
+      toast.info("Wait for the inspection location to finish resolving.");
+      return;
+    }
     if (filesGenerating || filesRegenerating) {
       toast.info("This lot listing is already generating files.");
       return;
     }
+
+    const mutation = beginMutation("save");
+    if (!mutation) return;
+    const mutationContext = previewContextRef.current;
 
     try {
       setSaving(true);
@@ -363,12 +398,19 @@ export default function LotListingPreviewModal({
       const saved = updatePreviewDataOverride
         ? await updatePreviewDataOverride(reportId, previewForRequest)
         : await updateLotListingPreview(reportId, { preview_data: previewForRequest });
+      if (previewContextRef.current !== mutationContext) return;
       if ((saved as any)?.data) {
         const savedListing = (saved as any).data;
         const serverPreview = updatePreviewDataOverride
           ? savedListing
           : savedListing?.preview_data;
-        const savedPreview = mergeSubmittedPreviewData(serverPreview, previewForRequest);
+        const hasNewerEdits = hasEditsSince(mutation);
+        const savedPreview = hasNewerEdits
+          ? mergeSubmittedPreviewData(
+              serverPreview,
+              previewDataRef.current || previewForRequest
+            )
+          : serverPreview || previewForRequest;
         applyLotListingState(
           updatePreviewDataOverride
             ? { preview_data: savedPreview }
@@ -382,50 +424,50 @@ export default function LotListingPreviewModal({
           : null;
       if (savedImageUrls) setImageUrls(savedImageUrls);
       if ((saved as any)?.files_regeneration_queued) {
-        setHasChanges(false);
-        applyLotListingState((saved as any).data, {
-          assumeFilesGenerating: true,
-          assumeFilesRegenerating: true,
-        });
+        const hasNewerEdits = hasEditsSince(mutation);
+        if (!hasNewerEdits) {
+          setHasChanges(false);
+          applyLotListingState((saved as any).data, {
+            assumeFilesGenerating: true,
+            assumeFilesRegenerating: true,
+          });
+        } else {
+          setFilesGenerating(true);
+          setFilesRegenerating(true);
+        }
         toast.success("Changes saved. Files are being regenerated with the updated report data.");
         if (onSuccess) onSuccess();
         onClose();
         return;
       }
-      let pdfRefreshed = false;
-      if (!draftPreviewId) {
-        try {
-          const pdf = refreshSpecPdfOverride
-            ? await refreshSpecPdfOverride(reportId)
-            : await refreshLotListingSpecPdf(reportId);
-          setPreviewFiles((prev: any) => ({
-            ...(prev || {}),
-            ...(pdf.data?.preview_files || {}),
-            spec_pdf: pdf.data?.spec_pdf || pdf.data?.preview_files?.spec_pdf || prev?.spec_pdf,
-            cr_docx: pdf.data?.cr_docx || pdf.data?.preview_files?.cr_docx || prev?.cr_docx,
-          }));
-          // File refresh responses can lag behind the save response. They must
-          // not replace the newly saved editable preview snapshot.
-          if (Array.isArray(pdf.data?.imageUrls)) {
-            setImageUrls(pdf.data.imageUrls);
-          }
-          pdfRefreshed = true;
-        } catch (pdfError: any) {
-          toast.error(pdfError.response?.data?.message || "Changes saved, but CR could not be refreshed.");
-        }
-      }
-      setHasChanges(false);
-      toast.success(pdfRefreshed ? "Changes saved and CR refreshed." : "Changes saved successfully.");
+      // Do not invoke a second, client-side file refresh after Save. Draft and
+      // preview saves remain metadata-only; finalized reports may return the
+      // single regeneration already claimed by the server.
+      if (!hasEditsSince(mutation)) setHasChanges(false);
+      toast.success(
+        effectiveResubmitMode
+          ? "Changes saved. Resubmit when you are ready to regenerate final files."
+          : "Changes saved. Submit when you are ready to generate final files."
+      );
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to save changes");
+      if (previewContextRef.current === mutationContext) {
+        toast.error(error.response?.data?.message || "Failed to save changes");
+      }
     } finally {
       setSaving(false);
+      finishMutation(mutation);
     }
   };
 
   const handleSubmitForApproval = async () => {
+    if (isMutationLocked()) return;
     if (!previewData) {
       toast.error("No preview data available");
+      return;
+    }
+
+    if (locationBusy) {
+      toast.info("Wait for the inspection location to finish resolving.");
       return;
     }
 
@@ -447,22 +489,27 @@ export default function LotListingPreviewModal({
       return;
     }
 
+    const mutation = beginMutation("submit");
+    if (!mutation) return;
+    const mutationContext = previewContextRef.current;
+
     try {
       setSubmitting(true);
       let submittedReport: LotListing | undefined;
+      const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+      setPreviewData(previewForRequest);
 
       if (draftPreviewId) {
-        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
-        setPreviewData(previewForRequest);
         const promoted = await ReportDraftService.promotePreview(draftPreviewId, {
           preview_data: previewForRequest,
           submit: true,
         });
+        if (previewContextRef.current !== mutationContext) return;
         submittedReport = {
           ...promoted,
           _id: promoted.reportId,
         } as unknown as LotListing;
-        setHasChanges(false);
+        if (!hasEditsSince(mutation)) setHasChanges(false);
         applyLotListingState(promoted, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: false,
@@ -471,13 +518,12 @@ export default function LotListingPreviewModal({
           "Draft moved to reports. Files are being generated from your saved preview."
         );
       } else if (effectiveResubmitMode) {
-        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
-        setPreviewData(previewForRequest);
         const updated = resubmitReportOverride
           ? await resubmitReportOverride(reportId, previewForRequest)
           : await resubmitLotListing(reportId, { preview_data: previewForRequest });
+        if (previewContextRef.current !== mutationContext) return;
         submittedReport = updated;
-        setHasChanges(false);
+        if (!hasEditsSince(mutation)) setHasChanges(false);
         applyLotListingState(updated, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: true,
@@ -490,11 +536,10 @@ export default function LotListingPreviewModal({
       } else {
         // Submit the edited snapshot once. Saving first and then submitting the
         // previous React state allowed the second request to restore stale text.
-        const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
-        setPreviewData(previewForRequest);
         const submitted = await submitLotListingForApproval(reportId, { preview_data: previewForRequest });
+        if (previewContextRef.current !== mutationContext) return;
         submittedReport = submitted;
-        setHasChanges(false);
+        if (!hasEditsSince(mutation)) setHasChanges(false);
         applyLotListingState(submitted, {
           assumeFilesGenerating: true,
           assumeFilesRegenerating: false,
@@ -505,9 +550,12 @@ export default function LotListingPreviewModal({
       if (onSuccess) onSuccess(submittedReport);
       onClose();
     } catch (error: any) {
-      toast.error(error.response?.data?.message || "Failed to submit lot listing");
+      if (previewContextRef.current === mutationContext) {
+        toast.error(error.response?.data?.message || "Failed to submit lot listing");
+      }
     } finally {
       setSubmitting(false);
+      finishMutation(mutation);
     }
   };
 
@@ -696,26 +744,40 @@ export default function LotListingPreviewModal({
     getPreviewLotPhotoEntries(lot, imageUrls);
 
   const handleUploadLotImages = async (lot: any, index: number, fileList: FileList | null) => {
+    if (isMutationLocked()) return;
+    if (filesGenerating || filesRegenerating) return;
     const files = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
     if (!files.length) return;
+    const mutation = beginMutation("upload");
+    if (!mutation) return;
+    const mutationContext = previewContextRef.current;
     const lotKey = getLotUploadKey(lot, index);
     setUploadingLotKey(lotKey);
     try {
+      const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
+      setPreviewData(previewForRequest);
       const response = uploadPreviewLotImagesOverride
         ? await uploadPreviewLotImagesOverride(
             reportId,
             lotKey,
             files,
-            previewData
+            previewForRequest
           )
         : await uploadLotListingPreviewLotImages(
             reportId,
             lotKey,
             files,
-            previewData
+            previewForRequest
           );
+      if (previewContextRef.current !== mutationContext) return;
       if (response.data?.preview_data) {
-        setPreviewData(applyDamageAnalysisLotPolicy(response.data.preview_data));
+        const nextPreview = hasEditsSince(mutation)
+          ? mergeSubmittedPreviewData(
+              response.data.preview_data,
+              previewDataRef.current || previewForRequest
+            )
+          : response.data.preview_data;
+        setPreviewData(applyDamageAnalysisLotPolicy(nextPreview));
       }
       if (Array.isArray(response.data?.imageUrls)) {
         setImageUrls(response.data.imageUrls);
@@ -725,12 +787,20 @@ export default function LotListingPreviewModal({
       }
       setFilesGenerating(Boolean(response.data?.files_generating));
       setFilesRegenerating(Boolean(response.data?.files_regenerating));
-      setHasChanges(false);
-      toast.success(response.files_regeneration_queued ? "Images uploaded. Files are regenerating." : "Images uploaded.");
+      if (!hasEditsSince(mutation)) setHasChanges(false);
+      toast.success(
+        response.message ||
+          (response.files_regeneration_queued
+            ? "Images uploaded. Files are regenerating."
+            : "Images uploaded.")
+      );
     } catch (error: any) {
-      toast.error(error?.response?.data?.message || "Failed to upload images.");
+      if (previewContextRef.current === mutationContext) {
+        toast.error(error?.response?.data?.message || "Failed to upload images.");
+      }
     } finally {
       setUploadingLotKey(null);
+      finishMutation(mutation);
     }
   };
 
@@ -971,8 +1041,19 @@ export default function LotListingPreviewModal({
     );
   };
 
+  const mutationMessage =
+    activeMutation === "upload"
+      ? "Uploading images and updating this preview…"
+      : activeMutation === "submit"
+        ? effectiveResubmitMode
+          ? "Regenerating the listing from this exact preview…"
+          : "Submitting the listing and generating final files…"
+        : activeMutation === "save"
+          ? "Saving preview changes…"
+          : "";
+
   const requestClose = () => {
-    if (saving || submitting) return;
+    if (isMutationLocked()) return;
     if (
       hasChanges &&
       !window.confirm("You have unsaved preview changes. Close without saving them?")
@@ -990,8 +1071,26 @@ export default function LotListingPreviewModal({
       description="Review the complete listing, save your progress, and return when you are ready to generate files."
       fullscreen
       dismissOnBackdrop={false}
+      closeDisabled={activeMutation !== null}
     >
-      <div className="preview-editor min-h-full bg-[var(--app-bg)] text-[var(--app-text)]">
+      <div
+        className="preview-editor relative min-h-full bg-[var(--app-bg)] text-[var(--app-text)]"
+        aria-busy={activeMutation !== null}
+      >
+      {activeMutation ? (
+        <div
+          className="sticky top-0 z-[70] mb-3 flex items-center gap-3 border border-[var(--app-info-border)] bg-[var(--app-info-soft)] px-4 py-3 text-sm font-semibold text-[var(--app-text-strong)] shadow-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-[var(--app-info)]" />
+          <span>{mutationMessage} Keep this page open until it finishes.</span>
+        </div>
+      ) : null}
+      <div
+        inert={activeMutation ? true : undefined}
+        className={activeMutation ? "pointer-events-none select-none opacity-60" : undefined}
+      >
       {status === "declined" && declineReason && (
         <div className="app-alert app-alert--error mb-4 flex items-start gap-3">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-danger)]" />
@@ -1346,6 +1445,11 @@ export default function LotListingPreviewModal({
                             type="file"
                             accept="image/*"
                             multiple
+                            disabled={
+                              activeMutation !== null ||
+                              filesGenerating ||
+                              filesRegenerating
+                            }
                             className="hidden"
                             onChange={(event) => {
                               handleUploadLotImages(lot, idx, event.target.files);
@@ -1354,7 +1458,11 @@ export default function LotListingPreviewModal({
                           />
                           <button
                             type="button"
-                            disabled={uploadingLotKey === lotUploadKey}
+                            disabled={
+                              activeMutation !== null ||
+                              filesGenerating ||
+                              filesRegenerating
+                            }
                             onClick={() => document.getElementById(uploadInputId)?.click()}
                             className="app-button app-button--secondary !min-h-7 !rounded-md !px-2.5 !py-1 !text-[11px]"
                           >
@@ -1526,7 +1634,13 @@ export default function LotListingPreviewModal({
               <button
                 type="button"
                 onClick={handleSaveChanges}
-                disabled={!hasChanges || saving || submitting || filesGenerating || filesRegenerating}
+                disabled={
+                  !hasChanges ||
+                  activeMutation !== null ||
+                  locationBusy ||
+                  filesGenerating ||
+                  filesRegenerating
+                }
                 className="app-button app-button--secondary"
               >
                 {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1535,7 +1649,13 @@ export default function LotListingPreviewModal({
               <button
                 type="button"
                 onClick={handleSubmitForApproval}
-                disabled={submitting || saving || filesGenerating || filesRegenerating}
+                disabled={
+                  activeMutation !== null ||
+                  loading ||
+                  locationBusy ||
+                  filesGenerating ||
+                  filesRegenerating
+                }
                 className="app-button app-button--primary"
               >
                 {submitting || saving ? (
@@ -1557,6 +1677,7 @@ export default function LotListingPreviewModal({
           </div>
         </>
       )}
+      </div>
       </div>
     </BottomDrawer>
   );

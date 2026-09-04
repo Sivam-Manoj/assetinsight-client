@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Loading from "@/components/common/Loading";
 import type { DraftStatus } from "@/components/forms/ui/FormUI";
 import {
@@ -32,12 +32,18 @@ type Props = {
 export default function ReportFormPage({ kind }: Props) {
   const router = useRouter();
   const [handoff, setHandoff] = useState<ReportFormHandoff | null | undefined>();
+  const consumedHandoffKindRef = useRef<ReportFormKind | null>(null);
   const [draftStatus, setDraftStatus] = useState<{
     status: DraftStatus;
     label?: string;
   } | null>(null);
 
   useEffect(() => {
+    // Consuming removes the single-use handoff from session storage. React
+    // Strict Mode replays effects in development, so guard the destructive
+    // read or the replay replaces a valid incoming/draft handoff with null.
+    if (consumedHandoffKindRef.current === kind) return;
+    consumedHandoffKindRef.current = kind;
     setHandoff(consumeReportFormHandoff(kind));
   }, [kind]);
 

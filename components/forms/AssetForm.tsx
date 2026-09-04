@@ -409,6 +409,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [submitting, setSubmitting] = useState(false);
   const [submissionFinalizing, setSubmissionFinalizing] = useState(false);
   const submitLockRef = useRef(false);
+  const activeFormOperationRef = useRef<"draft-save" | "submit" | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
@@ -755,6 +756,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const saveDraftNow = async () => {
     if (
+      activeFormOperationRef.current ||
       submitting ||
       !userId ||
       draftSaveAbortRef.current ||
@@ -762,6 +764,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     ) {
       return;
     }
+    activeFormOperationRef.current = "draft-save";
     const revision = Math.max(saveRevisionRef.current + 1, 1);
     saveRevisionRef.current = revision;
     publishDraftStatus("dirty", "Unsaved changes");
@@ -791,6 +794,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     } finally {
       if (draftSaveAbortRef.current === controller) {
         draftSaveAbortRef.current = null;
+      }
+      if (activeFormOperationRef.current === "draft-save") {
+        activeFormOperationRef.current = null;
       }
       setDraftSaveActive(false);
       setCancellingOperation(false);
@@ -1808,7 +1814,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   async function onSubmit(event?: React.FormEvent) {
     event?.preventDefault();
-    if (submitLockRef.current || submitting || !validateForm()) return;
+    if (
+      activeFormOperationRef.current ||
+      submitLockRef.current ||
+      submitting ||
+      !validateForm()
+    ) return;
+    activeFormOperationRef.current = "submit";
     submitLockRef.current = true;
     const controller = new AbortController();
     submitAbortRef.current = controller;
@@ -1997,6 +2009,9 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     } finally {
       setSubmitting(false);
       submitLockRef.current = false;
+      if (activeFormOperationRef.current === "submit") {
+        activeFormOperationRef.current = null;
+      }
       if (submitAbortRef.current === controller) submitAbortRef.current = null;
       setCancellingOperation(false);
       setSubmissionFinalizing(false);
@@ -2046,10 +2061,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   );
 
   const cancelActiveOperation = () => {
-    const controller = draftSaveAbortRef.current || submitAbortRef.current;
-    if (!controller || controller.signal.aborted) return;
+    const controllers = [draftSaveAbortRef.current, submitAbortRef.current].filter(
+      (controller): controller is AbortController => Boolean(controller)
+    );
+    if (!controllers.some((controller) => !controller.signal.aborted)) return;
     setCancellingOperation(true);
-    controller.abort();
+    controllers.forEach((controller) => {
+      if (!controller.signal.aborted) controller.abort();
+    });
   };
 
   useEffect(() => {
@@ -2640,7 +2659,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         }}
         onCreateSeparate={() => {
           setActiveReportConflict(false);
-          supersededSubmissionIdRef.current = null;
+          // Preserve the rejected upload identity. It may reference a
+          // completed session whose placeholder lost the contract-claim race;
+          // the backend can supersede and clean that session only when the
+          // replacement explicitly carries this alias.
+          supersededSubmissionIdRef.current = jobIdRef.current;
           jobIdRef.current =
             typeof crypto !== "undefined" && crypto.randomUUID
               ? crypto.randomUUID()

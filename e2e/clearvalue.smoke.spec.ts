@@ -711,7 +711,7 @@ test("Incoming remains visible for a standard authenticated user", async ({
   await expect(page.getByRole("link", { name: "Releases" })).toHaveCount(0);
 });
 
-test("Smart Upload keeps a large review bounded and completes without navigation", async ({
+test("Smart Upload keeps a large review bounded and completes from the report workspace", async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -724,9 +724,16 @@ test("Smart Upload keeps a large review bounded and completes without navigation
   await page.goto("/dashboard");
 
   await page.getByRole("button", { name: "Create report", exact: true }).click();
+  await expect(page).toHaveURL(/\/create\/asset$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Asset Report" })
+  ).toBeVisible();
   await page.getByLabel("Client name").fill("Smart Upload QA");
   await page.getByLabel("Appraisal purpose").fill("Insurance valuation");
   await page.getByLabel("Currency").fill("CAD");
+  await page
+    .getByLabel(/^Inspection location/)
+    .fill("Smart Upload QA Yard, Leeds");
   await page.getByRole("button", { name: "Smart Upload", exact: true }).click();
 
   const workspace = page.getByRole("dialog", { name: "Smart Upload" });
@@ -749,22 +756,29 @@ test("Smart Upload keeps a large review bounded and completes without navigation
     timeout: 20_000,
   });
   await expect(workspace.getByText("Lots 1-6 of 8")).toBeVisible();
-  await expect(workspace.locator("img")).toHaveCount(18);
-  await expect(workspace.locator('img[loading="lazy"][decoding="async"]')).toHaveCount(
-    18
+  // The bounded review renders one 12-image sequence page, six lot covers,
+  // and the selected three-photo lot; later pages replace rather than append.
+  const expectedVisibleReviewImages = 21;
+  await expect(workspace.locator("img")).toHaveCount(
+    expectedVisibleReviewImages
   );
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(workspace.locator('img[loading="lazy"][decoding="async"]')).toHaveCount(
+    expectedVisibleReviewImages
+  );
+  await expect(page).toHaveURL(/\/create\/asset$/);
 
   await workspace.getByRole("button", { name: "Next images" }).click();
   await expect(workspace.getByText("Images 13-24 of 24")).toBeVisible();
-  await expect(workspace.locator("img")).toHaveCount(18);
+  await expect(workspace.locator("img")).toHaveCount(
+    expectedVisibleReviewImages
+  );
 
   await workspace.getByRole("button", { name: "Create preview" }).click();
   await expect(workspace).toHaveCount(0);
   await expect
     .poll(() => completedReports)
     .toBe(1);
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/previews$/);
   await expect(
     page.getByText(
       "Smart Upload accepted - preview processing continues in My Reports.",
@@ -1092,6 +1106,71 @@ test("asset preview cover and bulk Legal controls stay responsive in both themes
   await expectNoHorizontalOverflow(page);
 });
 
+test("preview save is single-flight and blocks editing until the write settles", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await initializeTheme(page, "light");
+  await mockAuthenticatedApi(page);
+
+  let saveRequests = 0;
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route("**/api/asset/e2e-asset-preview/preview", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+    saveRequests += 1;
+    const submitted = route.request().postDataJSON()?.preview_data;
+    await saveGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        message: "Saved",
+        data: submitted,
+      }),
+    });
+  });
+
+  await page.goto("/previews");
+  await page
+    .getByRole("button", {
+      name: "Preview Asset report: E2E Asset Preview",
+    })
+    .click();
+  const preview = page.getByRole("dialog", { name: "Preview & Edit Report" });
+  await preview.getByRole("button", { name: "Select cover images" }).click();
+  const picker = page.getByRole("dialog", { name: "Select cover images" });
+  await picker.getByRole("button", { name: "Select cover image 1" }).click();
+  await picker.getByRole("button", { name: "Apply cover images" }).click();
+
+  const save = preview.getByRole("button", { name: "Save changes" });
+  try {
+    await save.evaluate((element: HTMLButtonElement) => {
+      element.click();
+      element.click();
+    });
+    await expect.poll(() => saveRequests).toBe(1);
+    await expect(
+      preview.getByText(/Saving preview changes.*Keep this page open/)
+    ).toBeVisible();
+    await expect(preview.locator("[inert]")).toHaveCount(1);
+    await expect(preview.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expectNoHorizontalOverflow(page);
+  } finally {
+    releaseSave();
+  }
+
+  await expect(
+    preview.getByText(/Saving preview changes.*Keep this page open/)
+  ).toBeHidden();
+  await expect.poll(() => saveRequests).toBe(1);
+});
+
 test("public and authentication route matrix renders cleanly", async ({
   page,
 }) => {
@@ -1206,7 +1285,9 @@ test("Proposal Valuation opens as a compact full-page responsive workspace", asy
   await expectTheme(page, "light");
 });
 
-test("Incoming claim opens the selected report workflow", async ({ page }) => {
+test("Incoming claim opens the selected full-page report workflow", async ({
+  page,
+}) => {
   await initializeTheme(page, "light");
   await mockAuthenticatedApi(page);
   await page.goto("/incoming");
@@ -1218,9 +1299,20 @@ test("Incoming claim opens the selected report workflow", async ({ page }) => {
     .getByRole("button", { name: "Claim and create report" })
     .click();
 
+  await expect(page).toHaveURL(/\/create\/asset$/);
   await expect(
-    page.getByRole("dialog", { name: /Asset report/ })
+    page.getByRole("heading", { level: 1, name: "Asset Report" })
   ).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Asset Report form" })
+  ).toBeVisible();
+  await expect(page.getByLabel(/^Client name/)).toHaveValue(
+    "Northfield Plant Ltd"
+  );
+  await expect(page.getByLabel("Contract number")).toHaveValue("CV-E2E-100");
+  await expect(page.getByLabel(/^Inspection location/)).toHaveValue(
+    "Leeds"
+  );
 });
 
 test("Incoming opens an existing report from the queue", async ({ page }) => {
