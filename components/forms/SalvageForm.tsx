@@ -2,21 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuthContext } from "@/context/AuthContext";
-import { SalvageService, type SalvageDetails } from "@/services/salvage";
-import { X, Upload, Camera, Download } from "lucide-react";
+import { SalvageService, SALVAGE_MAX_IMAGES, type SalvageDetails } from "@/services/salvage";
+import { X, Upload, Camera, Download, LoaderCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
-import Loading from "@/components/common/Loading";
 import SalvageCamera from "./salvage/SalvageCamera";
 import ImageAnnotatorModal from "./salvage/ImageAnnotatorModal";
 
 type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 };
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-export default function SalvageForm({ onSuccess, onCancel }: Props) {
+export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }: Props) {
   const { user } = useAuthContext();
 
   const [details, setDetails] = useState<SalvageDetails>({
@@ -42,6 +42,9 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
   const [previews, setPreviews] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlightRef = useRef(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [annotOpen, setAnnotOpen] = useState(false);
@@ -52,36 +55,47 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const currencyPromptedRef = useRef(false);
 
-  // No client-side polling/progress UI; background job emails on completion
+  // Upload acceptance is not report completion. Generation continues in the
+  // backend after HTTP 202, with the existing email/approval workflow.
+  useEffect(() => {
+    if (!submitting) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [submitting]);
 
   function handleChange<K extends keyof SalvageDetails>(key: K, value: string) {
+    if (submissionInFlightRef.current) return;
     setDetails((prev) => ({ ...prev, [key]: value }));
   }
 
   function handleImagesChange(files: FileList | null) {
-    if (!files) return;
+    if (!files || submissionInFlightRef.current) return;
     const incoming = Array.from(files);
     setImages((prev) => {
       const combined = [...prev, ...incoming];
-      if (combined.length > 30) {
-        setError("You can upload up to 30 images. Extra files were ignored.");
+      if (combined.length > SALVAGE_MAX_IMAGES) {
+        setError(`You can upload up to ${SALVAGE_MAX_IMAGES} images. Extra files were not added.`);
       } else {
         setError(null);
       }
-      return combined.slice(0, 30);
+      return combined.slice(0, SALVAGE_MAX_IMAGES);
     });
   }
 
   function addCapturedImages(files: File[]) {
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || submissionInFlightRef.current) return;
     setImages((prev) => {
       const combined = [...prev, ...files];
-      if (combined.length > 30) {
+      if (combined.length > SALVAGE_MAX_IMAGES) {
         toast.warn(
-          "Reached maximum of 30 images. Some captures were not added."
+          `Reached maximum of ${SALVAGE_MAX_IMAGES} images. Some captures were not added.`
         );
       }
-      return combined.slice(0, 30);
+      return combined.slice(0, SALVAGE_MAX_IMAGES);
     });
   }
 
@@ -232,10 +246,12 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
   }, [currencyTouched]);
 
   function removeImage(index: number) {
+    if (submissionInFlightRef.current) return;
     setImages((prev) => prev.filter((_, i) => i !== index));
   }
 
   function openAnnotator(index: number) {
+    if (submissionInFlightRef.current) return;
     const f = images[index];
     if (!f) return;
     setAnnotIndex(index);
@@ -245,6 +261,9 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // React state updates are not synchronous; the ref also blocks a second
+    // submit dispatched before the disabled/loading render commits.
+    if (submissionInFlightRef.current) return;
 
     // Basic required field checks mirroring backend required fields
     const required: (keyof SalvageDetails)[] = [
@@ -272,8 +291,12 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
       return;
     }
 
+    submissionInFlightRef.current = true;
+    let accepted = false;
     try {
       setSubmitting(true);
+      onSubmittingChange?.(true);
+      setUploadProgress(0);
       setError(null);
 
       const payload: SalvageDetails = {
@@ -283,10 +306,14 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
         next_report_due: details.next_report_due,
       };
 
-      const res = await SalvageService.create(payload, images);
-      const msg =
-        res?.message ||
-        "Your report is being processed. You will receive an email when it's ready.";
+      const res = await SalvageService.create(payload, images, {
+        onUploadProgress: (fraction) => setUploadProgress(Math.round(fraction * 100)),
+      });
+      accepted = true;
+      const msg = res.jobId
+        ? "Upload accepted. Your salvage report is processing in the background. We'll email you when processing and approval are complete."
+        : res.message || "Your salvage report was submitted. Check Reports for its status.";
+      setAcceptedMessage(msg);
       toast.info(msg);
       try {
         if (typeof window !== "undefined") {
@@ -296,7 +323,10 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
       // Clear local form state and notify parent to close
       setImages([]);
       setPreviews([]);
-      onSuccess?.(msg);
+      onSubmittingChange?.(false);
+      try { onSuccess?.(msg); } catch (callbackError) {
+        console.warn("Salvage upload was accepted but the form could not close", callbackError);
+      }
     } catch (err: any) {
       const msg =
         err?.response?.data?.message ||
@@ -305,16 +335,45 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
       setError(msg);
       toast.error(msg);
     } finally {
+      // Accepted work remains locked until this form unmounts. Do not turn a
+      // still-mounted success screen into another create of the same report.
+      if (!accepted) submissionInFlightRef.current = false;
       setSubmitting(false);
+      onSubmittingChange?.(false);
     }
+  }
+
+  if (submitting) {
+    return (
+      <section role="status" aria-live="polite" aria-label="Salvage upload status" className="app-surface mx-auto flex w-full max-w-lg flex-col items-center gap-4 p-6 text-center">
+        <LoaderCircle className="h-8 w-8 animate-spin text-[var(--app-accent)] motion-reduce:animate-none" aria-hidden />
+        <h2 className="text-lg font-semibold text-[var(--app-text)]">
+          {uploadProgress < 100 ? "Uploading salvage report" : "Confirming your upload"}
+        </h2>
+        <progress aria-label="Report upload progress" value={uploadProgress} max={100} className="h-2 w-full accent-[var(--app-accent)]" />
+        <p className="text-sm text-[var(--app-text)]">{uploadProgress}% uploaded · {images.length} photo{images.length === 1 ? "" : "s"}</p>
+        <p className="text-sm text-[var(--app-text-muted)]">Keep this page open until the server accepts the upload. Closing now may lose this submission. Report generation and approval continue in the background afterward.</p>
+      </section>
+    );
+  }
+
+  if (acceptedMessage) {
+    return (
+      <section role="status" className="app-surface flex flex-col items-start gap-3 p-5">
+        <CheckCircle2 className="h-7 w-7 text-[var(--app-success)]" aria-hidden />
+        <h2 className="text-lg font-semibold text-[var(--app-text)]">Upload accepted</h2>
+        <p className="text-sm text-[var(--app-text-muted)]">{acceptedMessage}</p>
+        {onCancel ? <button type="button" className="app-button app-button--primary" onClick={onCancel}>Close</button> : null}
+      </section>
+    );
   }
 
   return (
     <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
       <div className="relative flex min-h-full flex-col gap-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-100 bg-[var(--app-panel)] p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-4 shadow-sm">
           <div>
-            <h2 className="text-lg font-semibold text-gray-950">Salvage Appraisal</h2>
+            <h2 className="text-lg font-semibold text-[var(--app-text)]">Salvage Appraisal</h2>
             <p className="mt-1 text-sm text-[var(--app-text-muted)]">
               Record claim details, vehicle information, damage notes, and photos.
             </p>
@@ -322,7 +381,7 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
         </div>
 
         {!submitting && error && (
-          <div className="rounded-xl border border-red-200/70 bg-red-50/80 p-3 text-sm text-red-700 shadow ring-1  ">
+          <div role="alert" className="rounded-lg border border-[var(--app-danger-border)] bg-[var(--app-danger-soft)] p-3 text-sm text-[var(--app-danger)]">
             {error}
           </div>
         )}
@@ -547,10 +606,11 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
 
         {/* Images */}
         <section className="space-y-3 pb-4 sm:pb-6">
-          <h3 className="text-sm font-medium text-[var(--app-text)]">Images (max 30)</h3>
+          <h3 className="text-sm font-medium text-[var(--app-text)]">Images (max {SALVAGE_MAX_IMAGES})</h3>
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="Salvage images"
             accept="image/*"
             multiple
             onChange={(e) => {
@@ -566,7 +626,8 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl bg-[var(--app-panel)] from-gray-900 to-black px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm focus:outline-none cursor-pointer"
+                disabled={images.length >= SALVAGE_MAX_IMAGES}
+                className="app-button app-button--secondary"
               >
                 <Upload className="h-4 w-4" />
                 Select Images
@@ -574,7 +635,8 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
               <button
                 type="button"
                 onClick={() => setCameraOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition active:translate-y-0.5 active:shadow-sm focus:outline-none cursor-pointer"
+                disabled={images.length >= SALVAGE_MAX_IMAGES}
+                className="app-button app-button--secondary"
               >
                 <Camera className="h-4 w-4" />
               Open Camera
@@ -590,9 +652,9 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
               Download ZIP
             </button>
           </div>
-          <p className="mt-1 text-xs text-[var(--app-text-muted)]">PNG, JPG. Up to 30 images.</p>
+          <p className="mt-1 text-xs text-[var(--app-text-muted)]">Up to {SALVAGE_MAX_IMAGES} images. All selected photos are included in your submission.</p>
         </div>
-        <p className="text-xs text-[var(--app-text-muted)]">Selected: {images.length} file(s)</p>
+        <p className="text-xs text-[var(--app-text-muted)]">Selected: {images.length}/{SALVAGE_MAX_IMAGES} photos</p>
           {images.length > 0 && (
             <div className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-2 shadow ring-1  ">
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -650,21 +712,12 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
           </button>
           <button
             type="submit"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--app-panel)] from-blue-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-blue-400 hover:to-blue-600 transition active:translate-y-0.5 active:shadow-sm disabled:opacity-50 cursor-pointer sm:ml-auto"
+            className="app-button app-button--primary sm:ml-auto"
             disabled={submitting}
           >
             {submitting ? "Creating..." : "Create Report"}
           </button>
         </div>
-        {submitting && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-[var(--app-panel)] ">
-            <Loading
-              message="Creating your report..."
-              height={220}
-              width={220}
-            />
-          </div>
-        )}
       </div>
       {/* Camera overlay for capture */}
       <SalvageCamera
@@ -676,7 +729,7 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
           details.claim_number ||
           "salvage"
         ).replace(/[^a-zA-Z0-9_-]/g, "-")}
-        maxCount={30}
+        maxCount={SALVAGE_MAX_IMAGES - images.length}
       />
       {/* Annotator modal for drawing/text */}
       <ImageAnnotatorModal
@@ -684,7 +737,7 @@ export default function SalvageForm({ onSuccess, onCancel }: Props) {
         file={annotFile}
         onClose={() => setAnnotOpen(false)}
         onSave={(annotated) => {
-          if (annotIndex == null) return;
+          if (annotIndex == null || submissionInFlightRef.current) return;
           setImages((prev) =>
             prev.map((f, i) => (i === annotIndex ? annotated : f))
           );

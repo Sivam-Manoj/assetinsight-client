@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Save, Send, AlertCircle, Building2, Image, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { RealEstateService } from "@/services/realEstate";
@@ -49,41 +49,66 @@ export default function RealEstatePreviewModal({
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [filesGenerating, setFilesGenerating] = useState(false);
   const [filesRegenerating, setFilesRegenerating] = useState(false);
+  const [mainImageCount, setMainImageCount] = useState(0);
+  const requestVersion = useRef(0);
+  const mutationInFlight = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const busy = saving || submitting;
+  const resubmitting = status ? ["pending_approval", "approved"].includes(status) : isResubmitMode;
+  const farmlandValuation = previewData?.farmland_valuation;
+  const farmlandApproaches = farmlandValuation?.approaches_used;
 
   useEffect(() => {
+    const version = ++requestVersion.current;
+    mutationInFlight.current = false;
+    setHasChanges(false);
+    setSaving(false);
+    setSubmitting(false);
+    setSelectedImageIndex(null);
     if (isOpen && reportId) {
-      loadPreviewData();
+      void loadPreviewData(version);
     }
-  }, [isOpen, reportId]);
+    return () => { requestVersion.current += 1; };
+  }, [isOpen, reportId, loadPreviewDataOverride]);
 
-  const loadPreviewData = async () => {
+  const loadPreviewData = async (version: number) => {
     try {
       setLoading(true);
       const response = loadPreviewDataOverride
         ? await loadPreviewDataOverride(reportId)
         : await RealEstateService.getPreviewData(reportId);
+      if (version !== requestVersion.current) return;
       setStatus(response.data.status);
       setDeclineReason(response.data.decline_reason || "");
       setFilesGenerating(Boolean(response.data.files_generating));
       setFilesRegenerating(Boolean(response.data.files_regenerating));
       setPreviewData(response.data.preview_data || {});
-      setPropertyType(response.data.property_type || "residential");
+      setPropertyType(response.data.property_type || response.data.preview_data?.property_type || "residential");
       setLanguage(response.data.language || "en");
-      setImageCount(response.data.image_count || 0);
-      setImageUrls(response.data.imageUrls || []);
+      const mainPhotos: string[] = response.data.imageUrls || [];
+      const reportOnlyPhotos: string[] = response.data.extraImageUrls || [];
+      setMainImageCount(mainPhotos.length);
+      setImageCount(mainPhotos.length + reportOnlyPhotos.length);
+      setImageUrls([...mainPhotos, ...reportOnlyPhotos]);
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       toast.error(error.response?.data?.message || "Failed to load preview data");
-      onClose();
+      onCloseRef.current();
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   const handleSaveChanges = async () => {
+    if (mutationInFlight.current || loading || filesGenerating || filesRegenerating || !hasChanges) return;
+    mutationInFlight.current = true;
+    const version = requestVersion.current;
     try {
       setSaving(true);
       const savePreview = updatePreviewDataOverride || RealEstateService.updatePreviewData;
       await savePreview(reportId, previewData);
+      if (version !== requestVersion.current) return;
       setHasChanges(false);
       toast.success(
         isAssignedApprovalMode
@@ -91,13 +116,18 @@ export default function RealEstatePreviewModal({
           : "Changes saved successfully!"
       );
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       toast.error(error.response?.data?.message || "Failed to save changes");
     } finally {
-      setSaving(false);
+      if (version === requestVersion.current) {
+        mutationInFlight.current = false;
+        setSaving(false);
+      }
     }
   };
 
   const handleSubmitForApproval = async () => {
+    if (mutationInFlight.current || loading) return;
     if (!previewData) {
       toast.error("No preview data available");
       return;
@@ -113,11 +143,14 @@ export default function RealEstatePreviewModal({
       return;
     }
 
+    mutationInFlight.current = true;
+    const version = requestVersion.current;
     try {
       setSubmitting(true);
-      if (isResubmitMode || resubmitReportOverride) {
+      if (resubmitting || resubmitReportOverride) {
         const submitUpdatedReport = resubmitReportOverride || RealEstateService.resubmitReport;
         await submitUpdatedReport(reportId, hasChanges || isAssignedApprovalMode ? previewData : undefined);
+        if (version !== requestVersion.current) return;
         toast.success(
           isAssignedApprovalMode
             ? "Files are regenerating. The report will approve after generation succeeds."
@@ -125,18 +158,24 @@ export default function RealEstatePreviewModal({
         );
       } else {
         await RealEstateService.submitForApproval(reportId);
+        if (version !== requestVersion.current) return;
         toast.success("Report submitted for approval successfully!");
       }
       if (onSuccess) onSuccess();
       onClose();
     } catch (error: any) {
+      if (version !== requestVersion.current) return;
       toast.error(error.response?.data?.message || "Failed to submit for approval");
     } finally {
-      setSubmitting(false);
+      if (version === requestVersion.current) {
+        mutationInFlight.current = false;
+        setSubmitting(false);
+      }
     }
   };
 
   const updateField = (path: string, value: any) => {
+    if (mutationInFlight.current || filesGenerating || filesRegenerating) return;
     setPreviewData((prev: any) => {
       const parts = path.split(".");
       const newData = { ...prev };
@@ -159,12 +198,17 @@ export default function RealEstatePreviewModal({
       if (!current) return "";
       current = current[part];
     }
-    return current || "";
+    return current ?? "";
   };
 
   return (
-    <BottomDrawer open={isOpen} onClose={onClose} title="Real Estate Report Preview">
+    <BottomDrawer open={isOpen} onClose={() => { if (!mutationInFlight.current) onClose(); }} closeDisabled={busy} title="Real Estate Report Preview">
       <div className="preview-editor">
+      {!loading && previewData?.valuation_warning && (
+        <div role="alert" className="app-alert app-alert--warning mb-3">
+          {previewData.valuation_warning}
+        </div>
+      )}
       {status === "declined" && declineReason && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -181,13 +225,13 @@ export default function RealEstatePreviewModal({
         </div>
       ) : (
         <>
-          <div className="mx-auto max-w-5xl space-y-4 pb-24">
+          <fieldset disabled={busy || filesGenerating || filesRegenerating} className="mx-auto min-w-0 max-w-5xl space-y-4 border-0 p-0 pb-6">
             {/* Report Type Badge */}
-            <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <div className="flex items-center gap-3 p-3 bg-[var(--app-panel)] border border-[var(--app-border)] rounded-xl">
               <Building2 className="h-6 w-6 text-emerald-600" />
               <div>
-                <p className="font-semibold text-emerald-900 capitalize">{propertyType} Property</p>
-                <p className="text-sm text-emerald-700">Language: {language.toUpperCase()} | {imageCount} images</p>
+                <p className="font-semibold text-[var(--app-text)] capitalize">{propertyType} Property</p>
+                <p className="text-sm text-[var(--app-text-muted)]">Language: {language.toUpperCase()} | {mainImageCount} main photos | {imageCount - mainImageCount} report-only photos</p>
               </div>
             </div>
 
@@ -392,6 +436,20 @@ export default function RealEstatePreviewModal({
                 <span className="text-green-600">💰</span>
                 Valuation
               </h3>
+              {farmlandValuation && (
+                <div className="mb-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3" aria-label="Calculated farmland valuation">
+                  <p className="text-xs text-[var(--app-text-muted)]">Calculated farmland value</p>
+                  <p className="mt-1 text-lg font-semibold text-[var(--app-text)]">{farmlandValuation.fair_market_value_formatted ?? previewData.fair_market_value ?? farmlandValuation.fair_market_value ?? "Not available"}</p>
+                  {farmlandApproaches && (
+                    <p className="mt-1 text-sm text-[var(--app-text)]">{[
+                      farmlandApproaches.direct_comparable && "Direct Comparable",
+                      farmlandApproaches.income_capitalization && "Income Capitalization",
+                      farmlandApproaches.cost_approach && "Cost Approach",
+                    ].filter(Boolean).join(" · ")}</p>
+                  )}
+                  <p className="mt-2 text-xs text-[var(--app-text-muted)]">Saved calculation. Editing preview fields does not rerun the valuation. Review the estimate before submitting.</p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-[var(--app-text-muted)] mb-1.5">
@@ -491,7 +549,7 @@ export default function RealEstatePreviewModal({
             </div>
 
             {/* Farmland Details Section (if farmland) */}
-            {propertyType === 'farmland' && (
+            {(propertyType === 'agricultural' || propertyType === 'farmland') && (
               <div className="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
                 <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                   <span className="text-green-600">🌾</span>
@@ -577,7 +635,7 @@ export default function RealEstatePreviewModal({
             {/* Quick Stats */}
             <div className="bg-[var(--app-panel)] from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl p-4">
               <h4 className="text-sm font-bold text-[var(--app-text)] mb-3">📊 Report Statistics</h4>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-emerald-600 capitalize">{propertyType}</div>
                   <div className="text-xs text-[var(--app-text-muted)]">Property Type</div>
@@ -598,17 +656,20 @@ export default function RealEstatePreviewModal({
               <div className="mt-6 rounded-xl border border-[var(--app-border)] bg-[var(--app-panel-soft)] p-4 shadow-sm  sm:p-6">
                 <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)] mb-4 flex items-center gap-2">
                   <Image className="h-5 w-5 text-emerald-600" />
-                  Property Photos ({imageUrls.length})
+                  Report Photos ({imageUrls.length})
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {imageUrls.map((url, idx) => (
-                    <div
+                    <button
+                      type="button"
                       key={idx}
+                      aria-label={`View ${idx < mainImageCount ? "main" : "report-only"} photo ${idx < mainImageCount ? idx + 1 : idx - mainImageCount + 1}`}
                       className="relative group cursor-pointer aspect-square rounded-lg overflow-hidden border border-[var(--app-border)] hover:border-emerald-400 transition-all shadow-sm hover:shadow-md"
                       onClick={() => setSelectedImageIndex(idx)}
                     >
                       { }
                       <img
+                        loading="lazy"
                         src={url}
                         alt={`Property Photo ${idx + 1}`}
                         className="w-full h-full object-cover"
@@ -621,18 +682,19 @@ export default function RealEstatePreviewModal({
                       <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
                         {idx + 1}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
                 <p className="text-xs text-[var(--app-text-muted)] mt-3">Click any photo to view larger. Photos will appear in the final report.</p>
               </div>
             )}
-          </div>
+          </fieldset>
 
           {/* Photo Lightbox Modal */}
           {selectedImageIndex !== null && (
             <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setSelectedImageIndex(null)}>
               <button
+                aria-label="Close photo"
                 onClick={() => setSelectedImageIndex(null)}
                 className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
               >
@@ -640,6 +702,7 @@ export default function RealEstatePreviewModal({
               </button>
               {selectedImageIndex > 0 && (
                 <button
+                  aria-label="Previous photo"
                   onClick={(e) => { e.stopPropagation(); setSelectedImageIndex(selectedImageIndex - 1); }}
                   className="absolute left-4 text-white hover:text-gray-300 transition-colors"
                 >
@@ -648,6 +711,7 @@ export default function RealEstatePreviewModal({
               )}
               {selectedImageIndex < imageUrls.length - 1 && (
                 <button
+                  aria-label="Next photo"
                   onClick={(e) => { e.stopPropagation(); setSelectedImageIndex(selectedImageIndex + 1); }}
                   className="absolute right-4 text-white hover:text-gray-300 transition-colors"
                 >
@@ -672,7 +736,7 @@ export default function RealEstatePreviewModal({
           <div className="sticky bottom-0 z-10 mt-4 flex flex-col items-center justify-end gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] pt-3 pb-1 sm:flex-row">
             <button
               onClick={handleSaveChanges}
-              disabled={saving || !hasChanges || filesGenerating || filesRegenerating}
+              disabled={busy || !hasChanges || filesGenerating || filesRegenerating}
               className="app-button app-button--secondary w-full sm:w-auto"
             >
               <Save className="h-5 w-5" />
@@ -680,7 +744,7 @@ export default function RealEstatePreviewModal({
             </button>
             <button
               onClick={handleSubmitForApproval}
-              disabled={submitting || filesGenerating || filesRegenerating || (!isAssignedApprovalMode && hasChanges)}
+              disabled={busy || filesGenerating || filesRegenerating || (!isAssignedApprovalMode && hasChanges)}
               className="app-button app-button--primary w-full sm:w-auto"
             >
               <Send className="h-5 w-5" />
@@ -690,7 +754,7 @@ export default function RealEstatePreviewModal({
                   ? "Regenerating Files..."
                   : isAssignedApprovalMode
                     ? "Submit & Approve"
-                    : "Submit for Approval"}
+                    : resubmitting ? "Resubmit for Approval" : "Submit for Approval"}
             </button>
           </div>
         </>

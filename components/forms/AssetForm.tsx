@@ -382,7 +382,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(true);
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
-  const [watermarkImages, setWatermarkImages] = useState(true);
+  const [watermarkImages, setWatermarkImages] = useState(false);
   const [factorsAgeCondition, setFactorsAgeCondition] = useState("");
   const [factorsQuality, setFactorsQuality] = useState("");
   const [factorsAnalysis, setFactorsAnalysis] = useState("");
@@ -919,7 +919,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     if (typeof formData.bankPhotosEnabled === "boolean") {
       setBankPhotosEnabled(formData.bankPhotosEnabled);
     }
-    setWatermarkImages(formData.watermarkImages !== false);
+    setWatermarkImages(formData.watermarkImages === true);
     if (typeof formData.preparedFor === "string") setPreparedFor(formData.preparedFor);
     if (typeof formData.factorsAgeCondition === "string") setFactorsAgeCondition(formData.factorsAgeCondition);
     if (typeof formData.factorsQuality === "string") setFactorsQuality(formData.factorsQuality);
@@ -1124,7 +1124,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       ),
       watermarkImages:
         value("watermarkImages", "watermark_images") === undefined
-          ? true
+          ? false
           : booleanValue("watermarkImages", "watermark_images"),
       factorsAgeCondition: textValue(
         "factorsAgeCondition",
@@ -2375,7 +2375,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                     checked={watermarkImages}
                     onChange={(event) => setWatermarkImages(event.target.checked)}
                     label="Apply watermark"
-                    description="Turn off when re-uploading photos that already contain the Asset Insight watermark."
+                    description="Off by default. Enable only to add a watermark to new, unwatermarked photos."
                   />
                 </div>
               </div>

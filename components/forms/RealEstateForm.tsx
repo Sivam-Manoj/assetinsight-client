@@ -29,67 +29,16 @@ import {
 type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
+  onSubmittingChange?: (submitting: boolean) => void;
 };
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
-
-const PROG_WEIGHTS = {
-  client_upload: 0.25,
-  r2_upload: 0.18,
-  ai_analysis: 0.2,
-  find_comparables: 0.12,
-  valuation: 0.08,
-  market_trend: 0.05,
-  generate_outputs: 0.07,
-  finalize: 0.05,
-} as const;
-
-const STEPS = [
-  { key: "client_upload", label: "Uploading images" },
-  { key: "r2_upload", label: "Storing images" },
-  { key: "ai_analysis", label: "Analyzing images" },
-  { key: "find_comparables", label: "Finding comparables" },
-  { key: "valuation", label: "Calculating valuation" },
-  { key: "market_trend", label: "Fetching market trends" },
-  { key: "generate_outputs", label: "Generating files" },
-  { key: "finalize", label: "Finalizing" },
-] as const;
-
-type StepKey = (typeof STEPS)[number]["key"];
-
-const makeInitialStepStates = (): Record<
-  StepKey,
-  "pending" | "active" | "done"
-> => {
-  return STEPS.reduce((acc, step) => {
-    acc[step.key] = "pending";
-    return acc;
-  }, {} as Record<StepKey, "pending" | "active" | "done">);
-};
-
-const deriveStepStates = (
-  percent: number
-): Record<StepKey, "pending" | "active" | "done"> => {
-  const states = makeInitialStepStates();
-  let previousBoundary = 0;
-  STEPS.forEach((step) => {
-    const weight = PROG_WEIGHTS[step.key];
-    const boundary = previousBoundary + weight * 100;
-    if (percent >= boundary - 0.1) {
-      states[step.key] = "done";
-    } else if (percent >= previousBoundary) {
-      states[step.key] = "active";
-    }
-    previousBoundary = boundary;
-  });
-  return states;
-};
 
 export type RealEstateFormHandle = {
   loadSavedInput: (savedInput: SavedInput) => void;
 };
 
-export default function RealEstateForm({ onSuccess, onCancel }: Props) {
+export default function RealEstateForm({ onSuccess, onCancel, onSubmittingChange }: Props) {
   const { user } = useAuthContext();
   const [details, setDetails] = useState<RealEstateDetails>({
     language: "en",
@@ -156,6 +105,8 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
   const [mapImage, setMapImage] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+  const submissionRef = useRef(false);
   const [specFiles, setSpecFiles] = useState<File[]>([]);
   const [notesText, setNotesText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -165,26 +116,16 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const [progressPercent, setProgressPercent] = useState(0);
-  const [progressPhase, setProgressPhase] = useState<
-    "idle" | "upload" | "processing" | "done" | "error"
-  >("idle");
-  const [stepStates, setStepStates] = useState<
-    Record<StepKey, "pending" | "active" | "done">
-  >(makeInitialStepStates);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const jobIdRef = useRef<string | null>(null);
-  const pollStartedRef = useRef(false);
 
   useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    if (!submitting) return;
+    const protectUpload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
     };
-  }, []);
-
-  useEffect(() => {
-    if (progressPhase === "idle") return;
-    setStepStates(deriveStepStates(progressPercent));
-  }, [progressPercent, progressPhase]);
+    window.addEventListener("beforeunload", protectUpload);
+    return () => window.removeEventListener("beforeunload", protectUpload);
+  }, [submitting]);
 
   // Sync property type from RealEstateSection to details
   useEffect(() => {
@@ -511,6 +452,7 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submissionRef.current || accepted) return;
     if (!details.property_details.address) {
       setError("Address is required.");
       toast.error("Address is required.");
@@ -523,6 +465,14 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
       return;
     }
 
+    const approaches = details.farmland_details;
+    if (property.propertyType === "agricultural" && !approaches?.use_direct_comparable && !approaches?.use_income_approach && !approaches?.use_cost_approach) {
+      const message = "Select at least one farmland valuation approach before creating the report.";
+      setError(message);
+      toast.error(message);
+      return;
+    }
+
     try {
       if (property.mainImages.length === 0) {
         const msg = "Please add at least one property image.";
@@ -531,23 +481,16 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
         return;
       }
 
+      submissionRef.current = true;
+      onSubmittingChange?.(true);
       setSubmitting(true);
       setError(null);
-      setProgressPhase("upload");
       setProgressPercent(0);
-      setStepStates(() => {
-        const initial = makeInitialStepStates();
-        initial.client_upload = "active";
-        return initial;
-      });
-      pollStartedRef.current = false;
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
 
       const jobId =
         typeof crypto !== "undefined" && (crypto as any)?.randomUUID
           ? (crypto as any).randomUUID()
           : `cv-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      jobIdRef.current = jobId;
 
       const inspector = {
         inspector_name: (user as any)?.username || (user as any)?.name || "",
@@ -576,42 +519,7 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
         extraImages.push(mapImage);
       }
       // Videos from property (if RealEstateSection supports videos)
-      const videos: File[] = (property as any).videos || [];
-
-      const startPolling = () => {
-        if (!jobIdRef.current || pollStartedRef.current) return;
-        pollStartedRef.current = true;
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = setInterval(async () => {
-          try {
-            const rec = await RealEstateService.progress(jobIdRef.current!);
-            const clientWeight = PROG_WEIGHTS.client_upload;
-            const server01 = Math.max(
-              0,
-              Math.min(1, rec?.serverProgress01 ?? 0)
-            );
-            const overall =
-              (clientWeight + server01 * (1 - clientWeight)) * 100;
-            setProgressPhase(
-              rec.phase === "error"
-                ? "error"
-                : rec.phase === "done"
-                ? "done"
-                : "processing"
-            );
-            setProgressPercent((prev) => (overall > prev ? overall : prev));
-            if (rec.message) setError(rec.message);
-            if (rec.phase === "done" || rec.phase === "error") {
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-            }
-          } catch (err) {
-            // Ignore early 404/network hiccups
-          }
-        }, 800);
-      };
+      const videos: File[] = property.videoFile ? [property.videoFile] : [];
 
       const res = await RealEstateService.create(
         payload,
@@ -621,40 +529,23 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
         {
           onUploadProgress: (fraction: number) => {
             const pct = Math.max(0, Math.min(1, fraction));
-            const weighted = pct * PROG_WEIGHTS.client_upload * 100;
-            setProgressPhase("upload");
-            setProgressPercent((prev) => (weighted > prev ? weighted : prev));
-            if (weighted >= PROG_WEIGHTS.client_upload * 100 - 0.5) {
-              setStepStates((prev) => ({
-                ...prev,
-                client_upload: "done",
-                r2_upload:
-                  prev.r2_upload === "pending" ? "active" : prev.r2_upload,
-              }));
-              startPolling();
-            }
+            setProgressPercent((prev) => Math.max(prev, pct * 100));
           },
         }
       );
-
-      startPolling();
 
       const successMsg =
         res?.message ||
         "Your report is being processed. You will receive an email when it's ready.";
       toast.info(successMsg);
+      // HTTP 202 confirms acceptance, not a completed preview or final report.
+      setAccepted(true);
+      onSubmittingChange?.(false);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("cv:report-created"));
       }
       onSuccess?.(res?.message);
-      setProgressPhase("done");
-      setProgressPercent((prev) => (prev < 100 ? 100 : prev));
     } catch (err: any) {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      setProgressPhase("error");
       const msg =
         err?.response?.data?.message ||
         err?.message ||
@@ -662,16 +553,26 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
       setError(msg);
       toast.error(msg);
     } finally {
+      submissionRef.current = false;
+      onSubmittingChange?.(false);
       setSubmitting(false);
     }
   }
 
   return (
-    <form className="flex min-h-full flex-col" onSubmit={onSubmit}>
+    <form className="flex min-h-full flex-col" onSubmit={onSubmit} aria-busy={submitting}>
+      {accepted ? (
+        <div className="app-surface space-y-3 p-4" role="status">
+          <h2 className="font-semibold text-[var(--app-text)]">Upload accepted</h2>
+          <p className="text-sm text-[var(--app-text-muted)]">Your Real Estate preview is processing. You can leave this panel and check Previews when it is ready. Do not upload the same report again.</p>
+          <button type="button" className="app-button app-button--secondary" onClick={onCancel}>Close</button>
+        </div>
+      ) : <>
+      <fieldset disabled={submitting} hidden={submitting} className="min-w-0 border-0 p-0 m-0" inert={submitting}>
       <div className="relative flex min-h-full flex-col gap-2 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border border-emerald-100 bg-[var(--app-panel)] p-4 shadow-sm">
           <div>
-            <h2 className="text-lg font-semibold text-gray-950">Real Estate Appraisal</h2>
+            <h2 className="text-lg font-semibold text-[var(--app-text)]">Real Estate Appraisal</h2>
             <p className="mt-1 text-sm text-[var(--app-text-muted)]">
               Capture property details, supporting files, photos, and valuation notes.
             </p>
@@ -752,31 +653,16 @@ export default function RealEstateForm({ onSuccess, onCancel }: Props) {
           </button>
         </div>
 
-        {/* Progress */}
+      </div>
+      </fieldset>
         {submitting && (
           <div className="rounded-lg border border-blue-100 bg-[var(--app-panel)] p-3 shadow-sm">
-            <div className="flex items-center gap-1 mb-2">
-              {STEPS.map((s, idx) => {
-                const state = stepStates[s.key];
-                const isDone = state === "done";
-                const isActive = state === "active";
-                return (
-                  <div key={s.key} className="flex flex-1 items-center">
-                    <div className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${isDone ? "border-blue-600 bg-blue-600 text-white" : isActive ? "border-blue-600 text-blue-600 animate-pulse" : "border-[var(--app-border)] text-[var(--app-text-muted)]"}`} title={s.label}>
-                      {isDone ? <Check className="h-2.5 w-2.5" /> : idx + 1}
-                    </div>
-                    {idx < STEPS.length - 1 && <div className="mx-0.5 h-0.5 flex-1 rounded bg-gray-200"><div className={`h-0.5 rounded ${isDone ? "bg-blue-500" : isActive ? "bg-blue-300" : ""}`} /></div>}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="h-1 w-full overflow-hidden rounded-full bg-gray-200">
-              <div className="h-1 rounded-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, Math.max(0, progressPercent)).toFixed(0)}%` }} />
-            </div>
-            <div className="mt-1 text-[10px] text-[var(--app-text-muted)]">{progressPhase === "upload" ? "Uploading..." : progressPhase === "processing" ? "Processing..." : progressPhase === "done" ? "Done!" : progressPhase === "error" ? "Error" : "Starting..."}</div>
+            <p role="status" className="text-sm text-[var(--app-text)]">Uploading your report. Keep this page open until the server confirms it has accepted your files.</p>
+            <progress aria-label="Real Estate upload progress" max={100} value={progressPercent} className="mt-3 h-2 w-full accent-[var(--app-accent)]" />
+            <p className="mt-1 text-xs text-[var(--app-text-muted)]">{progressPercent >= 100 ? "Upload sent. Waiting for server confirmation…" : `${Math.round(progressPercent)}% uploaded`}</p>
           </div>
         )}
-      </div>
+      </>}
     </form>
   );
 }

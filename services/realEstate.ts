@@ -1,6 +1,8 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
 
+export const REAL_ESTATE_MEDIA_LIMITS = { images: 50, extraImages: 100, videos: 20 } as const;
+
 export type RealEstateDetails = {
   progress_id?: string;
   progressId?: string;
@@ -143,6 +145,8 @@ export interface RealEstatePreviewDataResponse {
     release_assigned_to?: string | { _id?: string; email?: string; username?: string } | null;
     released_at?: string | null;
     downloadable?: boolean;
+    files_generating?: boolean;
+    files_regenerating?: boolean;
     reportId: string;
   };
 }
@@ -155,11 +159,20 @@ export const RealEstateService = {
     videos: File[] = [], // Videos (zip only)
     options?: RealEstateCreateOptions
   ): Promise<RealEstateCreateResponse> {
+    if (images.length > REAL_ESTATE_MEDIA_LIMITS.images) {
+      throw new Error("Real Estate reports support up to 50 main photos.");
+    }
+    if (extraImages.length > REAL_ESTATE_MEDIA_LIMITS.extraImages) {
+      throw new Error("Real Estate reports support up to 100 report-only photos, including the map.");
+    }
+    if (videos.length > REAL_ESTATE_MEDIA_LIMITS.videos) {
+      throw new Error("Real Estate reports support up to 20 videos.");
+    }
     const fd = new FormData();
     fd.append("details", JSON.stringify(details));
-    // Main images (processed with logo, sent to AI, max 50)
+    // Main images (sent to AI, max 50; backend watermark policy defaults off).
     images.forEach((file) => fd.append("images", file));
-    // Extra images (processed with logo, report only)
+    // Extra images (report only; backend watermark policy defaults off).
     extraImages.forEach((file) => fd.append("extraImages", file));
     // Videos (included in zip only)
     videos.forEach((file) => fd.append("videos", file));

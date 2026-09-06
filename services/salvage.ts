@@ -1,6 +1,9 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
 
+// Matches the shared web/mobile backend multipart limit.
+export const SALVAGE_MAX_IMAGES = 30;
+
 export type SalvageDetails = {
   report_date: string; // ISO date string (yyyy-mm-dd)
   file_number: string;
@@ -40,9 +43,12 @@ export type CreateOptions = {
 
 export const SalvageService = {
   async create(details: SalvageDetails, images: File[], options?: CreateOptions): Promise<SalvageCreateResponse> {
+    if (images.length > SALVAGE_MAX_IMAGES) {
+      throw new Error(`Salvage reports support up to ${SALVAGE_MAX_IMAGES} images. Remove extra images before submitting.`);
+    }
     const fd = new FormData();
     fd.append("details", JSON.stringify(details));
-    images.slice(0, 10).forEach((file) => fd.append("images", file));
+    images.forEach((file) => fd.append("images", file));
 
     const { data } = await API.post<SalvageCreateResponse>("/salvage", fd, {
       onUploadProgress: (e: AxiosProgressEvent) => {
@@ -51,7 +57,7 @@ export const SalvageService = {
         if (!fraction && typeof e.loaded === "number" && typeof e.total === "number" && e.total > 0) {
           fraction = e.loaded / e.total;
         }
-        options.onUploadProgress(Math.max(0, Math.min(1, fraction)));
+        options.onUploadProgress(Number.isFinite(fraction) ? Math.max(0, Math.min(1, fraction)) : 0);
       },
     });
     return data;

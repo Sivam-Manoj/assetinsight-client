@@ -330,7 +330,7 @@ export default function LotListingForm({
   const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
   const [currency, setCurrency] = useState("CAD");
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
-  const [watermarkImages, setWatermarkImages] = useState(true);
+  const [watermarkImages, setWatermarkImages] = useState(false);
 
   const [openSections, setOpenSections] = useState({
     details: true,
@@ -832,7 +832,7 @@ export default function LotListingForm({
       setLanguage(data.language || "en");
       setCurrency(data.currency || "CAD");
       setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
-      setWatermarkImages(data.watermarkImages !== false);
+      setWatermarkImages(data.watermarkImages === true);
       setMixedLots(Array.isArray(data.lots) ? data.lots : []);
       jobIdRef.current =
         data.clientSubmissionId ||
@@ -1042,10 +1042,7 @@ export default function LotListingForm({
         formData.bankPhotosEnabled ?? formData.bank_photos_enabled
       ),
       watermarkImages:
-        formData.watermarkImages === undefined &&
-        formData.watermark_images === undefined
-          ? true
-          : Boolean(formData.watermarkImages ?? formData.watermark_images),
+        (formData.watermarkImages ?? formData.watermark_images) === true,
       clientSubmissionId: resumeDraft.clientDraftId,
       lots: restoredLots,
     };
@@ -1154,7 +1151,7 @@ export default function LotListingForm({
     setLanguage("en");
     setCurrency("CAD");
     setBankPhotosEnabled(false);
-    setWatermarkImages(true);
+    setWatermarkImages(false);
     setError(null);
     setErrors({});
     setUploadPercent(0);
@@ -2020,7 +2017,7 @@ export default function LotListingForm({
                 <FormSwitch
                   id="lot-watermark-images"
                   label="Apply watermark"
-                  description="Turn off when re-uploading photos that already contain the Asset Insight watermark."
+                  description="Off by default. Enable only to add a watermark to new, unwatermarked photos."
                   checked={watermarkImages}
                   onChange={(event) => {
                     setWatermarkImages(event.target.checked);

@@ -1326,6 +1326,7 @@ export default function PreviewsPage() {
           isOpen={realEstateModalOpen}
           onClose={handleModalClose}
           onSuccess={handleSuccess}
+          isResubmitMode={isResubmitMode}
         />
       ) : null}
       {selectedReportId && lotListingModalOpen ? (

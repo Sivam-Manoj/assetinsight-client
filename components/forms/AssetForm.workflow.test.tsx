@@ -304,6 +304,26 @@ describe("AssetForm manual save and submission workflow", () => {
     }
   });
 
+  it("defaults new Asset reports to no watermark and allows explicit opt-in", async () => {
+    render(<AssetForm />);
+    await waitForResolvedAssetLocation();
+    const watermark = screen.getByRole("checkbox", { name: /Apply watermark/i });
+    expect(watermark).not.toBeChecked();
+    fireEvent.click(watermark);
+    expect(watermark).toBeChecked();
+    fireEvent.click(watermark);
+    expect(watermark).not.toBeChecked();
+  });
+
+  it.each([undefined, false, true])("restores watermark choice %s without opting missing draft values in", async (watermarkImages) => {
+    const draft = makeAssetResumeDraft(RESOLVED_ASSET_LOCATION);
+    draft.formData = { ...draft.formData, watermarkImages };
+    const onDraftStatusChange = vi.fn();
+    render(<AssetForm resumeDraft={draft} onDraftStatusChange={onDraftStatusChange} />);
+    await waitFor(() => expect(onDraftStatusChange).toHaveBeenCalledWith("saved", "Draft and photos restored"));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).toHaveProperty("checked", watermarkImages === true));
+  });
+
   it("keeps form and media changes local until Save draft is selected", async () => {
     vi.useFakeTimers();
     render(<AssetForm />);
@@ -346,6 +366,7 @@ describe("AssetForm manual save and submission workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
 
     await waitFor(() => expect(mocks.upsertWithMedia).toHaveBeenCalledOnce());
+    expect(mocks.upsertWithMedia.mock.calls[0][0].formData.watermarkImages).toBe(false);
     const [, lots, , signal] = mocks.upsertWithMedia.mock.calls[0];
     expect(lots[0].files[0].name).toBe("asset-photo.jpg");
     expect(signal).toBeInstanceOf(AbortSignal);
@@ -538,6 +559,7 @@ describe("AssetForm manual save and submission workflow", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Uploading your report",
     });
+    expect(mocks.createAsset.mock.calls[0][0].watermark_images).toBe(false);
     expect(dialog).toHaveClass("fixed", "inset-0", "z-[1500]");
     expect(
       within(dialog).getByRole("button", { name: "Stop upload" })

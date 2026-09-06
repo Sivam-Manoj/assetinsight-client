@@ -251,6 +251,37 @@ describe("LotListingForm explicit save and upload workflow", () => {
     window.localStorage.clear();
   });
 
+  it("defaults new Lot Listings to no watermark and allows explicit opt-in", async () => {
+    render(<LotListingForm />);
+    await waitForResolvedLotLocation();
+    const watermark = screen.getByRole("checkbox", { name: /Apply watermark/i });
+    expect(watermark).not.toBeChecked();
+    fireEvent.click(watermark);
+    expect(watermark).toBeChecked();
+    fireEvent.click(watermark);
+    expect(watermark).not.toBeChecked();
+  });
+
+  it.each([undefined, false, true])("restores watermark choice %s without opting missing draft values in", async (watermarkImages) => {
+    const draft = makeLotResumeDraft();
+    draft.formData = { ...draft.formData, location: RESOLVED_LOT_LOCATION, watermarkImages };
+    const onDraftStatusChange = vi.fn();
+    render(<LotListingForm resumeDraft={draft} onDraftStatusChange={onDraftStatusChange} />);
+    await waitFor(() => expect(onDraftStatusChange).toHaveBeenCalledWith("saved", "Draft and photos restored"));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).toHaveProperty("checked", watermarkImages === true));
+  });
+
+  it("resets the watermark opt-in when clearing a Lot Listing", async () => {
+    render(<LotListingForm />);
+    await waitForResolvedLotLocation();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Apply watermark/i }));
+    expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Clear", exact: true }));
+    const confirmation = await screen.findByRole("alertdialog", { name: "Clear this lot listing?" });
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Clear listing" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).not.toBeChecked());
+  });
+
   it("keeps form and media changes local until Save Draft is explicitly selected", async () => {
     vi.useFakeTimers();
     mocks.upsertWithMedia.mockImplementation(
@@ -280,6 +311,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       screen.getAllByRole("button", { name: "Save Draft" })[0]
     );
     expect(mocks.upsertWithMedia).toHaveBeenCalledOnce();
+    expect(mocks.upsertWithMedia.mock.calls[0][0].formData.watermarkImages).toBe(false);
   });
 
   it("locks immediately, ignores a rapid repeated save, and cancels the original save", async () => {
@@ -458,6 +490,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       endpoint: "/lot-listing",
       details: {
         contract_no: "LOT-TEST-1",
+        watermark_images: false,
         location: RESOLVED_LOT_LOCATION,
         latitude: 50.1234567,
         longitude: -104.7654321,

@@ -16,7 +16,7 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import BottomDrawer from "@/components/BottomDrawer";
 import Loading from "@/components/common/Loading";
@@ -227,6 +227,12 @@ export default function DashboardPage() {
   const requestOwner = userId || (sessionPresent ? "pending-session" : null);
   const router = useRouter();
   const [drawerType, setDrawerType] = useState<DrawerType>(null);
+  const [formUploading, setFormUploading] = useState(false);
+  const formUploadingRef = useRef(false);
+  const handleFormUploading = useCallback((uploading: boolean) => {
+    formUploadingRef.current = uploading;
+    setFormUploading(uploading);
+  }, []);
   const [greetingLabel] = useState(greeting);
   const [range, setRange] = useState<DashboardRange>(31);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -349,6 +355,7 @@ export default function DashboardPage() {
   }, [router]);
 
   const closeDrawer = useCallback(() => {
+    if (formUploadingRef.current) return;
     setDrawerType(null);
     refreshDashboard();
   }, [refreshDashboard]);
@@ -615,11 +622,12 @@ export default function DashboardPage() {
         title={drawerType ? DRAWER_TITLES[drawerType] : undefined}
         description="Complete the required details, attach supporting media, and save or submit when ready."
         contentScrollable
+        closeDisabled={formUploading}
       >
         {drawerType === "real-estate" ? (
-          <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} />
+          <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} />
         ) : drawerType === "salvage" ? (
-          <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} />
+          <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} />
         ) : null}
       </BottomDrawer>
     </div>

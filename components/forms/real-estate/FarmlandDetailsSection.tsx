@@ -29,11 +29,11 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
         <div className="grid gap-2 grid-cols-2 lg:grid-cols-3">
           <div>
             <label className={labelClass}>Total Title Acres *</label>
-            <input required type="number" className={inputClass} value={fd?.total_title_acres || ""} onChange={(e) => onChange("total_title_acres", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="160" />
+            <input required type="number" min="0" className={inputClass} value={fd?.total_title_acres ?? ""} onChange={(e) => onChange("total_title_acres", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="160" />
           </div>
           <div>
             <label className={labelClass}>Cultivated Acres *</label>
-            <input required type="number" className={inputClass} value={fd?.cultivated_acres || ""} onChange={(e) => onChange("cultivated_acres", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="150" />
+            <input required type="number" min="0" className={inputClass} value={fd?.cultivated_acres ?? ""} onChange={(e) => onChange("cultivated_acres", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="150" />
           </div>
           <div>
             <label className={labelClass}>RM / Area *</label>
@@ -65,7 +65,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
           </div>
           <div>
             <label className={labelClass}>Dist. to City (km) *</label>
-            <input required type="number" className={inputClass} value={fd?.distance_to_city_km || ""} onChange={(e) => onChange("distance_to_city_km", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="25" />
+            <input required type="number" min="0" className={inputClass} value={fd?.distance_to_city_km ?? ""} onChange={(e) => onChange("distance_to_city_km", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="25" />
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-1.5 text-[11px] text-[var(--app-text-muted)] cursor-pointer">
@@ -80,7 +80,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
           {fd?.is_rented && (
             <div>
               <label className={labelClass}>Annual Rent ($/acre)</label>
-              <input type="number" className={inputClass} value={fd?.annual_rent_per_acre || ""} onChange={(e) => onChange("annual_rent_per_acre", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="80" />
+              <input type="number" min="0" className={inputClass} value={fd?.annual_rent_per_acre ?? ""} onChange={(e) => onChange("annual_rent_per_acre", e.target.value ? parseFloat(e.target.value) : undefined)} placeholder="80" />
             </div>
           )}
         </div>
@@ -194,7 +194,8 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                   type="number" 
                   step="0.01"
                   className={inputClass.replace(/border-emerald/g, "border-amber").replace(/emerald/g, "amber")} 
-                  value={fd?.market_rent_per_acre || ""} 
+                  min="0"
+                  value={fd?.market_rent_per_acre ?? ""}
                   onChange={(e) => onChange("market_rent_per_acre", e.target.value ? parseFloat(e.target.value) : undefined)} 
                   placeholder="80" 
                 />
@@ -207,6 +208,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                   step="0.1"
                   className={inputClass.replace(/border-emerald/g, "border-amber").replace(/emerald/g, "amber")} 
                   value={fd?.vacancy_loss_percent ?? 2} 
+                  min="0" max="100"
                   onChange={(e) => onChange("vacancy_loss_percent", e.target.value ? parseFloat(e.target.value) : undefined)} 
                   placeholder="2" 
                 />
@@ -219,6 +221,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                   step="0.1"
                   className={inputClass.replace(/border-emerald/g, "border-amber").replace(/emerald/g, "amber")} 
                   value={fd?.operating_expense_ratio ?? 20} 
+                  min="0" max="100"
                   onChange={(e) => onChange("operating_expense_ratio", e.target.value ? parseFloat(e.target.value) : undefined)} 
                   placeholder="20" 
                 />
@@ -231,6 +234,7 @@ export default function FarmlandDetailsSection({ details, onChange }: FarmlandDe
                   step="0.1"
                   className={inputClass.replace(/border-emerald/g, "border-amber").replace(/emerald/g, "amber")} 
                   value={fd?.cap_rate ?? 5} 
+                  min="0.1"
                   onChange={(e) => onChange("cap_rate", e.target.value ? parseFloat(e.target.value) : undefined)} 
                   placeholder="5" 
                 />
