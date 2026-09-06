@@ -276,7 +276,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     await waitForResolvedLotLocation();
     fireEvent.click(screen.getByRole("checkbox", { name: /Apply watermark/i }));
     expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Clear", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     const confirmation = await screen.findByRole("alertdialog", { name: "Clear this lot listing?" });
     fireEvent.click(within(confirmation).getByRole("button", { name: "Clear listing" }));
     await waitFor(() => expect(screen.getByRole("checkbox", { name: /Apply watermark/i })).not.toBeChecked());
