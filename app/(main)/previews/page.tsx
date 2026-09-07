@@ -39,6 +39,7 @@ import {
 } from "@/services/reportDrafts";
 import { navigateToReportForm } from "@/services/reportFormNavigation";
 import styles from "./page.module.css";
+import { SalvageService, salvagePreviewPath, type SalvageReport } from "@/services/salvage";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -59,7 +60,8 @@ const LotListingPreviewModal = dynamic(
 type CombinedReport =
   | (AssetReport & { reportType: "asset" })
   | (RealEstateReport & { reportType: "realEstate" })
-  | (LotListing & { reportType: "lotListing" });
+  | (LotListing & { reportType: "lotListing" })
+  | (SalvageReport & { reportType: "salvage" });
 
 type TabType = "new" | "submitted" | "drafts";
 
@@ -143,6 +145,12 @@ function requestReportsRefetch() {
 }
 
 function summaryForReport(report: CombinedReport) {
+  if (report.reportType === "salvage") {
+    return {
+      title: report.file_number || "Salvage report", typeLabel: "Salvage", accent: "var(--app-accent)",
+      fields: [["Claim", String(report.preview_data?.claim_number || "—")], ["Currency", report.currency || "CAD"], ["Images", String(report.imageUrls?.length || 0)]],
+    };
+  }
   if (report.reportType === "realEstate") {
     return {
       title:
@@ -286,6 +294,7 @@ export default function PreviewsPage() {
         lotListingResponse,
         submittedLotListingResponse,
         reportDraftResponse,
+        salvageResponse,
       ] = await Promise.all([
         getAssetReports().catch(() => ({ data: [] })),
         RealEstateService.getReports().catch(() => ({ data: [] })),
@@ -293,6 +302,7 @@ export default function PreviewsPage() {
         getLotListings().catch(() => ({ data: [] })),
         getSubmittedLotListings().catch(() => ({ data: [] })),
         ReportDraftService.list().catch(() => []),
+        SalvageService.getReports().catch(() => ({ data: [] })),
       ]);
 
       const assetPreviews: CombinedReport[] = (assetResponse.data || [])
@@ -354,15 +364,16 @@ export default function PreviewsPage() {
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
       const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
+      const salvageReports: CombinedReport[] = (salvageResponse?.data || []).map((report) => ({ ...report, reportType: "salvage" as const }));
 
       setNewReports(
-        [...assetPreviews, ...realEstatePreviews, ...lotListingPreviews].sort(
+        [...assetPreviews, ...realEstatePreviews, ...lotListingPreviews, ...salvageReports.filter((report) => !isSubmittedPreview(report))].sort(
           (a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
       );
       setSubmittedReports(
-        [...submittedAssets, ...realEstateSubmitted, ...lotListingSubmitted].sort(
+        [...submittedAssets, ...realEstateSubmitted, ...lotListingSubmitted, ...salvageReports.filter(isSubmittedPreview)].sort(
           (a, b) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
@@ -435,6 +446,10 @@ export default function PreviewsPage() {
   };
 
   const handleOpenPreview = (report: CombinedReport, resubmitMode = false) => {
+    if (report.reportType === "salvage") {
+      router.push(salvagePreviewPath(report._id));
+      return;
+    }
     setSelectedDraftPreviewId(null);
     setSelectedReportId(report._id);
     setIsResubmitMode(resubmitMode);
@@ -1056,7 +1071,7 @@ export default function PreviewsPage() {
                           </button>
                         ) : null}
 
-                        {(report.status === "pending_approval" ||
+                        {report.reportType !== "salvage" && (report.status === "pending_approval" ||
                           report.status === "approved" ||
                           jobActive) &&
                         !jobActive ? (
@@ -1131,14 +1146,18 @@ export default function PreviewsPage() {
                           </button>
                         ) : null}
 
-                        <button
+                        {report.reportType === "salvage" ? <button
+                          type="button"
+                          className={`${styles.action} ${styles.actionPrimary}`}
+                          onClick={() => handleOpenPreview(report)}
+                        ><FileSearch className="size-3.5" /> {jobActive ? "View progress" : jobFailed ? "Review & retry" : "Review report"}</button> : <button
                           type="button"
                           className={`${styles.action} ${styles.actionDanger}`}
                           onClick={() => setDeleteTarget(report)}
                         >
                           <Trash2 className="size-3.5" />
                           Delete
-                        </button>
+                        </button>}
                       </div>
                     </div>
 

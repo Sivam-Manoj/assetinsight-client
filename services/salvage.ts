@@ -23,12 +23,14 @@ export type SalvageDetails = {
   currency?: string; // ISO code, e.g., CAD, USD, EUR
   // Background progress id (optional, server will use it if provided)
   progress_id?: string;
+  client_submission_id?: string;
 };
 
 export type SalvageCreateResponse = {
   message: string;
   // Background job ack
   jobId?: string;
+  reportId?: string;
   phase?: "upload" | "processing" | "done" | "error";
   // Legacy immediate response fields (if any)
   filePath?: string;
@@ -41,7 +43,88 @@ export type CreateOptions = {
   onUploadProgress?: (fraction: number) => void;
 };
 
+export type SalvagePreviewData = Record<string, unknown>;
+export type SalvageReport = {
+  _id: string;
+  reportId?: string;
+  file_number: string;
+  status: "processing" | "preview" | "pending_approval" | "approved" | "declined" | "error";
+  revision: number;
+  createdAt: string;
+  updatedAt?: string;
+  currency?: string;
+  valuation?: Record<string, unknown>;
+  imageUrls: string[];
+  preview_data: SalvagePreviewData;
+  generation_state?: "queued" | "processing" | "ready" | "error";
+  workflow_stage?: string;
+  workflow_message?: string;
+  workflow_progress_percent?: number;
+  files_ready?: boolean;
+  files_generating?: boolean;
+  job_status?: string;
+  job_error?: string;
+  job_id?: string;
+  decline_reason?: string;
+  downloadable?: boolean;
+  download_access?: unknown;
+  release_status?: "pending_release" | "released";
+  files?: Partial<Record<"pdf" | "docx" | "xlsx" | "images", string>>;
+};
+
+export function salvageIsProcessing(report: SalvageReport): boolean {
+  if (report.workflow_stage === "error" || report.generation_state === "error") return false;
+  return report.files_generating === true || report.status === "processing" ||
+    ["queued", "processing"].includes(report.generation_state || "") ||
+    ["preparing_preview", "generating_files"].includes(report.workflow_stage || "");
+}
+
+export function salvagePreviewPath(id: string): string {
+  return `/salvage/preview/${encodeURIComponent(id)}`;
+}
+
+// Send only report-editable fields. Ownership, workflow, media and AI evidence
+// are server-owned even when present in a legacy flat preview snapshot.
+const EDITABLE_FIELDS = [
+  "report_date", "file_number", "date_received", "claim_number", "policy_number",
+  "date_of_loss", "reported_loss_type", "appraiser_name", "appraiser_phone",
+  "appraiser_email", "item_type", "year", "make", "item_model", "vin",
+  "adjuster_name", "insured_name", "company_name", "company_address",
+  "cause_of_loss_summary", "appraiser_comments", "next_report_due", "language",
+  "currency", "valuation", "repair_items", "labour_breakdown", "procurement_notes",
+  "assumptions", "safety_concerns", "priority_level", "labour_rate_default",
+  "item_condition", "damage_description", "inspection_comments", "is_repairable",
+  "repair_facility", "repair_facility_comments", "actual_cash_value", "replacement_cost",
+  "recommended_reserve", "repair_estimate",
+] as const;
+
+export function salvageEditableData(data: SalvagePreviewData): SalvagePreviewData {
+  return Object.fromEntries(EDITABLE_FIELDS.filter((key) => key in data).map((key) => [key, data[key]]));
+}
+
 export const SalvageService = {
+  async getReports(): Promise<{ data: SalvageReport[] }> {
+    const { data } = await API.get<{ data: SalvageReport[] }>("/salvage");
+    return data;
+  },
+  async getPreview(id: string): Promise<{ data: SalvageReport }> {
+    const { data } = await API.get<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/preview`);
+    return data;
+  },
+  async savePreview(id: string, preview: SalvagePreviewData, baseRevision: number): Promise<{ data: SalvageReport }> {
+    const { data } = await API.patch<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/preview`, {
+      data: salvageEditableData(preview), baseRevision,
+    });
+    return data;
+  },
+  async submit(id: string, baseRevision: number, resubmit = false): Promise<{ data: SalvageReport }> {
+    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/${resubmit ? "resubmit" : "submit"}`, { baseRevision });
+    return data;
+  },
+  async retry(id: string): Promise<{ data: SalvageReport }> {
+    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/retry`, {});
+    return data;
+  },
   async create(details: SalvageDetails, images: File[], options?: CreateOptions): Promise<SalvageCreateResponse> {
     if (images.length > SALVAGE_MAX_IMAGES) {
       throw new Error(`Salvage reports support up to ${SALVAGE_MAX_IMAGES} images. Remove extra images before submitting.`);
@@ -70,6 +153,7 @@ export const SalvageService = {
       serverProgress01: number;
       steps: Array<{ key: string; label: string; startedAt?: string; endedAt?: string; durationMs?: number }>;
       message?: string;
+      result?: { reportId: string; reportType: "Salvage"; status: string };
     };
   },
 };

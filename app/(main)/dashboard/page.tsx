@@ -627,7 +627,10 @@ export default function DashboardPage() {
         {drawerType === "real-estate" ? (
           <RealEstateForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} />
         ) : drawerType === "salvage" ? (
-          <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} />
+          <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} onReportAccepted={(reportId) => {
+            closeDrawer();
+            router.push(`/salvage/preview/${encodeURIComponent(reportId)}`);
+          }} />
         ) : null}
       </BottomDrawer>
     </div>

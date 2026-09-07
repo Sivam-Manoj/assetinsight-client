@@ -101,6 +101,21 @@ describe("Salvage form upload/acceptance workflow", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
     expect(SalvageService.create).toHaveBeenCalledTimes(2);
     expect(vi.mocked(SalvageService.create).mock.calls[1][1]).toEqual(files);
+    const attempts = vi.mocked(SalvageService.create).mock.calls;
+    expect(attempts[0][0].client_submission_id).toBeTruthy();
+    expect(attempts[1][0].client_submission_id).toBe(attempts[0][0].client_submission_id);
+  });
+
+  it("hands off the accepted persisted report id for preview instead of announcing completion", async () => {
+    vi.mocked(SalvageService.create).mockResolvedValue({ reportId: "salvage-1", jobId: "job-1", message: "Accepted", phase: "processing" });
+    const onReportAccepted = vi.fn();
+    const onSuccess = vi.fn();
+    render(<SalvageForm onReportAccepted={onReportAccepted} onSuccess={onSuccess} />);
+    fillForm();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
+    expect(onReportAccepted).toHaveBeenCalledWith("salvage-1");
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("Review the preview when it is ready");
   });
 
   it("warns clearly when a selection would exceed the backend's 30-photo limit", () => {

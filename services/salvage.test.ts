@@ -3,7 +3,7 @@ import type { AxiosProgressEvent } from "axios";
 import API from "@/lib/api";
 import { SALVAGE_MAX_IMAGES, SalvageService, type SalvageDetails } from "./salvage";
 
-vi.mock("@/lib/api", () => ({ default: { post: vi.fn(), get: vi.fn() } }));
+vi.mock("@/lib/api", () => ({ default: { post: vi.fn(), get: vi.fn(), patch: vi.fn() } }));
 
 const details: SalvageDetails = {
   report_date: "2026-09-06", file_number: "SALVAGE-001", date_received: "2026-09-06",
@@ -45,5 +45,49 @@ describe("SalvageService upload contract", () => {
     listener?.({ progress: 1.5 } as AxiosProgressEvent);
     listener?.({ progress: Number.NaN } as AxiosProgressEvent);
     expect(onUploadProgress.mock.calls.map(([fraction]) => fraction)).toEqual([0.25, 1, 0]);
+  });
+});
+
+describe("SalvageService revision-safe lifecycle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(API.patch).mockResolvedValue({ data: { data: { _id: "report", revision: 2 } } });
+    vi.mocked(API.post).mockResolvedValue({ data: { data: { _id: "report", revision: 2 } } });
+    vi.mocked(API.get).mockResolvedValue({ data: { data: { _id: "report", revision: 2 } } });
+  });
+
+  it("sends only editable preview fields with the observed revision, not media or ownership", async () => {
+    await SalvageService.savePreview("report/one", {
+      file_number: "REVIEWED", year: "2020", valuation: { fairMarketValue: "CAD 1000" },
+      item_condition: "Damaged", damage_description: "Left door", repair_facility: "Reviewed shop",
+      actual_cash_value: 1200, recommended_reserve: 500, repair_estimate: { taxes: 20 },
+      parts_subtotal: 99999, labour_total: 99999,
+      user: "other-user", status: "approved", imageUrls: ["https://example.test/private.jpg"],
+      aiExtractedDetails: { original: true }, comparableItems: [], revision: 100,
+    }, 0);
+    expect(API.patch).toHaveBeenCalledWith("/salvage/report%2Fone/preview", {
+      data: { file_number: "REVIEWED", year: "2020", valuation: { fairMarketValue: "CAD 1000" },
+        item_condition: "Damaged", damage_description: "Left door", repair_facility: "Reviewed shop",
+        actual_cash_value: 1200, recommended_reserve: 500, repair_estimate: { taxes: 20 } }, baseRevision: 0,
+    });
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
+  it("uses explicit submit/resubmit and retry of the same report, without another create", async () => {
+    await SalvageService.submit("report", 3);
+    await SalvageService.submit("report", 4, true);
+    await SalvageService.retry("report");
+    expect(vi.mocked(API.post).mock.calls).toEqual([
+      ["/salvage/report/submit", { baseRevision: 3 }],
+      ["/salvage/report/resubmit", { baseRevision: 4 }],
+      ["/salvage/report/retry", {}],
+    ]);
+  });
+
+  it("uses the canonical authenticated list and preview endpoints", async () => {
+    await SalvageService.getReports();
+    await SalvageService.getPreview("report/one");
+    expect(API.get).toHaveBeenNthCalledWith(1, "/salvage");
+    expect(API.get).toHaveBeenNthCalledWith(2, "/salvage/report%2Fone/preview");
   });
 });

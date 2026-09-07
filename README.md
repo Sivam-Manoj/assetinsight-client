@@ -22,6 +22,16 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Salvage review workflow
+
+Salvage uploads open the saved report at `/salvage/preview/[id]`. The page follows processing progress, allows review of claim/vehicle details, valuation and repair estimates, and preserves all original photos. Save updates the current revision only; Submit/Resubmit generates the files in a separate accepted workflow. Failed work can be retried from the same report without uploading another copy. Reports and Previews both link back to this workspace.
+
+Condition, damage, facility and cash/reserve values are editable. Itemized repair totals preview quantity × unit price and hours × hourly rate; the backend confirms the totals on save. Additional costs and betterment use the canonical nested repair estimate, and changing a repair estimate does not silently replace the fair market value.
+
+Downloads use authenticated PdfReport IDs returned by the backend and remain disabled until the required generation, approval and release are complete. Concurrent edits produce a revision conflict rather than overwriting another device's changes. Unsaved changes remain on screen until explicitly discarded or saved.
+
+Focused verification: `npm test -- services/salvage.test.ts components/forms/SalvageForm.workflow.test.tsx components/reports/SalvagePreviewWorkspace.test.tsx` and `npm run test:e2e -- e2e/salvage-preview.spec.ts`. The browser tests use isolated API/storage fixtures and do not call production providers.
+
 To learn more about Next.js, take a look at the following resources:
 
 - [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.

@@ -12,11 +12,12 @@ type Props = {
   onSuccess?: (message?: string) => void;
   onCancel?: () => void;
   onSubmittingChange?: (submitting: boolean) => void;
+  onReportAccepted?: (reportId: string) => void;
 };
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }: Props) {
+export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, onReportAccepted }: Props) {
   const { user } = useAuthContext();
 
   const [details, setDetails] = useState<SalvageDetails>({
@@ -43,6 +44,7 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }:
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submissionInFlightRef = useRef(false);
+  const submissionIdRef = useRef<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [acceptedMessage, setAcceptedMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -299,8 +301,10 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }:
       setUploadProgress(0);
       setError(null);
 
+      submissionIdRef.current ||= crypto.randomUUID();
       const payload: SalvageDetails = {
         ...details,
+        client_submission_id: submissionIdRef.current,
         report_date: details.report_date,
         date_received: details.date_received,
         next_report_due: details.next_report_due,
@@ -311,7 +315,7 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }:
       });
       accepted = true;
       const msg = res.jobId
-        ? "Upload accepted. Your salvage report is processing in the background. We'll email you when processing and approval are complete."
+        ? "Upload accepted. Your salvage report is processing in the background. Review the preview when it is ready, then submit to generate the report files."
         : res.message || "Your salvage report was submitted. Check Reports for its status.";
       setAcceptedMessage(msg);
       toast.info(msg);
@@ -324,7 +328,10 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange }:
       setImages([]);
       setPreviews([]);
       onSubmittingChange?.(false);
-      try { onSuccess?.(msg); } catch (callbackError) {
+      try {
+        if (res.reportId && onReportAccepted) onReportAccepted(res.reportId);
+        else onSuccess?.(msg);
+      } catch (callbackError) {
         console.warn("Salvage upload was accepted but the form could not close", callbackError);
       }
     } catch (err: any) {

@@ -36,6 +36,7 @@ import AuctioneerService, {
 } from "@/services/auctioneer";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { SERVER_BASE } from "@/lib/config";
+import { SalvageService, salvagePreviewPath, type SalvageReport } from "@/services/salvage";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -70,6 +71,7 @@ type ReportGroup = {
   };
   jobError?: string;
   reportStatus?: string;
+  salvageCanonical?: boolean;
   lotSummary?: string;
   lotCount?: number;
   thumbnail?: string;
@@ -474,6 +476,7 @@ export default function ReportsPage() {
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
+  const [salvageReports, setSalvageReports] = useState<SalvageReport[]>([]);
   const [auctioneerDeliveries, setAuctioneerDeliveries] = useState<
     AuctioneerDeliverySummary[]
   >([]);
@@ -490,13 +493,13 @@ export default function ReportsPage() {
 
   const hasActiveJobs = useMemo(
     () =>
-      [...assetReports, ...realEstateReports, ...lotListingReports].some(
+      [...assetReports, ...realEstateReports, ...lotListingReports, ...salvageReports].some(
         isFileGenerationActive
       ) ||
       auctioneerDeliveries.some((delivery) =>
         ["queued", "sending"].includes(delivery.state)
       ),
-    [assetReports, auctioneerDeliveries, realEstateReports, lotListingReports]
+    [assetReports, auctioneerDeliveries, realEstateReports, lotListingReports, salvageReports]
   );
 
   const loadReports = useCallback(async (
@@ -517,6 +520,7 @@ export default function ReportsPage() {
         realEstateResponse,
         lotListingResponse,
         deliveryResponse,
+        salvageResponse,
       ] =
         await Promise.all([
           ReportsService.getMyReports(),
@@ -524,6 +528,7 @@ export default function ReportsPage() {
           RealEstateService.getReports().catch(() => ({ data: [] })),
           getLotListings().catch(() => ({ data: [] })),
           AuctioneerService.getDeliveries().catch(() => []),
+          SalvageService.getReports().catch(() => ({ data: [] })),
         ]);
 
       setReports(legacy);
@@ -564,6 +569,7 @@ export default function ReportsPage() {
           )
       );
       setAuctioneerDeliveries(deliveryResponse);
+      setSalvageReports(salvageResponse?.data || []);
       setError(null);
       if (options.successToast) {
         toast.success("Reports refreshed.");
@@ -650,6 +656,10 @@ export default function ReportsPage() {
   }
 
   async function handleRetry(group: ReportGroup) {
+    if (group.salvageCanonical) {
+      router.push(salvagePreviewPath(group.key));
+      return;
+    }
     try {
       const type = String(group.type || "").toLowerCase();
       if (type === "asset") await resubmitReport(group.key);
@@ -671,6 +681,7 @@ export default function ReportsPage() {
     const lotListingReportIds = new Set(
       lotListingReports.map((report) => report._id)
     );
+    const salvageReportIds = new Set(salvageReports.map((report) => report._id));
 
     const getReportRefId = (report: any): string | undefined => {
       const raw = report?.report;
@@ -686,7 +697,7 @@ export default function ReportsPage() {
         reportRef &&
         (assetReportIds.has(reportRef) ||
           realEstateReportIds.has(reportRef) ||
-          lotListingReportIds.has(reportRef))
+          lotListingReportIds.has(reportRef) || salvageReportIds.has(reportRef))
       ) {
         continue;
       }
@@ -1097,6 +1108,33 @@ export default function ReportsPage() {
       });
     }
 
+    for (const salvage of salvageReports) {
+      const title = salvage.file_number || "Salvage report";
+      const fairMarketValue = String(salvage.preview_data?.valuation && typeof salvage.preview_data.valuation === "object"
+        ? (salvage.preview_data.valuation as Record<string, unknown>).fairMarketValue || "—"
+        : salvage.valuation?.fairMarketValue || "—");
+      const variants: ReportGroup["variants"] = {};
+      for (const fileType of ["pdf", "docx", "xlsx", "images"] as const) {
+        const fileId = salvage.files?.[fileType];
+        // Salvage files are protected PdfReport ids, never public URLs or the
+        // parent report id. Do not bypass server approval/release decisions.
+        if (salvage.downloadable === true && fileId) variants[fileType] = {
+          _id: fileId, report: salvage._id, fileType, type: "Salvage", filename: `${title}.${fileType === "images" ? "zip" : fileType}`,
+          address: title, fairMarketValue, createdAt: salvage.createdAt, downloadable: true,
+        };
+      }
+      map.set(salvage._id, {
+        key: salvage._id, address: title, displayTitle: title, fairMarketValue, createdAt: salvage.createdAt,
+        type: "Salvage", salvageCanonical: true, reportStatus: salvage.status,
+        approvalStatus: salvage.status === "approved" ? "approved" : salvage.status === "declined" ? "rejected" : "pending",
+        release_status: salvage.release_status, downloadable: salvage.downloadable === true,
+        generationState: salvage.generation_state, isGeneratingFiles: isFileGenerationActive(salvage),
+        workflowStage: salvage.workflow_stage, workflowMessage: salvage.workflow_message,
+        workflowProgressPercent: salvage.workflow_progress_percent, jobError: salvage.job_error,
+        thumbnail: salvage.imageUrls?.[0], variants,
+      });
+    }
+
     for (const delivery of auctioneerDeliveries) {
       if (!delivery.reportId) continue;
       const group = map.get(String(delivery.reportId));
@@ -1105,6 +1143,7 @@ export default function ReportsPage() {
 
     return Array.from(map.values());
   }, [
+    salvageReports,
     assetReports,
     auctioneerDeliveries,
     lotListingReports,
@@ -1398,7 +1437,7 @@ export default function ReportsPage() {
         ? "asset"
         : normalizedType.includes("lot")
           ? "lotListing"
-          : null;
+          : group.salvageCanonical ? "salvage" : null;
     const previewTitle = group.contract_no
       ? `${typeLabel(group.type)} · ${group.contract_no}`
       : group.address || group.filename || group.key;
@@ -1465,13 +1504,13 @@ export default function ReportsPage() {
             className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-on-accent)] hover:border-[var(--app-accent-hover)] hover:bg-[var(--app-accent-hover)] disabled:cursor-wait disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)]`}
             onClick={() =>
               router.push(
-                `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
+                group.salvageCanonical ? salvagePreviewPath(group.key) : `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
               )
             }
-            disabled={previewPreparing}
+            disabled={previewPreparing && !group.salvageCanonical}
           >
             <Eye className="size-3.5 shrink-0" strokeWidth={1.9} />
-            Preview
+            {group.salvageCanonical && previewPreparing ? "View progress" : "Preview"}
           </button>
         ) : null}
         {delivery ? (
@@ -1517,7 +1556,7 @@ export default function ReportsPage() {
             Merge
           </button>
         ) : null}
-        <button
+        {!group.salvageCanonical ? <button
           type="button"
           aria-label={`Delete report ${previewTitle}`}
           title="Permanently delete this report"
@@ -1531,7 +1570,7 @@ export default function ReportsPage() {
             <Trash2 className="size-3.5 shrink-0" />
           )}
           Delete
-        </button>
+        </button> : null}
       </div>
     );
   };

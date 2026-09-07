@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getMyReports: vi.fn(),
   getAssetReports: vi.fn(),
   getRealEstateReports: vi.fn(),
+  getSalvageReports: vi.fn(),
   getLotListings: vi.fn(),
   getDeliveries: vi.fn(),
   deleteReport: vi.fn(),
@@ -80,6 +81,10 @@ vi.mock("@/services/realEstate", () => ({
     getReports: mocks.getRealEstateReports,
     deleteReport: vi.fn(),
   },
+}));
+vi.mock("@/services/salvage", async (original) => ({
+  ...await original<typeof import("@/services/salvage")>(),
+  SalvageService: { getReports: mocks.getSalvageReports },
 }));
 
 vi.mock("@/services/lotListing", () => ({
@@ -206,6 +211,7 @@ describe("My Reports thumbnails", () => {
         data: [reportWithThumbnail, reportWithoutThumbnail],
       });
     mocks.getRealEstateReports.mockReset().mockResolvedValue({ data: [] });
+    mocks.getSalvageReports.mockReset().mockResolvedValue({ data: [] });
     mocks.getLotListings.mockReset().mockResolvedValue({ data: [] });
     mocks.getDeliveries.mockReset().mockResolvedValue([]);
     mocks.downloadReport.mockReset();

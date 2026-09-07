@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getLotListings: vi.fn(),
   getSubmittedLotListings: vi.fn(),
   getRealEstateReports: vi.fn(),
+  getSalvageReports: vi.fn().mockResolvedValue({ data: [] }),
   deleteAssetReport: vi.fn(),
   deleteLotListing: vi.fn(),
   resubmitReport: vi.fn(),
@@ -29,6 +30,10 @@ vi.mock("next/navigation", () => ({
     back: vi.fn(),
     forward: vi.fn(),
   }),
+}));
+vi.mock("@/services/salvage", async (original) => ({
+  ...await original<typeof import("@/services/salvage")>(),
+  SalvageService: { getReports: mocks.getSalvageReports },
 }));
 
 vi.mock("next/dynamic", () => ({
