@@ -297,7 +297,7 @@ export default function LotListingPreviewModal({
     setHasChanges,
   });
   const effectiveResubmitMode = status
-    ? status === "pending_approval" || status === "approved"
+    ? status === "pending_approval" || status === "approved" || status === "error"
     : isResubmitMode;
 
   useEffect(() => {
@@ -1098,6 +1098,12 @@ export default function LotListingPreviewModal({
             <p className="font-semibold text-[var(--app-text-strong)]">Lot Listing Declined</p>
             <p className="mt-1 text-sm text-[var(--app-danger)]">{declineReason}</p>
           </div>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div role="alert" className="app-alert app-alert--error mb-4">
+          Generation failed, but your saved preview is available. Review every lot and photo before saving and resubmitting. Missing analysis must be completed before submission.
         </div>
       )}
 

@@ -103,6 +103,18 @@ function makePreviewResponse() {
 }
 
 describe("PreviewModal valuation methods", () => {
+  it("resubmits a failed saved Asset preview instead of calling the preview-only submit endpoint", async () => {
+    const response = makePreviewResponse();
+    response.data.status = "error";
+    const retry = vi.fn().mockResolvedValue({ status: "processing", files_generating: true });
+    render(<PreviewModal isOpen reportId="failed-asset" onClose={vi.fn()}
+      loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} resubmitReportOverride={retry} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("saved preview is available");
+    fireEvent.click(screen.getByRole("button", { name: "Resubmit report" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledTimes(1));
+    expect(retry.mock.calls[0][0]).toBe("failed-asset");
+    expect(mocks.submitForApproval).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);

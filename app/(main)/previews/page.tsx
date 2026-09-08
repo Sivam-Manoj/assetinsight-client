@@ -39,6 +39,7 @@ import {
 } from "@/services/reportDrafts";
 import { navigateToReportForm } from "@/services/reportFormNavigation";
 import styles from "./page.module.css";
+import { hasSavedReportPreview } from "@/lib/reportPreviewAvailability";
 import { SalvageService, salvagePreviewPath, type SalvageReport } from "@/services/salvage";
 
 const AssetMergeDialog = dynamic(
@@ -114,6 +115,7 @@ function hasOpenablePreview(report: CombinedReport): boolean {
   const stage = String((report as any).workflow_stage || "");
 
   if (stage === "preparing_preview") return false;
+  if (stage === "error" || status === "error") return hasSavedReportPreview(report);
   if (["preview", "declined", "pending_approval", "approved"].includes(status)) {
     return true;
   }
@@ -125,7 +127,6 @@ function hasOpenablePreview(report: CombinedReport): boolean {
   ) {
     return isSubmittedPreview(report);
   }
-  if (stage === "error") return isSubmittedPreview(report);
   return false;
 }
 
@@ -939,11 +940,7 @@ export default function PreviewsPage() {
                   jobFailed &&
                   (report.reportType === "asset" ||
                     report.reportType === "lotListing") &&
-                  Boolean(
-                    (report as any).preview_data ||
-                      (Array.isArray((report as any).lots) &&
-                        (report as any).lots.length > 0)
-                  );
+                  hasSavedReportPreview(report);
                 const badgeStatus = workflowBadgeStatus(report);
                 const badgeLabel =
                   WORKFLOW_LABELS[(report as any).workflow_stage] ||
@@ -1241,6 +1238,11 @@ export default function PreviewsPage() {
                         {(report as any).job_error ||
                           (report as any).error_message ||
                           "This report failed to process. Please try again or contact an admin."}
+                        {hasPersistentPreviewAction ? (
+                          <p className="mt-2">Your saved preview is available. Open Preview, review all lots and photos, then save and resubmit to generate files.</p>
+                        ) : (
+                          <p className="mt-2">No saved preview is available. <a href="/drafts" className="underline">Open saved drafts</a> to recover the source upload.</p>
+                        )}
                       </div>
                     ) : null}
 

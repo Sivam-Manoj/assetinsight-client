@@ -91,6 +91,19 @@ function makeListingPreview() {
 }
 
 describe("LotListingPreviewModal inspection location", () => {
+  it("resubmits an edited failed preview instead of calling the preview-only submit endpoint", async () => {
+    const response = makeListingPreview();
+    response.data.status = "error";
+    const retry = vi.fn().mockResolvedValue({ status: "processing", files_generating: true });
+    render(<LotListingPreviewModal isOpen reportId="failed-lot" onClose={vi.fn()}
+      loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} resubmitReportOverride={retry} />);
+    const contract = await screen.findByDisplayValue("LOT-LOCATION-1");
+    expect(screen.getByRole("alert")).toHaveTextContent("saved preview is available");
+    fireEvent.change(contract, { target: { value: "93530" } });
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate Approved Files" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("failed-lot", expect.objectContaining({ contract_no: "93530" })));
+    expect(mocks.submitForApproval).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     mocks.getAssetCategorySpecs.mockReset();
     mocks.getAssetCategorySpecs.mockResolvedValue({ categories: [], specs: [] });

@@ -26,6 +26,7 @@ export interface AssetReport {
   workflow_message?: string;
   workflow_progress_percent?: number;
   files_ready?: boolean;
+  preview_available?: boolean;
   generation_progress?: {
     stage?: string;
     progressPercent?: number;

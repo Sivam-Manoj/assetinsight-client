@@ -446,7 +446,7 @@ export default function PreviewModal({
     setHasChanges,
   });
   const effectiveResubmitMode = status
-    ? status === "pending_approval" || status === "approved"
+    ? status === "pending_approval" || status === "approved" || status === "error"
     : isResubmitMode;
   const focusStateRef = useRef<{
     fieldId: string | null;
@@ -1804,6 +1804,12 @@ export default function PreviewModal({
             <p className="font-semibold text-[var(--app-text-strong)]">Report Declined</p>
             <p className="mt-1 text-sm text-[var(--app-danger)]">{declineReason}</p>
           </div>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div role="alert" className="app-alert app-alert--error mb-4">
+          Generation failed, but your saved preview is available. Review every lot and photo before saving and resubmitting. Missing analysis must be completed before submission.
         </div>
       )}
 

@@ -22,6 +22,16 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Failed Asset and Lot Listing preview recovery
+
+The preview queue and report deep links keep Preview available after generation
+failure when the API advertises `preview_available` (with legacy data fallback).
+Opening does not retry work. The editor retains a failure warning and saves edits
+on the same report; its final action uses resubmit for error states. All stored
+lots/media remain available for review. Reports without saved preview data link
+to Drafts instead of offering an empty preview or an unusable file-generation
+retry. Generation/download readiness is not inferred from preview availability.
+
 ### Salvage review workflow
 
 Salvage uploads open the saved report at `/salvage/preview/[id]`. The page follows processing progress, allows review of claim/vehicle details, valuation and repair estimates, and preserves all original photos. Save updates the current revision only; Submit/Resubmit generates the files in a separate accepted workflow. Failed work can be retried from the same report without uploading another copy. Reports and Previews both link back to this workspace.

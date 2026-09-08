@@ -59,6 +59,7 @@ export interface LotListing {
   workflow_message?: string;
   workflow_progress_percent?: number;
   files_ready?: boolean;
+  preview_available?: boolean;
   files_generating?: boolean;
   files_regenerating?: boolean;
   generation_progress?: {

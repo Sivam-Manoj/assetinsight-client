@@ -165,6 +165,28 @@ const lotListingPreview: LotListing = {
 };
 
 describe("Preview queue affordances", () => {
+  it.each(["asset", "lotListing"] as const)("opens a failed unsubmitted %s from its deep link without generating files", async (kind) => {
+    const source = kind === "asset" ? assetPreview : lotListingPreview;
+    const failed = { ...source, status: "error", workflow_stage: "error", job_status: "error", generation_state: "error",
+      preview_data: { lots: [{ lot_number: "5507", title: "Saved report lot" }] } };
+    (kind === "asset" ? mocks.getAssetReports : mocks.getLotListings).mockResolvedValue({ data: [failed] });
+    window.history.replaceState({}, "", `/previews?reportId=${source._id}&reportType=${kind}`);
+    render(<PreviewsPage />);
+    expect(await screen.findByRole("dialog", { name: `${kind === "asset" ? "Asset" : "Lot Listing"} preview editor: ${source._id}` })).toHaveAttribute("data-resubmit", "false");
+    expect(screen.getByText(/Your saved preview is available/)).toBeVisible();
+    expect(mocks.resubmitReport).not.toHaveBeenCalled();
+    expect(mocks.resubmitLotListing).not.toHaveBeenCalled();
+  });
+
+  it("offers draft recovery, not an empty preview or file retry, when no saved lots exist", async () => {
+    mocks.getAssetReports.mockResolvedValue({ data: [] });
+    mocks.getLotListings.mockResolvedValue({ data: [{ ...lotListingPreview, status: "error", workflow_stage: "error", lots: [], preview_data: {} }] });
+    render(<PreviewsPage />);
+    expect(await screen.findByRole("link", { name: "Open saved drafts" })).toHaveAttribute("href", "/drafts");
+    expect(screen.queryByRole("button", { name: /^Preview Lot Listing report/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry generation" })).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     mocks.getAssetReports.mockReset().mockResolvedValue({
       data: [assetPreview],
