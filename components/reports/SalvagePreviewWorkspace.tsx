@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Download, LoaderCircle, RefreshCw, Save, Send, X } from "lucide-react";
 import { ReportsService } from "@/services/reports";
 import { SalvageService, salvageIsProcessing, type SalvagePreviewData, type SalvageReport } from "@/services/salvage";
+import { salvageResearchRequestId, salvageResearchRequestKey } from "@/lib/salvageResearchRequest";
+import { isSalvageAssessmentV2 } from "@/lib/salvageAssessment";
+import SalvageAssessmentEditor from "./SalvageAssessmentEditor";
 import styles from "./SalvagePreviewWorkspace.module.css";
 
 type Field = readonly [key: string, label: string, type?: "date" | "textarea" | "number" | "email", readOnly?: boolean];
@@ -133,11 +136,15 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const run = async (action: "save" | "submit" | "retry") => {
+  const run = async (action: "save" | "submit" | "retry" | "research") => {
     if (!report || loading || processing || mutation.current || fetching.current) return;
     if (action !== "retry" && (!Number.isInteger(report.revision) || conflict)) return;
     if (action === "submit" && dirtyRef.current) { setError("Save your changes before submitting."); return; }
     if (action === "retry" && dirtyRef.current) { setError("Save or reload your changes before retrying."); return; }
+    if (action === "research") {
+      if (dirtyRef.current) { setError("Save your changes before researching again."); return; }
+      if (!window.confirm("Start a new paid Canadian salvage research run from this saved revision? It can take up to 15 minutes and has a US$10 provider-cost allowance before the account usage multiplier. Existing files will need regeneration and approval. Ordinary saves do not run research.")) return;
+    }
     mutation.current = true;
     // Fence any older pending response; only this mutation may adopt its result.
     const epoch = ++version.current;
@@ -146,8 +153,14 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
       const response = action === "save"
         ? await SalvageService.savePreview(reportId, draft, report.revision)
         : action === "retry" ? await SalvageService.retry(reportId)
+          : action === "research" ? await SalvageService.research(reportId, report.revision, salvageResearchRequestId(reportId, report.revision))
           : await SalvageService.submit(reportId, report.revision, ["pending_approval", "approved"].includes(report.status));
       if (epoch !== version.current) return;
+      if (action === "research") {
+        // Cleanup is best-effort after confirmed acceptance, never a reason to
+        // present a successful paid action as failed.
+        try { sessionStorage.removeItem(salvageResearchRequestKey(reportId, report.revision)); } catch { /* harmless stale identity */ }
+      }
       setReport(response.data); setDraft(response.data.preview_data || {});
       dirtyRef.current = false; setDirty(false); setConflict(false);
       setNotice(action === "save" ? "Changes saved. Submit when ready to create updated files." : "Processing accepted. Follow the progress here; do not create another report.");
@@ -214,6 +227,7 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
   const failed = report?.status === "error" || report?.generation_state === "error" || report?.workflow_stage === "error";
   const stage = report ? STAGES[report.workflow_stage || ""] || report.status.replaceAll("_", " ") : "Loading report";
   const valuation = object(draft.valuation);
+  const assessment = isSalvageAssessmentV2(draft.assessment) ? draft.assessment : null;
   const photos = report?.imageUrls || [];
   const analysis = object(draft.aiExtractedDetails);
   const estimate = object(draft.repair_estimate);
@@ -241,6 +255,8 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
           {selection("language", "Report language", [["en", "English"], ["fr", "French"], ["es", "Spanish"]])}
           {selection("priority_level", "Priority", [["High", "High"], ["Medium", "Medium"], ["Low", "Low"]])}
         </div></section>
+        {assessment ? <SalvageAssessmentEditor assessment={assessment} inputs={draft.assessment_inputs || assessment.inputs}
+          disabled={!canEdit || conflict} onChange={(inputs) => update("assessment_inputs", inputs)} photos={photos} /> : <>
         {section("Vehicle & condition", VEHICLE_FIELDS)}
         <section className={styles.section}><h2>Valuation</h2><div className={styles.fields}>
           {field(["currency", "Currency"])}
@@ -253,13 +269,15 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
         </div><p className={`${styles.muted} mt-2`}>Itemized totals are calculated from quantity × unit price and hours × hourly rate. The server confirms all totals on save. {scalar(draft.estimate_warning)}</p></section>
         {estimates("repair_items", "Repair parts", PART_FIELDS)}
         {estimates("labour_breakdown", "Labour estimate", LABOUR_FIELDS)}
+        </>}
         {section("Procurement & safety", NOTES_FIELDS)}
         {section("Appraiser & company", CONTACT_FIELDS)}
-        {Object.keys(analysis).length ? <section className={styles.section}><details><summary className="cursor-pointer text-sm font-semibold">Original analysis (read-only)</summary><dl className={`${styles.analysis} mt-3`}>{Object.entries(analysis).filter(([, value]) => typeof value === "string" || typeof value === "number").map(([key, value]) => <div key={key} className="contents"><dt>{key.replaceAll("_", " ")}</dt><dd>{scalar(value)}</dd></div>)}</dl></details></section> : null}
+        {!assessment && Object.keys(analysis).length ? <section className={styles.section}><details><summary className="cursor-pointer text-sm font-semibold">Original analysis (read-only)</summary><dl className={`${styles.analysis} mt-3`}>{Object.entries(analysis).filter(([, value]) => typeof value === "string" || typeof value === "number").map(([key, value]) => <div key={key} className="contents"><dt>{key.replaceAll("_", " ")}</dt><dd>{scalar(value)}</dd></div>)}</dl></details></section> : null}
       </> : null}
       <section className={styles.section}><h2>Photos ({photos.length})</h2><p className={`${styles.muted} mb-3`}>Original report photos are preserved. Open a photo to inspect its details.</p><div className={styles.photos}>{photos.map((url, index) => <button key={`${url}-${index}`} type="button" className={styles.photo} onClick={() => setPhoto(index)} aria-label={`View photo ${index + 1}`}><img src={url} alt={`Report photo ${index + 1}`} loading="lazy" /><span>Photo {index + 1}</span></button>)}</div></section>
       <section className={styles.section}><h2>Report files</h2><p className={`${styles.muted} mb-3`}>{dirty ? "Save and submit your changes to generate updated files." : report.downloadable ? "Available files for this saved report." : processing ? "Files will appear after generation, approval and release are complete." : "Downloads become available after the required approval and release. Use Submit to generate a preview's report files."}</p><div className={styles.actions}>{FILES.map(([kind, label]) => <button key={kind} type="button" className="app-button" disabled={!report.downloadable || !report.files?.[kind] || processing || dirty || Boolean(busy) || Boolean(downloading)} onClick={() => void download(report.files![kind]!, kind)}>{downloading === kind ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />} {label}</button>)}</div></section>
       <footer className={styles.footer}><span role="status" className={styles.muted}>{busy ? "Please wait until this request finishes. Do not close the page." : dirty ? "Unsaved changes" : `Saved revision ${report.revision ?? "—"}`}</span><div className={styles.actions}>
+        <button type="button" className="app-button" disabled={!canEdit || dirty || conflict || refreshing || failed} onClick={() => void run("research")}><RefreshCw className="size-4" /> Research again</button>
         <button type="button" className="app-button" disabled={!canEdit || !dirty || conflict || refreshing} onClick={() => void run("save")}><Save className="size-4" /> {busy === "save" ? "Saving…" : "Save changes"}</button>
         <button type="button" className="app-button app-button--primary" disabled={!canEdit || dirty || conflict || refreshing || failed || !["preview", "declined", "pending_approval", "approved"].includes(report.status)} onClick={() => void run("submit")}><Send className="size-4" /> {busy === "submit" ? "Submitting…" : ["pending_approval", "approved"].includes(report.status) ? "Resubmit report" : "Submit report"}</button>
       </div></footer>

@@ -42,7 +42,7 @@ describe("Salvage form upload/acceptance workflow", () => {
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
   });
 
-  it("keeps all 30 selected photos, locks same-tick duplicate submits and shows upload then accepted state", async () => {
+  it("keeps all 50 selected photos, locks same-tick duplicate submits and shows upload then accepted state", async () => {
     let resolve!: (value: SalvageCreateResponse) => void;
     let options: CreateOptions | undefined;
     vi.mocked(SalvageService.create).mockImplementation((_details, _images, createOptions) => {
@@ -54,8 +54,8 @@ describe("Salvage form upload/acceptance workflow", () => {
     const onCancel = vi.fn();
     render(<SalvageForm onSuccess={onSuccess} onCancel={onCancel} onSubmittingChange={onSubmittingChange} />);
     fillForm();
-    const files = addPhotos(30);
-    expect(screen.getByText("Selected: 30/30 photos")).toBeVisible();
+    const files = addPhotos(50);
+    expect(screen.getByText("Selected: 50/50 photos")).toBeVisible();
     expect(screen.getByRole("button", { name: "Select Images" })).toBeDisabled();
     const form = screen.getByRole("button", { name: "Create Report" }).closest("form")!;
     act(() => {
@@ -96,7 +96,7 @@ describe("Salvage form upload/acceptance workflow", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
     expect(screen.getByRole("alert")).toHaveTextContent("Upload failed");
     expect(screen.getByDisplayValue("Important damage notes")).toBeVisible();
-    expect(screen.getByText("Selected: 11/30 photos")).toBeVisible();
+    expect(screen.getByText("Selected: 11/50 photos")).toBeVisible();
     expect(screen.getAllByRole("img")).toHaveLength(11);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
     expect(SalvageService.create).toHaveBeenCalledTimes(2);
@@ -118,10 +118,34 @@ describe("Salvage form upload/acceptance workflow", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Review the preview when it is ready");
   });
 
-  it("warns clearly when a selection would exceed the backend's 30-photo limit", () => {
+  it("submits typed Canadian vehicle facts, keeps unknowns null and never auto-detects currency with AI", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No automatic provider request is allowed"));
+    vi.mocked(SalvageService.create).mockResolvedValue({ reportId: "salvage-vehicle", message: "Accepted" });
     render(<SalvageForm />);
-    addPhotos(31);
+    fillForm();
+    for (const [label, value] of [
+      ["Vehicle year", "2011"], ["Vehicle make", "Chevrolet"], ["Vehicle model", "Equinox"],
+      ["Trim / edition", "2LT AWD"], ["Engine / powertrain", "2.4L AWD"], ["VIN (if readable)", "2CNALDEC1B6123456"],
+      ["Odometer reading", "150000"], ["City / local market", "Ottawa"], ["Effective valuation date", "2026-09-08"],
+      ["Type / cause of loss", "Collision"], ["Documented vehicle brand", "Salvage"], ["Observed damage", "Front bumper damaged"],
+    ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.change(screen.getByLabelText("Odometer unit"), { target: { value: "km" } });
+    fireEvent.change(screen.getByLabelText("Market province / territory"), { target: { value: "ON" } });
+    fireEvent.change(screen.getByLabelText("Brand document province / territory"), { target: { value: "ON" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
+    expect(SalvageService.create).toHaveBeenCalledWith(expect.objectContaining({ currency: "CAD", assessment_inputs: expect.objectContaining({
+      year: 2011, make: "Chevrolet", model: "Equinox", trim: "2LT AWD", powertrain: "2.4L AWD", odometer: 150000, odometerUnit: "km",
+      province: "ON", market: "Ottawa", effectiveDate: "2026-09-08", lossType: "Collision", documentedBrand: "Salvage", brandProvince: "ON",
+      condition: null, damageDescription: "Front bumper damaged", currency: "CAD",
+    }) }), [], expect.any(Object));
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("warns clearly when a selection would exceed the backend's 50-photo limit", () => {
+    render(<SalvageForm />);
+    addPhotos(51);
     expect(screen.getByRole("alert")).toHaveTextContent("Extra files were not added");
-    expect(screen.getByText("Selected: 30/30 photos")).toBeVisible();
+    expect(screen.getByText("Selected: 50/50 photos")).toBeVisible();
   });
 });

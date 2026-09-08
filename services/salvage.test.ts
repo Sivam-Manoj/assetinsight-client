@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AxiosProgressEvent } from "axios";
 import API from "@/lib/api";
-import { SALVAGE_MAX_IMAGES, SalvageService, type SalvageDetails } from "./salvage";
+import { SALVAGE_MAX_IMAGES, SalvageService, type SalvageDetails, type SalvageAssessmentV2 } from "./salvage";
 
 vi.mock("@/lib/api", () => ({ default: { post: vi.fn(), get: vi.fn(), patch: vi.fn() } }));
 
@@ -21,7 +21,7 @@ describe("SalvageService upload contract", () => {
     vi.mocked(API.post).mockResolvedValue({ data: { jobId: "job-1", phase: "processing", message: "Accepted" } });
   });
 
-  it.each([0, 1, 10, 11, SALVAGE_MAX_IMAGES])("sends every selected image in order for %i photos", async (count) => {
+  it.each([0, 1, 10, 11, 30, 31, 49, SALVAGE_MAX_IMAGES])("sends every selected image in order for %i photos", async (count) => {
     const images = photos(count);
     await expect(SalvageService.create(details, images)).resolves.toMatchObject({ jobId: "job-1", phase: "processing" });
     const [url, body] = vi.mocked(API.post).mock.calls[0];
@@ -33,7 +33,7 @@ describe("SalvageService upload contract", () => {
   });
 
   it("rejects over-limit submissions before posting instead of silently dropping images", async () => {
-    await expect(SalvageService.create(details, photos(31))).rejects.toThrow("up to 30 images");
+    await expect(SalvageService.create(details, photos(51))).rejects.toThrow("up to 50 images");
     expect(API.post).not.toHaveBeenCalled();
   });
 
@@ -84,10 +84,23 @@ describe("SalvageService revision-safe lifecycle", () => {
     ]);
   });
 
+  it("saves editable assessment inputs but never provider-owned assessment results", async () => {
+    await SalvageService.savePreview("report", { assessment_inputs: { province: "ON", market: "Toronto", odometer: null }, assessment: {} as SalvageAssessmentV2 }, 4);
+    expect(API.patch).toHaveBeenCalledWith("/salvage/report/preview", { data: { assessment_inputs: { province: "ON", market: "Toronto", odometer: null } }, baseRevision: 4 });
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
   it("uses the canonical authenticated list and preview endpoints", async () => {
     await SalvageService.getReports();
     await SalvageService.getPreview("report/one");
     expect(API.get).toHaveBeenNthCalledWith(1, "/salvage");
     expect(API.get).toHaveBeenNthCalledWith(2, "/salvage/report%2Fone/preview");
+  });
+  it("researches only through an explicit revision-bound request with stable retry identity", async () => {
+    await SalvageService.research("report/one", 7, "research-attempt-1");
+    await SalvageService.research("report/one", 7, "research-attempt-1");
+    expect(API.post).toHaveBeenNthCalledWith(1, "/salvage/report%2Fone/research", { baseRevision: 7, client_request_id: "research-attempt-1" });
+    expect(vi.mocked(API.post).mock.calls[1]).toEqual(vi.mocked(API.post).mock.calls[0]);
+    expect(API.patch).not.toHaveBeenCalled();
   });
 });

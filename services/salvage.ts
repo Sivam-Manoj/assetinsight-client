@@ -1,8 +1,10 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
+import type { SalvageAssessmentInputs, SalvageAssessmentV2 } from "@/lib/salvageAssessment";
+export type { SalvageAssessmentInputs, SalvageAssessmentV2, SalvageComparableEvidence, SalvageReference } from "@/lib/salvageAssessment";
 
 // Matches the shared web/mobile backend multipart limit.
-export const SALVAGE_MAX_IMAGES = 30;
+export const SALVAGE_MAX_IMAGES = 50;
 
 export type SalvageDetails = {
   report_date: string; // ISO date string (yyyy-mm-dd)
@@ -24,6 +26,7 @@ export type SalvageDetails = {
   // Background progress id (optional, server will use it if provided)
   progress_id?: string;
   client_submission_id?: string;
+  assessment_inputs?: Partial<SalvageAssessmentInputs>;
 };
 
 export type SalvageCreateResponse = {
@@ -43,7 +46,10 @@ export type CreateOptions = {
   onUploadProgress?: (fraction: number) => void;
 };
 
-export type SalvagePreviewData = Record<string, unknown>;
+export type SalvagePreviewData = Record<string, unknown> & {
+  readonly assessment?: SalvageAssessmentV2;
+  assessment_inputs?: Partial<SalvageAssessmentInputs>;
+};
 export type SalvageReport = {
   _id: string;
   reportId?: string;
@@ -95,7 +101,7 @@ const EDITABLE_FIELDS = [
   "assumptions", "safety_concerns", "priority_level", "labour_rate_default",
   "item_condition", "damage_description", "inspection_comments", "is_repairable",
   "repair_facility", "repair_facility_comments", "actual_cash_value", "replacement_cost",
-  "recommended_reserve", "repair_estimate",
+  "recommended_reserve", "repair_estimate", "assessment_inputs",
 ] as const;
 
 export function salvageEditableData(data: SalvagePreviewData): SalvagePreviewData {
@@ -123,6 +129,12 @@ export const SalvageService = {
   },
   async retry(id: string): Promise<{ data: SalvageReport }> {
     const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/retry`, {});
+    return data;
+  },
+  async research(id: string, baseRevision: number, clientRequestId: string): Promise<{ data: SalvageReport }> {
+    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/research`, {
+      baseRevision, client_request_id: clientRequestId,
+    });
     return data;
   },
   async create(details: SalvageDetails, images: File[], options?: CreateOptions): Promise<SalvageCreateResponse> {

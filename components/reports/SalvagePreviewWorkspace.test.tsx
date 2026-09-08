@@ -8,7 +8,7 @@ const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 vi.mock("@/services/salvage", async (original) => ({
   ...await original<typeof import("@/services/salvage")>(),
-  SalvageService: { getPreview: vi.fn(), savePreview: vi.fn(), submit: vi.fn(), retry: vi.fn() },
+  SalvageService: { getPreview: vi.fn(), savePreview: vi.fn(), submit: vi.fn(), retry: vi.fn(), research: vi.fn() },
 }));
 vi.mock("@/services/reports", () => ({ ReportsService: { downloadReport: vi.fn() } }));
 
@@ -44,8 +44,29 @@ describe("Salvage full-page review lifecycle", () => {
     vi.mocked(SalvageService.savePreview).mockReset();
     vi.mocked(SalvageService.submit).mockReset();
     vi.mocked(SalvageService.retry).mockReset();
+    vi.mocked(SalvageService.research).mockReset();
+    sessionStorage.clear();
     Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
     Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
+  });
+
+  it("requires explicit research confirmation and reuses the same paid-action ID after an unknown outcome", async () => {
+    await open();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Research again" })));
+    expect(SalvageService.research).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    vi.mocked(SalvageService.research).mockRejectedValueOnce(new Error("Connection lost; refresh or retry the same request."));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Research again" })));
+    const first = vi.mocked(SalvageService.research).mock.calls[0];
+    expect(first).toEqual(["salvage-1", 2, expect.any(String)]);
+    vi.mocked(SalvageService.research).mockResolvedValue({ data: report({ status: "processing", workflow_stage: "preparing_preview" }) });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Research again" })));
+    expect(vi.mocked(SalvageService.research).mock.calls[1]).toEqual(first);
+    expect(screen.getByRole("button", { name: "Research again" })).toBeDisabled();
+    expect(SalvageService.savePreview).not.toHaveBeenCalled();
+    expect(SalvageService.submit).not.toHaveBeenCalled();
+    confirm.mockRestore();
   });
 
   it("shows the saved data and all photos, saves once with its base revision without generating files", async () => {

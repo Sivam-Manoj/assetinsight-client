@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuthContext } from "@/context/AuthContext";
-import { SalvageService, SALVAGE_MAX_IMAGES, type SalvageDetails } from "@/services/salvage";
+import { SalvageService, SALVAGE_MAX_IMAGES, type SalvageDetails, type SalvageAssessmentInputs } from "@/services/salvage";
 import { X, Upload, Camera, Download, LoaderCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import SalvageCamera from "./salvage/SalvageCamera";
@@ -16,6 +16,24 @@ type Props = {
 };
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const PROVINCES = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"] as const;
+const VEHICLE_FIELDS = [
+  { key: "year", label: "Vehicle year", type: "number" },
+  { key: "make", label: "Vehicle make", type: "text" },
+  { key: "model", label: "Vehicle model", type: "text" },
+  { key: "trim", label: "Trim / edition", type: "text" },
+  { key: "powertrain", label: "Engine / powertrain", type: "text" },
+  { key: "vin", label: "VIN (if readable)", type: "text" },
+  { key: "odometer", label: "Odometer reading", type: "number" },
+  { key: "market", label: "City / local market", type: "text" },
+  { key: "effectiveDate", label: "Effective valuation date", type: "date" },
+  { key: "lossType", label: "Type / cause of loss", type: "text" },
+  { key: "documentedBrand", label: "Documented vehicle brand", type: "text" },
+] as const;
+const initialAssessment = (): Partial<SalvageAssessmentInputs> => ({ year: null, make: null, model: null, trim: null,
+  powertrain: null, vin: null, odometer: null, odometerUnit: null, province: null, market: null,
+  effectiveDate: isoDate(new Date()), lossType: null, documentedBrand: null, brandProvince: null,
+  condition: null, damageDescription: null, currency: "CAD" });
 
 export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, onReportAccepted }: Props) {
   const { user } = useAuthContext();
@@ -36,7 +54,8 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
     appraiser_comments: "",
     next_report_due: isoDate(new Date()),
     language: "en",
-    currency: "",
+    currency: "CAD",
+    assessment_inputs: initialAssessment(),
   });
 
   const [images, setImages] = useState<File[]>([]);
@@ -52,10 +71,6 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
   const [annotOpen, setAnnotOpen] = useState(false);
   const [annotIndex, setAnnotIndex] = useState<number | null>(null);
   const [annotFile, setAnnotFile] = useState<File | null>(null);
-  // Currency detection state
-  const [currencyTouched, setCurrencyTouched] = useState(false);
-  const [currencyLoading, setCurrencyLoading] = useState(false);
-  const currencyPromptedRef = useRef(false);
 
   // Upload acceptance is not report completion. Generation continues in the
   // backend after HTTP 202, with the existing email/approval workflow.
@@ -72,6 +87,12 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
   function handleChange<K extends keyof SalvageDetails>(key: K, value: string) {
     if (submissionInFlightRef.current) return;
     setDetails((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleAssessmentChange(key: keyof SalvageAssessmentInputs, raw: string) {
+    if (submissionInFlightRef.current) return;
+    const value = raw === "" ? null : key === "year" || key === "odometer" ? Number(raw) : raw;
+    setDetails((prev) => ({ ...prev, assessment_inputs: { ...prev.assessment_inputs, [key]: value } }));
   }
 
   function handleImagesChange(files: FileList | null) {
@@ -135,118 +156,6 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
     } catch {}
   }
 
-  // Currency: locale fallback
-  const applyLocaleFallbackCurrency = () => {
-    try {
-      const lang =
-        typeof navigator !== "undefined" && (navigator as any).language
-          ? (navigator as any).language
-          : "en-CA";
-      const region = (lang.split("-")[1] || "").toUpperCase();
-      const byRegion: Record<string, string> = {
-        US: "USD",
-        CA: "CAD",
-        GB: "GBP",
-        AU: "AUD",
-        NZ: "NZD",
-        IN: "INR",
-        LK: "LKR",
-        JP: "JPY",
-        CN: "CNY",
-        SG: "SGD",
-        AE: "AED",
-        SA: "SAR",
-        PK: "PKR",
-        BD: "BDT",
-        ZA: "ZAR",
-        NG: "NGN",
-        PH: "PHP",
-        MY: "MYR",
-        TH: "THB",
-        ID: "IDR",
-        KR: "KRW",
-        HK: "HKD",
-        TW: "TWD",
-        AR: "ARS",
-        CL: "CLP",
-        CO: "COP",
-        PE: "PEN",
-        VE: "VES",
-        TR: "TRY",
-        EG: "EGP",
-        KE: "KES",
-        GH: "GHS",
-        VN: "VND",
-        FR: "EUR",
-        DE: "EUR",
-        ES: "EUR",
-        IT: "EUR",
-        NL: "EUR",
-        IE: "EUR",
-        PT: "EUR",
-        BE: "EUR",
-      };
-      const detected = byRegion[region] || "CAD";
-      if (!currencyTouched)
-        setDetails((prev) => ({
-          ...prev,
-          currency: prev.currency || detected,
-        }));
-    } catch {}
-  };
-
-  // On first open, use browser geolocation to detect currency
-  useEffect(() => {
-    if (currencyPromptedRef.current) return;
-    currencyPromptedRef.current = true;
-    if (currencyTouched) return;
-    setCurrencyLoading(true);
-    try {
-      if (typeof navigator === "undefined" || !(navigator as any).geolocation) {
-        applyLocaleFallbackCurrency();
-        setCurrencyLoading(false);
-        return;
-      }
-      (navigator as any).geolocation.getCurrentPosition(
-        async (pos: any) => {
-          try {
-            const { latitude, longitude } = pos.coords || ({} as any);
-            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-              setCurrencyLoading(false);
-              return;
-            }
-            const res = await fetch("/api/ai/currency", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lat: latitude, lng: longitude }),
-            });
-            if (!res.ok) {
-              applyLocaleFallbackCurrency();
-              return;
-            }
-            const data = await res.json();
-            const cc = String(data?.currency || "").toUpperCase();
-            if (!currencyTouched && /^[A-Z]{3}$/.test(cc)) {
-              setDetails((prev) => ({ ...prev, currency: cc }));
-            } else {
-              applyLocaleFallbackCurrency();
-            }
-          } catch {
-          } finally {
-            setCurrencyLoading(false);
-          }
-        },
-        () => {
-          setCurrencyLoading(false);
-          applyLocaleFallbackCurrency();
-        },
-        { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
-      );
-    } catch {
-      setCurrencyLoading(false);
-    }
-  }, [currencyTouched]);
-
   function removeImage(index: number) {
     if (submissionInFlightRef.current) return;
     setImages((prev) => prev.filter((_, i) => i !== index));
@@ -304,6 +213,7 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
       submissionIdRef.current ||= crypto.randomUUID();
       const payload: SalvageDetails = {
         ...details,
+        currency: "CAD",
         client_submission_id: submissionIdRef.current,
         report_date: details.report_date,
         date_received: details.date_received,
@@ -482,31 +392,60 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
             </div>
             <div>
               <label className="block text-xs font-medium text-[var(--app-text-muted)]">
-                Currency (ISO code){" "}
-                {currencyLoading && (
-                  <span className="ml-1 text-[11px] text-[var(--app-text-muted)]">
-                    Detecting…
-                  </span>
-                )}
+                Assessment currency
               </label>
               <input
                 type="text"
                 className="mt-1 w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)] placeholder:text-[var(--app-text-muted)] shadow-inner ring-1  focus:outline-none focus:ring-2 focus:ring-blue-300"
-                value={details.currency || ""}
-                onChange={(e) => {
-                  setCurrencyTouched(true);
-                  handleChange(
-                    "currency",
-                    e.target.value.toUpperCase().slice(0, 3)
-                  );
-                }}
-                disabled={currencyLoading && !currencyTouched}
-                placeholder={
-                  currencyLoading ? "Detecting…" : "e.g., CAD, USD, EUR"
-                }
+                value="CAD — Canadian dollars"
+                readOnly
+                aria-label="Assessment currency"
               />
             </div>
           </div>
+        </section>
+
+        <section className="space-y-3" aria-labelledby="salvage-vehicle-heading">
+          <h3 id="salvage-vehicle-heading" className="text-sm font-medium text-[var(--app-text)]">Vehicle & Canadian assessment</h3>
+          <p className="text-xs text-[var(--app-text-muted)]">Enter verified facts; leave anything unknown blank. Market and date identify the comparable search area. A documented brand must match the registration or inspection evidence—it must not be guessed from damage.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {VEHICLE_FIELDS.map((field) => (
+              <div key={field.key}>
+                <label htmlFor={`salvage-${field.key}`} className="block text-xs font-medium text-[var(--app-text-muted)]">{field.label}</label>
+                <input id={`salvage-${field.key}`} type={field.type}
+                  className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-accent)]"
+                  value={details.assessment_inputs?.[field.key] ?? ""}
+                  min={field.key === "year" ? 1885 : field.key === "odometer" ? 0 : undefined}
+                  max={field.key === "year" ? new Date().getFullYear() + 2 : undefined}
+                  step={field.type === "number" ? 1 : undefined}
+                  maxLength={field.key === "vin" ? 17 : field.type === "text" ? 300 : undefined}
+                  placeholder={field.type === "text" ? "Unknown / not provided" : undefined}
+                  onChange={(event) => handleAssessmentChange(field.key, field.key === "vin" ? event.target.value.toUpperCase() : event.target.value)} />
+              </div>
+            ))}
+            <div>
+              <label htmlFor="salvage-odometerUnit" className="block text-xs font-medium text-[var(--app-text-muted)]">Odometer unit</label>
+              <select id="salvage-odometerUnit" className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)]" value={details.assessment_inputs?.odometerUnit ?? ""} onChange={(event) => handleAssessmentChange("odometerUnit", event.target.value)}>
+                <option value="">Unknown</option><option value="km">Kilometres (km)</option><option value="mi">Miles (mi)</option>
+              </select>
+            </div>
+            {([['province', 'Market province / territory'], ['brandProvince', 'Brand document province / territory']] as const).map(([key, label]) => (
+              <div key={key}>
+                <label htmlFor={`salvage-${key}`} className="block text-xs font-medium text-[var(--app-text-muted)]">{label}</label>
+                <select id={`salvage-${key}`} className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)]" value={details.assessment_inputs?.[key] ?? ""} onChange={(event) => handleAssessmentChange(key, event.target.value)}>
+                  <option value="">Unknown</option>{PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {([['condition', 'Pre-loss condition (if known)'], ['damageDescription', 'Observed damage']] as const).map(([key, label]) => (
+            <div key={key}>
+              <label htmlFor={`salvage-${key}`} className="block text-xs font-medium text-[var(--app-text-muted)]">{label}</label>
+              <textarea id={`salvage-${key}`} rows={2} maxLength={key === "condition" ? 4000 : 8000}
+                className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-accent)]"
+                value={details.assessment_inputs?.[key] ?? ""} onChange={(event) => handleAssessmentChange(key, event.target.value)} />
+            </div>
+          ))}
         </section>
 
         {/* Parties & Contacts */}

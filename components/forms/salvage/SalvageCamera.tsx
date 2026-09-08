@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { SALVAGE_MAX_IMAGES } from "@/services/salvage";
 import {
   Camera,
   Check,
@@ -22,7 +23,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onAdd: (files: File[]) => void;
-  maxCount?: number; // default 10
+  maxCount?: number; // Defaults to the shared Salvage photo limit.
   downloadPrefix?: string; // optional prefix for local filename when saving captures
 };
 
@@ -32,7 +33,7 @@ export default function SalvageCamera({
   open,
   onClose,
   onAdd,
-  maxCount = 30,
+  maxCount = SALVAGE_MAX_IMAGES,
   downloadPrefix,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
