@@ -1,6 +1,34 @@
 // Transport-only copy of backend src/service/salvageAssessment.ts, schema v2.
 // Keep the exported type block synchronized across independently deployed repositories.
 // Do not reproduce valuation arithmetic or provider verification in clients.
+/** Read-only photo extraction, separate from the appraiser's editable values. */
+export type SalvageVehicleOverrides = Record<string, string | null>;
+export interface SalvageVehicleEvidence {
+  photoId: string;
+  value: string | null;
+  evidence: string;
+  accepted: boolean;
+  rejectionReason: string | null;
+}
+export interface SalvageVehicleField {
+  key: string;
+  label: string;
+  value: string | null;
+  status: "observed" | "unknown" | "conflict" | "manual";
+  evidence: SalvageVehicleEvidence[];
+  type?: "text" | "number" | "select" | "checkbox";
+  options?: string[];
+  required?: boolean;
+  source?: "standard" | "workbook";
+  manualOverride?: { value: string | null; source: "manual" | "supplied" } | null;
+}
+export interface SalvageVehicleDetails {
+  schemaVersion: 1;
+  category: string | null;
+  fields: SalvageVehicleField[];
+  warnings: string[];
+}
+
 /** Server-owned, auditable assessment. Legacy snapshots without this object stay legacy. */
 export const SALVAGE_ASSESSMENT_VERSION = 2 as const;
 export type SalvageBasket = "pre_loss" | "as_is";
@@ -88,6 +116,8 @@ export interface SalvageLabourItem {
   appraiserReason: string | null;
 }
 export interface SalvageAssessmentInputs {
+  /** Explicit appraiser corrections, kept separate from immutable photo evidence. */
+  vehicleOverrides?: SalvageVehicleOverrides;
   year: number | null;
   make: string | null;
   model: string | null;
@@ -141,6 +171,8 @@ export interface SalvageAssessmentV2 {
   researchedInputs: SalvageAssessmentInputs;
   stale: boolean;
   photoFindings: SalvagePhotoFinding[];
+  /** Absent for legacy reports until explicitly researched again. */
+  vehicleDetails?: SalvageVehicleDetails;
   candidates: SalvageComparableEvidence[];
   comparables: SalvageComparableEvidence[];
   references: SalvageReference[];

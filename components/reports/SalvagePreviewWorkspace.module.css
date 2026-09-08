@@ -29,5 +29,19 @@
 .analysis { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: .5rem 1rem; font-size: .85rem; overflow-wrap: anywhere; }
 .analysis dt { color: var(--app-text-muted); text-transform: capitalize; }
 .analysis dd { white-space: pre-wrap; }
+.vehicleFields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; align-items: start; }
+.vehicleField { min-width: 0; border: 1px solid var(--app-border); border-radius: 6px; padding: .65rem; background: var(--app-panel); }
+.vehicleLabel { color: var(--app-text); font-weight: 550; }
+.vehicleStatus { margin-top: .35rem; font-size: .75rem; color: var(--app-text-muted); overflow-wrap: anywhere; }
+.vehicleConflict { color: var(--app-danger); }
+.vehicleSpecs { margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--app-border); }
+.vehicleSpecs h3 { margin-bottom: .25rem; font-size: .9rem; font-weight: 650; }
+.vehicleEvidence { margin-top: .45rem; font-size: .75rem; overflow-wrap: anywhere; color: var(--app-text-muted); }
+.vehicleEvidence summary { cursor: pointer; padding: .2rem 0; }
+.vehicleEvidence ul { display: grid; gap: .4rem; margin-top: .4rem; }
+.evidencePhotoButton { display: inline; color: var(--app-accent); text-decoration: underline; text-underline-offset: 2px; min-height: 36px; cursor: pointer; }
+.evidencePhotoButton:focus-visible, .vehicleEvidence summary:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
+@media (max-width: 700px) { .vehicleFields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; } }
+@media (max-width: 480px) { .vehicleFields { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .page { padding: .65rem; gap: .65rem; } .section { padding: .75rem; } .fields, .row .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .header h1 { font-size: 1.15rem; } .footer .actions { flex: 1; } .footer .actions button { flex: 1; } }
 @media (max-width: 380px) { .fields, .row .fields { grid-template-columns: minmax(0, 1fr); } .analysis { grid-template-columns: 1fr; } }

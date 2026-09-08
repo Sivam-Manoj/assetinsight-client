@@ -118,26 +118,31 @@ describe("Salvage form upload/acceptance workflow", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Review the preview when it is ready");
   });
 
-  it("submits typed Canadian vehicle facts, keeps unknowns null and never auto-detects currency with AI", async () => {
+  it("collects market/loss context without vehicle inputs or fabricated identity defaults", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("No automatic provider request is allowed"));
     vi.mocked(SalvageService.create).mockResolvedValue({ reportId: "salvage-vehicle", message: "Accepted" });
     render(<SalvageForm />);
     fillForm();
+    for (const label of ["Vehicle year", "Vehicle make", "Vehicle model", "Trim / edition", "Engine / powertrain", "VIN (if readable)", "Odometer reading", "Odometer unit"]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole("heading", { name: "Vehicle details come from your photos" })).toBeVisible();
+    expect(screen.getByText(/Missing details show “Cannot find from image”/)).toBeVisible();
     for (const [label, value] of [
-      ["Vehicle year", "2011"], ["Vehicle make", "Chevrolet"], ["Vehicle model", "Equinox"],
-      ["Trim / edition", "2LT AWD"], ["Engine / powertrain", "2.4L AWD"], ["VIN (if readable)", "2CNALDEC1B6123456"],
-      ["Odometer reading", "150000"], ["City / local market", "Ottawa"], ["Effective valuation date", "2026-09-08"],
+      ["City / local market", "Ottawa"], ["Effective valuation date", "2026-09-08"],
       ["Type / cause of loss", "Collision"], ["Documented vehicle brand", "Salvage"], ["Observed damage", "Front bumper damaged"],
     ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    fireEvent.change(screen.getByLabelText("Odometer unit"), { target: { value: "km" } });
     fireEvent.change(screen.getByLabelText("Market province / territory"), { target: { value: "ON" } });
     fireEvent.change(screen.getByLabelText("Brand document province / territory"), { target: { value: "ON" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Create Report" })));
     expect(SalvageService.create).toHaveBeenCalledWith(expect.objectContaining({ currency: "CAD", assessment_inputs: expect.objectContaining({
-      year: 2011, make: "Chevrolet", model: "Equinox", trim: "2LT AWD", powertrain: "2.4L AWD", odometer: 150000, odometerUnit: "km",
       province: "ON", market: "Ottawa", effectiveDate: "2026-09-08", lossType: "Collision", documentedBrand: "Salvage", brandProvince: "ON",
       condition: null, damageDescription: "Front bumper damaged", currency: "CAD",
     }) }), [], expect.any(Object));
+    const inputs = vi.mocked(SalvageService.create).mock.calls[0][0].assessment_inputs;
+    for (const key of ["year", "make", "model", "trim", "powertrain", "vin", "odometer", "odometerUnit"]) {
+      expect(inputs).not.toHaveProperty(key);
+    }
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

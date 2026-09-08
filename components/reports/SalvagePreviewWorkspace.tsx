@@ -256,7 +256,7 @@ export default function SalvagePreviewWorkspace({ reportId }: { reportId: string
           {selection("priority_level", "Priority", [["High", "High"], ["Medium", "Medium"], ["Low", "Low"]])}
         </div></section>
         {assessment ? <SalvageAssessmentEditor assessment={assessment} inputs={draft.assessment_inputs || assessment.inputs}
-          disabled={!canEdit || conflict} onChange={(inputs) => update("assessment_inputs", inputs)} photos={photos} /> : <>
+          disabled={!canEdit || conflict} onChange={(inputs) => update("assessment_inputs", inputs)} photos={photos} onViewPhoto={setPhoto} /> : <>
         {section("Vehicle & condition", VEHICLE_FIELDS)}
         <section className={styles.section}><h2>Valuation</h2><div className={styles.fields}>
           {field(["currency", "Currency"])}

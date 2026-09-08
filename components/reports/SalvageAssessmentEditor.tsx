@@ -4,6 +4,7 @@ import { useId } from "react";
 import { formatAssessmentMoney, type SalvageAssessmentInputs, type SalvageAssessmentV2,
   type SalvageComparableEvidence, type SalvageCostInput, type SalvageReference, type SalvageAdjustment } from "@/lib/salvageAssessment";
 import styles from "./SalvagePreviewWorkspace.module.css";
+import SalvageVehicleDetails from "./SalvageVehicleDetails";
 
 export interface SalvageAssessmentEditorProps {
   assessment: SalvageAssessmentV2;
@@ -11,6 +12,7 @@ export interface SalvageAssessmentEditorProps {
   disabled: boolean;
   onChange: (inputs: Partial<SalvageAssessmentInputs>) => void;
   photos?: string[];
+  onViewPhoto?: (index: number) => void;
 }
 type Value = string | number | null | undefined;
 type FieldOptions = { type?: "number" | "date" | "url" | "textarea"; allowNegative?: boolean; hint?: string };
@@ -35,11 +37,12 @@ function sourceLink(url: string | null, label: string) {
 }
 
 /** Edits only canonical inputs; all displayed conclusions remain the saved server values. */
-export default function SalvageAssessmentEditor({ assessment, inputs, disabled, onChange, photos }: SalvageAssessmentEditorProps) {
+export default function SalvageAssessmentEditor({ assessment, inputs, disabled, onChange, photos, onViewPhoto }: SalvageAssessmentEditorProps) {
   const prefix = useId();
   const draft: SalvageAssessmentInputs = { ...assessment.inputs, ...inputs,
     sellerCosts: { ...assessment.inputs.sellerCosts, ...inputs.sellerCosts },
     overrides: { ...assessment.inputs.overrides, ...inputs.overrides } };
+  const vehicleDetails = assessment.vehicleDetails?.schemaVersion === 1 ? assessment.vehicleDetails : null;
   const previousSuppliedRefs = new Set(assessment.inputs.suppliedReferences.map((reference) => reference.id));
   const references = [...new Map([...assessment.references.filter((reference) => !previousSuppliedRefs.has(reference.id)), ...draft.suppliedReferences].map((reference) => [reference.id, reference])).values()];
   const availablePhotos = photos ? photos.slice(0, 50).map((_, index) => `photo-${String(index + 1).padStart(3, "0")}`) : assessment.photoFindings.map((photo) => photo.photoId);
@@ -118,11 +121,18 @@ export default function SalvageAssessmentEditor({ assessment, inputs, disabled, 
       </dl>
       {assessment.stale ? <p role="status" className={`${styles.notice} mt-3`}>Research is stale because material subject details changed. Research again before relying on previous evidence.</p> : null}
     </section>
-    <section className={styles.section}><h2>Subject and Canadian market</h2><div className={styles.fields}>
+    {vehicleDetails ? <SalvageVehicleDetails details={vehicleDetails}
+      overrides={draft.vehicleOverrides} disabled={disabled} onChange={(overrides) => update("vehicleOverrides", overrides)}
+      photoCount={photos?.length ?? 0} onViewPhoto={onViewPhoto} /> : null}
+    <section className={styles.section}><h2>Subject and Canadian market</h2>
+      {!vehicleDetails ? <p className={`${styles.muted} mb-3`}>Legacy vehicle details: saved or user-supplied values, not verified image readings. New photo-evidence fields are available only after an explicit research run.</p> : null}
+      <div className={styles.fields}>
+      {!vehicleDetails ? <>
       {field("Assessment year", draft.year, (value) => update("year", value as number | null), { type: "number" })}
       {subjectText("make", "Assessment make")}{subjectText("model", "Assessment model")}{subjectText("trim", "Assessment trim")}{subjectText("powertrain", "Assessment powertrain")}{subjectText("vin", "Assessment VIN")}
       {field("Assessment odometer", draft.odometer, (value) => update("odometer", value as number | null), { type: "number" })}
       {select("Odometer unit", draft.odometerUnit, [["km", "Kilometres"], ["mi", "Miles"]], (value) => update("odometerUnit", value as "km" | "mi" | null))}
+      </> : null}
       {select("Market province", draft.province, PROVINCES.map((value) => [value, value]), (value) => update("province", value))}
       {subjectText("market", "Market city / region")}
       {field("Effective valuation date", draft.effectiveDate, (value) => update("effectiveDate", value as string | null), { type: "date" })}

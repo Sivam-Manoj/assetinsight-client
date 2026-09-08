@@ -36,6 +36,22 @@ function setup(saved = assessment(), disabled = false) {
 }
 
 describe("canonical Canadian salvage review editor", () => {
+  it("replaces duplicate identity fields with photo-derived values and isolated owner overrides", () => {
+    const saved = assessment();
+    saved.vehicleDetails = { schemaVersion: 1, category: null, warnings: [], fields: [
+      { key: "vin", label: "VIN", value: null, status: "unknown", evidence: [] },
+      { key: "engineModel", label: "Engine model", value: "EcoBoost", status: "observed", evidence: [] },
+    ] };
+    const changed = setup(saved);
+    expect(screen.queryByLabelText("Assessment VIN")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Assessment powertrain")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Engine model")).toHaveValue("EcoBoost");
+    fireEvent.change(screen.getByLabelText("VIN"), { target: { value: "1FTFW1ET1EFB12345" } });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ vin: null, vehicleOverrides: { vin: "1FTFW1ET1EFB12345" } });
+    expect(saved.vehicleDetails.fields[0].value).toBeNull();
+    expect(screen.getByLabelText("Market city / region")).toHaveValue("Toronto");
+  });
+
   it("renders saved conclusions separately and never recalculates money while editing", () => {
     const saved = assessment(), changed = setup(saved);
     expect(screen.getByTestId("saved-pre-loss-value")).toHaveTextContent("25,000.00");

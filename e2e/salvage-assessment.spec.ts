@@ -18,6 +18,16 @@ function initialAssessment(): SalvageAssessmentV2 {
   return {
     schemaVersion: 2, generatedAt: "2026-09-08T12:00:00.000Z", inputs, researchedInputs: structuredClone(inputs), stale: false,
     photoFindings: [{ photoId: "photo-001", status: "not_analyzed", observations: [], facts: [], uncertainties: ["Unverified photograph"] }],
+    vehicleDetails: { schemaVersion: 1, category: "Light Duty Pickup Truck", warnings: [], fields: [
+      { key: "category", label: "Vehicle type", value: "Light Duty Pickup Truck", status: "observed", evidence: [], type: "select", options: ["Light Duty Pickup Truck", "Utility Vehicle"] },
+      { key: "year", label: "Year", value: "2018", status: "observed", evidence: [] },
+      { key: "make", label: "Make", value: "Ford", status: "observed", evidence: [] },
+      { key: "model", label: "Model", value: "F-150", status: "observed", evidence: [] },
+      { key: "vin", label: "VIN", value: null, status: "unknown", evidence: [] },
+      { key: "engineModel", label: "Engine model", value: "EcoBoost", status: "observed", evidence: [{ photoId: "photo-001", value: "EcoBoost", evidence: "Engine badge reads EcoBoost.", accepted: true, rejectionReason: null }] },
+      { key: "engineDisplacement", label: "Engine displacement", value: null, status: "conflict", evidence: [] },
+      { key: "spec:Transmission Type", label: "Transmission Type", value: null, status: "unknown", evidence: [] },
+    ] },
     candidates: [], comparables: [], references: [{ id: "reference-1", kind: "web", title: "Public Canadian source", url: "https://www.mpi.mb.ca/when-your-vehicle-is-written-off/", publisher: "MPI", accessedAt: "2026-09-08", excerpt: "Fixture reference for isolated browser verification.", photoIds: [] }],
     valuations: { preLoss: { ...conclusion }, asIs: { ...conclusion } },
     repairs: { parts: [], labour: [], charges: [], partsTotal: null, labourTotal: null, chargesTotal: null, knownSubtotal: 0, total: null, status: "incomplete" },
@@ -85,6 +95,26 @@ for (const theme of ["light", "dark"] as const) {
     expect(await page.locator("body").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: `/tmp/assetinsight-salvage-assessment-${testInfo.project.name}-${theme}-initial.png` });
 
+    await expect(page.getByRole("heading", { name: "Vehicle details from photos", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Assessment VIN", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("VIN", { exact: true })).toHaveValue("");
+    await expect(page.getByLabel("VIN", { exact: true })).toHaveAttribute("placeholder", "Cannot find from image");
+    await expect(page.getByLabel("Engine model", { exact: true })).toHaveValue("EcoBoost");
+    await expect(page.getByRole("combobox", { name: "Vehicle type", exact: true })).toHaveValue("Light Duty Pickup Truck");
+    await page.getByText("Image evidence (1)", { exact: true }).click();
+    await page.getByRole("button", { name: "View photo 1 for Engine model" }).click();
+    await expect(page.getByRole("dialog", { name: "Report photo viewer" })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveText("Photo 1 of 1");
+    await page.getByRole("button", { name: "Close photo", exact: true }).click();
+    await page.getByLabel("VIN", { exact: true }).fill("1FTFW1ET1EFB12345");
+    await page.getByLabel("Transmission Type", { exact: true }).fill("Automatic, checked by appraiser");
+    await expect(page.getByText("User entered", { exact: true })).toHaveCount(2);
+    await page.getByRole("heading", { name: "Vehicle details from photos", exact: true }).scrollIntoViewIfNeeded();
+    expect(await page.locator("body").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `/tmp/assetinsight-salvage-vehicle-${testInfo.project.name}-${theme}-edited.png` });
+    await page.getByLabel("VIN", { exact: true }).evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: `/tmp/assetinsight-salvage-vehicle-${testInfo.project.name}-${theme}-vin.png` });
+
     await page.getByLabel("Market city / region").fill("Ottawa");
     await page.getByText("As-is salvage override", { exact: true }).click();
     await page.getByLabel("As-is override amount (CAD)", { exact: true }).fill("15000");
@@ -96,6 +126,8 @@ for (const theme of ["light", "dark"] as const) {
     await expect(page.getByTestId("saved-as-is-value")).toHaveText("$15,000.00");
     expect(state.writes).toHaveLength(1);
     expect(state.writes[0].payload).toMatchObject({ baseRevision: 2, data: { assessment_inputs: { market: "Ottawa", overrides: { asIs: { amount: 15000, appraiserReason: expect.stringContaining("Appraiser reviewed") } } } } });
+    expect(state.writes[0].payload).toMatchObject({ data: { assessment_inputs: { vehicleOverrides: { vin: "1FTFW1ET1EFB12345", "spec:Transmission Type": "Automatic, checked by appraiser" } } } });
+    await expect(page.getByLabel("VIN", { exact: true })).toHaveValue("1FTFW1ET1EFB12345");
 
     await page.getByText("Saved references (1)", { exact: true }).click();
     const source = page.getByRole("link", { name: "Public Canadian source", exact: true });
@@ -118,7 +150,7 @@ for (const theme of ["light", "dark"] as const) {
     expect(confirmation).toContain("US$10"); expect(confirmation).toContain("15 minutes");
     expect(state.writes).toHaveLength(2);
     expect(state.writes[1]).toEqual({ path: "/api/salvage/enterprise-1/research", payload: { baseRevision: 3, client_request_id: stableId } });
-    await expect(page.getByLabel("Assessment make", { exact: true })).toBeDisabled();
+    await expect(page.getByLabel("Make", { exact: true })).toBeDisabled();
     await expect(page.locator("nextjs-portal [data-nextjs-dialog-overlay]")).toHaveCount(0);
     expect(state.errors).toEqual([]);
   });

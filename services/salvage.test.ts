@@ -85,8 +85,8 @@ describe("SalvageService revision-safe lifecycle", () => {
   });
 
   it("saves editable assessment inputs but never provider-owned assessment results", async () => {
-    await SalvageService.savePreview("report", { assessment_inputs: { province: "ON", market: "Toronto", odometer: null }, assessment: {} as SalvageAssessmentV2 }, 4);
-    expect(API.patch).toHaveBeenCalledWith("/salvage/report/preview", { data: { assessment_inputs: { province: "ON", market: "Toronto", odometer: null } }, baseRevision: 4 });
+    await SalvageService.savePreview("report", { assessment_inputs: { province: "ON", market: "Toronto", odometer: null, vehicleOverrides: { engineModel: "Appraiser verified", vin: null } }, assessment: {} as SalvageAssessmentV2 }, 4);
+    expect(API.patch).toHaveBeenCalledWith("/salvage/report/preview", { data: { assessment_inputs: { province: "ON", market: "Toronto", odometer: null, vehicleOverrides: { engineModel: "Appraiser verified", vin: null } } }, baseRevision: 4 });
     expect(API.post).not.toHaveBeenCalled();
   });
 

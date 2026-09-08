@@ -17,21 +17,13 @@ type Props = {
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const PROVINCES = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"] as const;
-const VEHICLE_FIELDS = [
-  { key: "year", label: "Vehicle year", type: "number" },
-  { key: "make", label: "Vehicle make", type: "text" },
-  { key: "model", label: "Vehicle model", type: "text" },
-  { key: "trim", label: "Trim / edition", type: "text" },
-  { key: "powertrain", label: "Engine / powertrain", type: "text" },
-  { key: "vin", label: "VIN (if readable)", type: "text" },
-  { key: "odometer", label: "Odometer reading", type: "number" },
+const ASSESSMENT_CONTEXT_FIELDS = [
   { key: "market", label: "City / local market", type: "text" },
   { key: "effectiveDate", label: "Effective valuation date", type: "date" },
   { key: "lossType", label: "Type / cause of loss", type: "text" },
   { key: "documentedBrand", label: "Documented vehicle brand", type: "text" },
 ] as const;
-const initialAssessment = (): Partial<SalvageAssessmentInputs> => ({ year: null, make: null, model: null, trim: null,
-  powertrain: null, vin: null, odometer: null, odometerUnit: null, province: null, market: null,
+const initialAssessment = (): Partial<SalvageAssessmentInputs> => ({ province: null, market: null,
   effectiveDate: isoDate(new Date()), lossType: null, documentedBrand: null, brandProvince: null,
   condition: null, damageDescription: null, currency: "CAD" });
 
@@ -91,7 +83,7 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
 
   function handleAssessmentChange(key: keyof SalvageAssessmentInputs, raw: string) {
     if (submissionInFlightRef.current) return;
-    const value = raw === "" ? null : key === "year" || key === "odometer" ? Number(raw) : raw;
+    const value = raw === "" ? null : raw;
     setDetails((prev) => ({ ...prev, assessment_inputs: { ...prev.assessment_inputs, [key]: value } }));
   }
 
@@ -292,7 +284,7 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
           <div>
             <h2 className="text-lg font-semibold text-[var(--app-text)]">Salvage Appraisal</h2>
             <p className="mt-1 text-sm text-[var(--app-text-muted)]">
-              Record claim details, vehicle information, damage notes, and photos.
+              Record claim details and upload photos. Review the vehicle details read from your photos in the preview.
             </p>
           </div>
         </div>
@@ -405,30 +397,26 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
           </div>
         </section>
 
-        <section className="space-y-3" aria-labelledby="salvage-vehicle-heading">
-          <h3 id="salvage-vehicle-heading" className="text-sm font-medium text-[var(--app-text)]">Vehicle & Canadian assessment</h3>
+        <section className="rounded-lg border border-[var(--app-info-border,var(--app-border))] bg-[var(--app-info-soft)] p-3" aria-labelledby="salvage-photo-details-heading">
+          <h3 id="salvage-photo-details-heading" className="text-sm font-semibold text-[var(--app-text)]">Vehicle details come from your photos</h3>
+          <p className="mt-1 text-sm text-[var(--app-text-muted)]">Include a sharp VIN / serial plate photo, the dashboard odometer, engine labels and vehicle badges. We only show details readable in the uploaded images. Missing details show “Cannot find from image” in the preview, where you can enter or correct them.</p>
+        </section>
+
+        <section className="space-y-3" aria-labelledby="salvage-assessment-heading">
+          <h3 id="salvage-assessment-heading" className="text-sm font-medium text-[var(--app-text)]">Canadian market & loss details</h3>
           <p className="text-xs text-[var(--app-text-muted)]">Enter verified facts; leave anything unknown blank. Market and date identify the comparable search area. A documented brand must match the registration or inspection evidence—it must not be guessed from damage.</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {VEHICLE_FIELDS.map((field) => (
+            {ASSESSMENT_CONTEXT_FIELDS.map((field) => (
               <div key={field.key}>
                 <label htmlFor={`salvage-${field.key}`} className="block text-xs font-medium text-[var(--app-text-muted)]">{field.label}</label>
                 <input id={`salvage-${field.key}`} type={field.type}
                   className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)] focus:outline-none focus:ring-2 focus:ring-[var(--app-accent)]"
                   value={details.assessment_inputs?.[field.key] ?? ""}
-                  min={field.key === "year" ? 1885 : field.key === "odometer" ? 0 : undefined}
-                  max={field.key === "year" ? new Date().getFullYear() + 2 : undefined}
-                  step={field.type === "number" ? 1 : undefined}
-                  maxLength={field.key === "vin" ? 17 : field.type === "text" ? 300 : undefined}
+                  maxLength={field.type === "text" ? 300 : undefined}
                   placeholder={field.type === "text" ? "Unknown / not provided" : undefined}
-                  onChange={(event) => handleAssessmentChange(field.key, field.key === "vin" ? event.target.value.toUpperCase() : event.target.value)} />
+                  onChange={(event) => handleAssessmentChange(field.key, event.target.value)} />
               </div>
             ))}
-            <div>
-              <label htmlFor="salvage-odometerUnit" className="block text-xs font-medium text-[var(--app-text-muted)]">Odometer unit</label>
-              <select id="salvage-odometerUnit" className="mt-1 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm text-[var(--app-text)]" value={details.assessment_inputs?.odometerUnit ?? ""} onChange={(event) => handleAssessmentChange("odometerUnit", event.target.value)}>
-                <option value="">Unknown</option><option value="km">Kilometres (km)</option><option value="mi">Miles (mi)</option>
-              </select>
-            </div>
             {([['province', 'Market province / territory'], ['brandProvince', 'Brand document province / territory']] as const).map(([key, label]) => (
               <div key={key}>
                 <label htmlFor={`salvage-${key}`} className="block text-xs font-medium text-[var(--app-text-muted)]">{label}</label>
