@@ -92,11 +92,15 @@ for (const theme of ["light", "dark"] as const) {
     await expect(page.getByRole("dialog", { name: "Report photo viewer" })).toContainText("Photo 2 of 2");
     await page.getByRole("button", { name: "Close photo" }).click();
     await page.getByRole("button", { name: "Submit report", exact: true }).click();
+    await expect(page).toHaveURL(/\/salvage\/status\/salvage-1$/);
     await expect(page.getByRole("progressbar", { name: "Salvage processing progress" })).toHaveAttribute("value", "45");
-    await expect(page.getByRole("button", { name: "PDF", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "PDF", exact: true })).toHaveCount(0);
     expect(state.writes).toHaveLength(2);
     state.ready();
-    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Refresh progress", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Open preview", exact: true })).toBeEnabled();
+    await expect(page).toHaveURL(/\/salvage\/status\/salvage-1$/);
+    await page.getByRole("button", { name: "Open preview", exact: true }).click();
     await expect(page.getByRole("button", { name: "PDF", exact: true })).toBeEnabled();
     for (const label of ["PDF", "DOCX", "XLSX", "Photo ZIP"]) {
       const download = page.waitForEvent("download");

@@ -15,6 +15,7 @@ export type ReportStatus =
   | "pending_approval"
   | "approved"
   | "declined"
+  | "cancelled"
   | "error";
 
 interface StatusBadgeProps {
@@ -62,6 +63,7 @@ const statusConfig: Record<
     tone: "app-chip--danger",
     icon: CircleAlert,
   },
+  cancelled: { label: "Stopped", tone: "app-chip--warning", icon: CircleAlert },
 };
 
 export default function StatusBadge({

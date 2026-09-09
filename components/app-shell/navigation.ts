@@ -35,6 +35,7 @@ export const PRIMARY_NAVIGATION: readonly NavItem[] = [
     label: "My Reports",
     href: "/reports",
     icon: FileText,
+    match: (pathname) => pathname === "/reports" || pathname.startsWith("/reports/") || pathname.startsWith("/salvage/status/"),
   },
   {
     label: "Proposal Valuations",
@@ -46,6 +47,7 @@ export const PRIMARY_NAVIGATION: readonly NavItem[] = [
     label: "Previews",
     href: "/previews",
     icon: FileCheck2,
+    match: (pathname) => pathname === "/previews" || pathname.startsWith("/previews/") || pathname.startsWith("/salvage/preview/"),
   },
   {
     label: "Approvals",
@@ -93,4 +95,6 @@ export const PAGE_TITLES: Record<string, string> = {
   "/notifications": "Notifications",
   "/create/asset": "Asset Report",
   "/create/lot-listing": "Lot Listing",
+  "/salvage/status": "Salvage progress",
+  "/salvage/preview": "Salvage preview",
 };

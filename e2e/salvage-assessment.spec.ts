@@ -150,7 +150,9 @@ for (const theme of ["light", "dark"] as const) {
     expect(confirmation).toContain("US$10"); expect(confirmation).toContain("15 minutes");
     expect(state.writes).toHaveLength(2);
     expect(state.writes[1]).toEqual({ path: "/api/salvage/enterprise-1/research", payload: { baseRevision: 3, client_request_id: stableId } });
-    await expect(page.getByLabel("Make", { exact: true })).toBeDisabled();
+    await expect(page).toHaveURL(/\/salvage\/status\/enterprise-1$/);
+    await expect(page.getByLabel("Make", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open preview", exact: true })).toBeDisabled();
     await expect(page.locator("nextjs-portal [data-nextjs-dialog-overlay]")).toHaveCount(0);
     expect(state.errors).toEqual([]);
   });

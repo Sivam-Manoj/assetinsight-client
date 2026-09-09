@@ -83,10 +83,28 @@ describe("SalvageService revision-safe lifecycle", () => {
       ["/salvage/report/retry", {}],
     ]);
   });
+  it("cancels the displayed generation and resumes stopped work with revision fencing", async () => {
+    await SalvageService.cancel("report/one", 7, "current-job");
+    await SalvageService.retry("report/one", 8);
+    expect(vi.mocked(API.post).mock.calls).toEqual([
+      ["/salvage/report%2Fone/cancel", { baseRevision: 7, jobId: "current-job" }],
+      ["/salvage/report%2Fone/retry", { baseRevision: 8 }],
+    ]);
+  });
 
   it("saves editable assessment inputs but never provider-owned assessment results", async () => {
     await SalvageService.savePreview("report", { assessment_inputs: { province: "ON", market: "Toronto", odometer: null, vehicleOverrides: { engineModel: "Appraiser verified", vin: null } }, assessment: {} as SalvageAssessmentV2 }, 4);
     expect(API.patch).toHaveBeenCalledWith("/salvage/report/preview", { data: { assessment_inputs: { province: "ON", market: "Toronto", odometer: null, vehicleOverrides: { engineModel: "Appraiser verified", vin: null } } }, baseRevision: 4 });
+    expect(API.post).not.toHaveBeenCalled();
+  });
+
+  it("sends only allowlisted report context with revision, never rendered enrichment", async () => {
+    await SalvageService.savePreview("report", {
+      report_context: { intended_use: "Insurance review", pre_loss_condition: null, scope_of_work: "" },
+      report_enrichment: { schemaVersion: 1, sections: [] },
+    }, 8);
+    expect(API.patch).toHaveBeenCalledWith("/salvage/report/preview", { baseRevision: 8,
+      data: { report_context: { intended_use: "Insurance review", pre_loss_condition: null, scope_of_work: "" } } });
     expect(API.post).not.toHaveBeenCalled();
   });
 

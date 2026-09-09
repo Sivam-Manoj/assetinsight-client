@@ -24,6 +24,7 @@ import { WorkspaceClock } from "@/components/dashboard/WorkspaceClock";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { useAuthContext } from "@/context/AuthContext";
 import { AuctioneerService } from "@/services/auctioneer";
+import { salvageStatusPath } from "@/services/salvage";
 import {
   DashboardService,
   type DashboardAnalytics,
@@ -629,7 +630,7 @@ export default function DashboardPage() {
         ) : drawerType === "salvage" ? (
           <SalvageForm onSuccess={closeDrawer} onCancel={closeDrawer} onSubmittingChange={handleFormUploading} onReportAccepted={(reportId) => {
             closeDrawer();
-            router.push(`/salvage/preview/${encodeURIComponent(reportId)}`);
+            router.push(salvageStatusPath(reportId));
           }} />
         ) : null}
       </BottomDrawer>

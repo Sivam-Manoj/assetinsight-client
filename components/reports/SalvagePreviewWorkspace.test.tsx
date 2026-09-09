@@ -4,7 +4,7 @@ import { SalvageService, type SalvageReport } from "@/services/salvage";
 import { ReportsService } from "@/services/reports";
 import SalvagePreviewWorkspace from "./SalvagePreviewWorkspace";
 
-const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 vi.mock("@/services/salvage", async (original) => ({
   ...await original<typeof import("@/services/salvage")>(),
@@ -63,7 +63,8 @@ describe("Salvage full-page review lifecycle", () => {
     vi.mocked(SalvageService.research).mockResolvedValue({ data: report({ status: "processing", workflow_stage: "preparing_preview" }) });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Research again" })));
     expect(vi.mocked(SalvageService.research).mock.calls[1]).toEqual(first);
-    expect(screen.getByRole("button", { name: "Research again" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Research again" })).not.toBeInTheDocument();
+    expect(navigation.push).toHaveBeenLastCalledWith("/salvage/status/salvage-1");
     expect(SalvageService.savePreview).not.toHaveBeenCalled();
     expect(SalvageService.submit).not.toHaveBeenCalled();
     confirm.mockRestore();
@@ -155,8 +156,9 @@ describe("Salvage full-page review lifecycle", () => {
     expect(SalvageService.submit).toHaveBeenCalledTimes(1);
     expect(SalvageService.submit).toHaveBeenCalledWith("salvage-1", 2, resubmit);
     await act(async () => response.resolve({ data: report({ status: "processing", workflow_stage: "generating_files", files_generating: true, workflow_progress_percent: 35 }) }));
-    expect(screen.getByRole("progressbar")).toHaveAttribute("value", "35");
-    expect(screen.getByRole("button", { name: "PDF" })).toBeDisabled();
+    expect(navigation.push).toHaveBeenLastCalledWith("/salvage/status/salvage-1");
+    expect(screen.queryByLabelText("Appraiser comments")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "PDF" })).not.toBeInTheDocument();
     expect(SalvageService.retry).not.toHaveBeenCalled();
     expect(SalvageService.savePreview).not.toHaveBeenCalled();
   });
@@ -166,7 +168,25 @@ describe("Salvage full-page review lifecycle", () => {
     vi.mocked(SalvageService.retry).mockResolvedValue({ data: report({ status: "processing", workflow_stage: "preparing_preview" }) });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry processing" })));
     expect(SalvageService.retry).toHaveBeenCalledExactlyOnceWith("salvage-1");
-    expect(screen.getByLabelText("Report status")).toHaveTextContent("Preparing preview");
+    expect(navigation.push).toHaveBeenLastCalledWith("/salvage/status/salvage-1");
+  });
+  it("does not expose an intake-only preview after stopping initial preparation", async () => {
+    vi.mocked(SalvageService.getPreview).mockResolvedValue({ data: report({ status: "cancelled", generation_state: "cancelled", workflow_stage: "stopped", preview_available: false }) });
+    render(<SalvagePreviewWorkspace reportId="salvage-1" />);
+    await screen.findByRole("heading", { name: "Opening report progress" });
+    expect(navigation.replace).toHaveBeenCalledWith("/salvage/status/salvage-1");
+    expect(screen.queryByLabelText("Appraiser comments")).not.toBeInTheDocument();
+    expect(SalvageService.retry).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsaved edits visible if another device starts processing", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText("Appraiser comments"), { target: { value: "Do not hide my unsaved notes" } });
+    vi.mocked(SalvageService.getPreview).mockResolvedValue({ data: report({ status: "processing", generation_state: "processing", workflow_stage: "generating_files", revision: 8 }) });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(screen.getByLabelText("Appraiser comments")).toHaveValue("Do not hide my unsaved notes");
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 
   it("gates every file by server download permission and uses the PDF-record id for downloads", async () => {

@@ -5,6 +5,7 @@ import { formatAssessmentMoney, type SalvageAssessmentInputs, type SalvageAssess
   type SalvageComparableEvidence, type SalvageCostInput, type SalvageReference, type SalvageAdjustment } from "@/lib/salvageAssessment";
 import styles from "./SalvagePreviewWorkspace.module.css";
 import SalvageVehicleDetails from "./SalvageVehicleDetails";
+import { salvageSystemText } from "@/lib/salvagePresentation";
 
 export interface SalvageAssessmentEditorProps {
   assessment: SalvageAssessmentV2;
@@ -112,7 +113,7 @@ export default function SalvageAssessmentEditor({ assessment, inputs, disabled, 
 
   return <div className={styles.rows} aria-label="Canadian salvage assessment editor">
     <section className={styles.section} aria-label="Saved assessment conclusions"><h2>Saved Canadian assessment</h2>
-      <p className={`${styles.muted} mb-3`}>CAD · Last calculated from the saved revision. Editing an input does not recalculate these values in your browser or start AI research. Save to validate and recalculate.</p>
+      <p className={`${styles.muted} mb-3`}>CAD · Last calculated from the saved revision. Editing an input does not recalculate these values in your browser or start research. Save to validate and recalculate.</p>
       <dl className={styles.analysis}>
         <dt>Pre-loss market value</dt><dd><output data-testid="saved-pre-loss-value">{formatAssessmentMoney(assessment.valuations.preLoss.amount)}</output> · {assessment.valuations.preLoss.status.replaceAll("_", " ")}</dd>
         <dt>Repair estimate</dt><dd><output data-testid="saved-repair-value">{formatAssessmentMoney(assessment.repairs.total)}</output> · {assessment.repairs.status}</dd>
@@ -248,7 +249,7 @@ export default function SalvageAssessmentEditor({ assessment, inputs, disabled, 
     </details></section>
 
     <section className={styles.section}><h2>Saved limitations and evidence</h2><p className={`${styles.muted} mb-3`}>Read-only results from the saved revision. They update after a successful save or an explicit research run.</p>
-      <ul className="list-disc pl-5 space-y-2">{assessment.limitations.map((limitation) => <li key={limitation.code}><strong>{limitation.severity === "critical" ? "Review required: " : ""}</strong>{limitation.message}{limitation.acknowledgementRequired ? <span className={styles.muted}> (Approval acknowledgement required)</span> : null}</li>)}</ul>
+      <ul className="list-disc pl-5 space-y-2">{assessment.limitations.map((limitation) => <li key={limitation.code}><strong>{limitation.severity === "critical" ? "Review required: " : ""}</strong>{salvageSystemText(limitation.message)}{limitation.acknowledgementRequired ? <span className={styles.muted}> (Approval acknowledgement required)</span> : null}</li>)}</ul>
       <details className="mt-4"><summary className="cursor-pointer font-semibold">Investigated comparables ({assessment.candidates.length})</summary>
         <div className={`${styles.rows} mt-3`}>{assessment.candidates.map((candidate) => <details className={styles.row} key={candidate.id}>
           <summary className="cursor-pointer">{candidate.title} · {candidate.selected ? "Selected" : candidate.eligible ? "Eligible, not selected" : "Excluded"}</summary>

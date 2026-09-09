@@ -36,7 +36,8 @@ import AuctioneerService, {
 } from "@/services/auctioneer";
 import { ReportThumbnail } from "@/components/reports/ReportThumbnail";
 import { SERVER_BASE } from "@/lib/config";
-import { SalvageService, salvagePreviewPath, type SalvageReport } from "@/services/salvage";
+import { SalvageService, salvagePreviewPath, salvageStatusPath, salvageIsProcessing, type SalvageReport } from "@/services/salvage";
+import { salvageSystemText } from "@/lib/salvagePresentation";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -59,7 +60,7 @@ type ReportGroup = {
   released_at?: string | null;
   downloadable?: boolean;
   isGeneratingFiles?: boolean;
-  generationState?: "queued" | "processing" | "ready" | "error";
+  generationState?: "queued" | "processing" | "ready" | "error" | "cancelled";
   workflowStage?: string;
   workflowMessage?: string;
   workflowProgressPercent?: number;
@@ -161,7 +162,7 @@ function typeLabel(type?: string) {
 
 function isFileGenerationActive(report: any) {
   if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
-  if (["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error"].includes(report?.workflow_stage)) return false;
+  if (["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error", "stopped"].includes(report?.workflow_stage)) return false;
   if (report?.generation_state === "error") return false;
   if (report?.generation_state === "queued" || report?.generation_state === "processing") {
     return true;
@@ -230,6 +231,7 @@ function statusTone(
     awaiting_release: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "In review" },
     ready: { bg: "var(--app-success-soft)", color: "var(--app-success)", label: "Ready" },
     error: { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Failed" },
+    stopped: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "Stopped" },
   };
   if (workflowStage && workflowLabels[workflowStage]) return workflowLabels[workflowStage];
   if (reportStatus === "processing") {
@@ -657,7 +659,7 @@ export default function ReportsPage() {
 
   async function handleRetry(group: ReportGroup) {
     if (group.salvageCanonical) {
-      router.push(salvagePreviewPath(group.key));
+      router.push(salvageStatusPath(group.key));
       return;
     }
     try {
@@ -1129,8 +1131,8 @@ export default function ReportsPage() {
         approvalStatus: salvage.status === "approved" ? "approved" : salvage.status === "declined" ? "rejected" : "pending",
         release_status: salvage.release_status, downloadable: salvage.downloadable === true,
         generationState: salvage.generation_state, isGeneratingFiles: isFileGenerationActive(salvage),
-        workflowStage: salvage.workflow_stage, workflowMessage: salvage.workflow_message,
-        workflowProgressPercent: salvage.workflow_progress_percent, jobError: salvage.job_error,
+        workflowStage: salvage.workflow_stage, workflowMessage: salvageSystemText(salvage.workflow_message),
+        workflowProgressPercent: salvage.workflow_progress_percent, jobError: salvageSystemText(salvage.job_error),
         thumbnail: salvage.imageUrls?.[0], variants,
       });
     }
@@ -1441,6 +1443,7 @@ export default function ReportsPage() {
     const previewTitle = group.contract_no
       ? `${typeLabel(group.type)} · ${group.contract_no}`
       : group.address || group.filename || group.key;
+    const salvageTracking = group.salvageCanonical && (salvageReports.some((report) => report._id === group.key && salvageIsProcessing(report)) || ["cancelled", "error"].includes(group.reportStatus || ""));
     const previewPreparing =
       group.workflowStage === "preparing_preview" ||
       (!group.workflowStage && group.reportStatus === "processing");
@@ -1504,13 +1507,13 @@ export default function ReportsPage() {
             className={`${REPORT_ACTION_CLASS_NAME} border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-on-accent)] hover:border-[var(--app-accent-hover)] hover:bg-[var(--app-accent-hover)] disabled:cursor-wait disabled:border-[var(--app-border)] disabled:bg-[var(--app-panel-alt)] disabled:text-[var(--app-text-muted)]`}
             onClick={() =>
               router.push(
-                group.salvageCanonical ? salvagePreviewPath(group.key) : `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
+                group.salvageCanonical ? salvageTracking ? salvageStatusPath(group.key) : salvagePreviewPath(group.key) : `/previews?reportId=${encodeURIComponent(group.key)}&reportType=${previewReportType}`
               )
             }
             disabled={previewPreparing && !group.salvageCanonical}
           >
             <Eye className="size-3.5 shrink-0" strokeWidth={1.9} />
-            {group.salvageCanonical && previewPreparing ? "View progress" : "Preview"}
+            {salvageTracking ? "View progress" : "Preview"}
           </button>
         ) : null}
         {delivery ? (

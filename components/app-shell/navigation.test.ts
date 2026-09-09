@@ -18,6 +18,13 @@ const basicUser: AuthUser = {
 };
 
 describe("centralized app navigation", () => {
+  it("maps Salvage progress and preview to the correct report navigation", () => {
+    const reports = PRIMARY_NAVIGATION.find((item) => item.href === "/reports")!;
+    const previews = PRIMARY_NAVIGATION.find((item) => item.href === "/previews")!;
+    expect(isNavItemActive(reports, "/salvage/status/report-1")).toBe(true);
+    expect(isNavItemActive(previews, "/salvage/preview/report-1")).toBe(true);
+    expect(isNavItemActive(reports, "/salvage/preview/report-1")).toBe(false);
+  });
   it.each([
     ["an unresolved session", null],
     ["a standard user", basicUser],

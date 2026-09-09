@@ -1,6 +1,7 @@
 import API from "@/lib/api";
 import type { AxiosProgressEvent } from "axios";
 import type { SalvageAssessmentInputs, SalvageAssessmentV2 } from "@/lib/salvageAssessment";
+import { editableSalvageReportContext, type SalvageReportContext, type SalvageReportEnrichment } from "@/lib/salvageReportEnrichment";
 export type { SalvageAssessmentInputs, SalvageAssessmentV2, SalvageComparableEvidence, SalvageReference } from "@/lib/salvageAssessment";
 
 // Matches the shared web/mobile backend multipart limit.
@@ -49,12 +50,14 @@ export type CreateOptions = {
 export type SalvagePreviewData = Record<string, unknown> & {
   readonly assessment?: SalvageAssessmentV2;
   assessment_inputs?: Partial<SalvageAssessmentInputs>;
+  readonly report_enrichment?: SalvageReportEnrichment;
+  report_context?: SalvageReportContext;
 };
 export type SalvageReport = {
   _id: string;
   reportId?: string;
   file_number: string;
-  status: "processing" | "preview" | "pending_approval" | "approved" | "declined" | "error";
+  status: "processing" | "preview" | "pending_approval" | "approved" | "declined" | "error" | "cancelled";
   revision: number;
   createdAt: string;
   updatedAt?: string;
@@ -62,7 +65,7 @@ export type SalvageReport = {
   valuation?: Record<string, unknown>;
   imageUrls: string[];
   preview_data: SalvagePreviewData;
-  generation_state?: "queued" | "processing" | "ready" | "error";
+  generation_state?: "queued" | "processing" | "ready" | "error" | "cancelled";
   workflow_stage?: string;
   workflow_message?: string;
   workflow_progress_percent?: number;
@@ -76,9 +79,13 @@ export type SalvageReport = {
   download_access?: unknown;
   release_status?: "pending_release" | "released";
   files?: Partial<Record<"pdf" | "docx" | "xlsx" | "images", string>>;
+  preview_available?: boolean;
+  can_cancel?: boolean;
+  workflow_steps?: Array<{ key: string; label: string; status: "pending" | "active" | "completed" | "error" | "cancelled" }>;
 };
 
 export function salvageIsProcessing(report: SalvageReport): boolean {
+  if (report.status === "cancelled" || report.generation_state === "cancelled" || report.workflow_stage === "cancelled" || report.workflow_stage === "stopped") return false;
   if (report.workflow_stage === "error" || report.generation_state === "error") return false;
   return report.files_generating === true || report.status === "processing" ||
     ["queued", "processing"].includes(report.generation_state || "") ||
@@ -87,6 +94,17 @@ export function salvageIsProcessing(report: SalvageReport): boolean {
 
 export function salvagePreviewPath(id: string): string {
   return `/salvage/preview/${encodeURIComponent(id)}`;
+}
+
+export function salvageStatusPath(id: string): string {
+  return `/salvage/status/${encodeURIComponent(id)}`;
+}
+
+export function salvageHasPreview(report: SalvageReport): boolean {
+  if (typeof report.preview_available === "boolean") return report.preview_available;
+  // Legacy servers have no explicit flag: never infer readiness from intake fields or photos.
+  return !salvageIsProcessing(report) && ["preview", "declined", "pending_approval", "approved"].includes(report.status)
+    && Object.keys(report.preview_data || {}).length > 0;
 }
 
 // Send only report-editable fields. Ownership, workflow, media and AI evidence
@@ -101,11 +119,12 @@ const EDITABLE_FIELDS = [
   "assumptions", "safety_concerns", "priority_level", "labour_rate_default",
   "item_condition", "damage_description", "inspection_comments", "is_repairable",
   "repair_facility", "repair_facility_comments", "actual_cash_value", "replacement_cost",
-  "recommended_reserve", "repair_estimate", "assessment_inputs",
+  "recommended_reserve", "repair_estimate", "assessment_inputs", "report_context",
 ] as const;
 
 export function salvageEditableData(data: SalvagePreviewData): SalvagePreviewData {
-  return Object.fromEntries(EDITABLE_FIELDS.filter((key) => key in data).map((key) => [key, data[key]]));
+  return Object.fromEntries(EDITABLE_FIELDS.filter((key) => key in data).map((key) =>
+    [key, key === "report_context" ? editableSalvageReportContext(data[key]) : data[key]]));
 }
 
 export const SalvageService = {
@@ -127,8 +146,14 @@ export const SalvageService = {
     const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/${resubmit ? "resubmit" : "submit"}`, { baseRevision });
     return data;
   },
-  async retry(id: string): Promise<{ data: SalvageReport }> {
-    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/retry`, {});
+  async retry(id: string, baseRevision?: number): Promise<{ data: SalvageReport }> {
+    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/retry`, baseRevision === undefined ? {} : { baseRevision });
+    return data;
+  },
+  async cancel(id: string, baseRevision: number, jobId: string): Promise<{ data: SalvageReport }> {
+    const { data } = await API.post<{ data: SalvageReport }>(`/salvage/${encodeURIComponent(id)}/cancel`, {
+      baseRevision, jobId,
+    });
     return data;
   },
   async research(id: string, baseRevision: number, clientRequestId: string): Promise<{ data: SalvageReport }> {

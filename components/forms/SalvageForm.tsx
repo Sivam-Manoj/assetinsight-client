@@ -7,6 +7,7 @@ import { X, Upload, Camera, Download, LoaderCircle, CheckCircle2 } from "lucide-
 import { toast } from "@/components/ui/toast";
 import SalvageCamera from "./salvage/SalvageCamera";
 import ImageAnnotatorModal from "./salvage/ImageAnnotatorModal";
+import { salvageSystemText } from "@/lib/salvagePresentation";
 
 type Props = {
   onSuccess?: (message?: string) => void;
@@ -218,9 +219,9 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
       accepted = true;
       const msg = res.jobId
         ? "Upload accepted. Your salvage report is processing in the background. Review the preview when it is ready, then submit to generate the report files."
-        : res.message || "Your salvage report was submitted. Check Reports for its status.";
+        : salvageSystemText(res.message) || "Your salvage report was submitted. Check Reports for its status.";
       setAcceptedMessage(msg);
-      toast.info(msg);
+      toast.info(res.reportId && onReportAccepted ? "Upload accepted. Follow your report’s progress." : msg);
       try {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("cv:report-created"));
@@ -237,10 +238,10 @@ export default function SalvageForm({ onSuccess, onCancel, onSubmittingChange, o
         console.warn("Salvage upload was accepted but the form could not close", callbackError);
       }
     } catch (err: any) {
-      const msg =
+      const msg = salvageSystemText(
         err?.response?.data?.message ||
         err?.message ||
-        "Failed to create report";
+        "Failed to create report");
       setError(msg);
       toast.error(msg);
     } finally {

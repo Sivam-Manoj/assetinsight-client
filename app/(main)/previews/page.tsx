@@ -40,7 +40,8 @@ import {
 import { navigateToReportForm } from "@/services/reportFormNavigation";
 import styles from "./page.module.css";
 import { hasSavedReportPreview } from "@/lib/reportPreviewAvailability";
-import { SalvageService, salvagePreviewPath, type SalvageReport } from "@/services/salvage";
+import { SalvageService, salvagePreviewPath, salvageStatusPath, salvageIsProcessing, type SalvageReport } from "@/services/salvage";
+import { salvageSystemText } from "@/lib/salvagePresentation";
 
 const AssetMergeDialog = dynamic(
   () => import("@/components/reports/AssetMergeDialog"),
@@ -74,6 +75,7 @@ const WORKFLOW_LABELS: Record<string, string> = {
   awaiting_release: "Awaiting release",
   ready: "Ready to download",
   error: "Generation failed",
+  stopped: "Processing stopped",
 };
 
 const PREVIEW_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
@@ -85,7 +87,7 @@ const PREVIEW_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
 function isWorkflowActive(report: any): boolean {
   if (["preparing_preview", "generating_files"].includes(report?.workflow_stage)) return true;
   if (
-    ["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error"].includes(
+    ["preview_ready", "awaiting_approval", "awaiting_release", "ready", "error", "stopped"].includes(
       report?.workflow_stage
     )
   ) {
@@ -365,7 +367,8 @@ export default function PreviewsPage() {
         .map((report) => ({ ...report, reportType: "realEstate" as const }));
       const lotListingSubmitted: CombinedReport[] = (submittedLotListingResponse.data || [])
         .map((report) => ({ ...report, reportType: "lotListing" as const }));
-      const salvageReports: CombinedReport[] = (salvageResponse?.data || []).map((report) => ({ ...report, reportType: "salvage" as const }));
+      const salvageReports: CombinedReport[] = (salvageResponse?.data || []).map((report) => ({ ...report,
+        workflow_message: salvageSystemText(report.workflow_message), job_error: salvageSystemText(report.job_error), reportType: "salvage" as const }));
 
       setNewReports(
         [...assetPreviews, ...realEstatePreviews, ...lotListingPreviews, ...salvageReports.filter((report) => !isSubmittedPreview(report))].sort(
@@ -448,7 +451,7 @@ export default function PreviewsPage() {
 
   const handleOpenPreview = (report: CombinedReport, resubmitMode = false) => {
     if (report.reportType === "salvage") {
-      router.push(salvagePreviewPath(report._id));
+      router.push(salvageIsProcessing(report) || ["cancelled", "error"].includes(report.status) ? salvageStatusPath(report._id) : salvagePreviewPath(report._id));
       return;
     }
     setSelectedDraftPreviewId(null);
@@ -1147,7 +1150,7 @@ export default function PreviewsPage() {
                           type="button"
                           className={`${styles.action} ${styles.actionPrimary}`}
                           onClick={() => handleOpenPreview(report)}
-                        ><FileSearch className="size-3.5" /> {jobActive ? "View progress" : jobFailed ? "Review & retry" : "Review report"}</button> : <button
+                        ><FileSearch className="size-3.5" /> {jobActive || report.status === "cancelled" ? "View progress" : jobFailed ? "Review & retry" : "Review report"}</button> : <button
                           type="button"
                           className={`${styles.action} ${styles.actionDanger}`}
                           onClick={() => setDeleteTarget(report)}
