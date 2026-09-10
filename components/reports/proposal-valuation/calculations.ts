@@ -314,6 +314,30 @@ export function proposalValuationTotals(sheet: ProposalValuationSheet) {
   };
 }
 
+/** Whole-report column sums, independent of the rendered page or search results. */
+export function proposalValuationColumnTotals(
+  sheet: ProposalValuationSheet,
+  summary = deriveProposalValuationSummary(sheet)
+) {
+  const evaluatorTotals = sheet.evaluator_columns.map((column) => ({
+    ...column,
+    total: sheet.rows.reduce(
+      (sum, row) => sum + (numberOrNull(row.evaluator_values?.[column.id]) ?? 0),
+      0
+    ),
+  }));
+  return {
+    lotCount: sheet.rows.length,
+    evaluators: evaluatorTotals,
+    average: summary.total_asset_value,
+    low: summary.total_low_est_value,
+    high: summary.total_high_est_value,
+    buyerPremium: summary.total_capped_bp,
+  };
+}
+
+export type ProposalValuationColumnTotals = ReturnType<typeof proposalValuationColumnTotals>;
+
 function calculation(
   key: string,
   label: string,

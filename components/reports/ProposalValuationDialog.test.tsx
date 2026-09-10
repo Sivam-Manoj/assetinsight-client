@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ProposalValuationAccessLost,
@@ -160,6 +160,71 @@ describe("ProposalValuationDialog", () => {
           signal.addEventListener("abort", () => resolve(), { once: true });
         })
     );
+  });
+
+  it("keeps all-lot column totals through pagination/search and recalculates edits including zero and blanks", async () => {
+    const payload = makePayload();
+    payload.assetScheduleSheet.evaluator_columns = [
+      { id: "riley", name: "Riley" }, { id: "jay", name: "Jay" }, { id: "empty", name: "New appraiser" },
+    ];
+    payload.assetScheduleSheet.rows = Array.from({ length: 26 }, (_, index) => ({
+      ...structuredClone(payload.assetScheduleSheet.rows[0]),
+      lot_id: `lot-${index + 1}`,
+      asset_id: `QA-${String(index + 1).padStart(3, "0")}`,
+      evaluator_values: { riley: index === 25 ? 20000 : 1000, jay: index === 25 ? 30000 : 3000, empty: null },
+    }));
+    mocks.get.mockResolvedValue(payload);
+    // Keep the test local: an unresolved draft save must not replace newer typed values.
+    mocks.patchChanges.mockImplementation(() => new Promise(() => {}));
+    const view = render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    const footer = await screen.findByRole("rowgroup", { name: "All-lot valuation totals" });
+    const expectTotals = (values: Record<string, string>) => {
+      for (const [column, value] of Object.entries(values)) {
+        expect(within(footer).getByLabelText(`${column} total for all lots`)).toHaveTextContent(value);
+      }
+    };
+    const initialTotals = { Riley: "US$45,000", Jay: "US$105,000", "New appraiser": "US$0", Average: "US$75,000", Low: "US$45,000", High: "US$105,000", "Buyer premium": "US$13,250" };
+    expectTotals(initialTotals);
+    expect(within(footer).getByText("All 26 lots")).toBeInTheDocument();
+    expect(within(footer).getByLabelText("Buyer premium percentages are not summed")).toHaveTextContent("—");
+    const mobileTotals = screen.getByRole("region", { name: "All-lot valuation totals" });
+    expect(within(mobileTotals).getByRole("heading", { name: "Totals · All 26 lots" })).toBeInTheDocument();
+    expect(within(mobileTotals).getByText("US$13,250.00")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Proposal valuation lots table" })).toHaveAttribute("tabindex", "0");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next assets page" }));
+    expect(screen.getByText("26–26 of 26")).toBeInTheDocument();
+    expectTotals(initialTotals);
+    fireEvent.change(screen.getByPlaceholderText("Search assets"), { target: { value: "QA-026" } });
+    await waitFor(() => expect(screen.getByText("1–1 of 1")).toBeInTheDocument());
+    expectTotals(initialTotals);
+    fireEvent.change(screen.getByPlaceholderText("Search assets"), { target: { value: "no matching asset" } });
+    await screen.findByText("No assets match this search.");
+    expectTotals(initialTotals);
+
+    fireEvent.change(screen.getByPlaceholderText("Search assets"), { target: { value: "QA-001" } });
+    const riley = (await screen.findAllByRole("spinbutton", { name: "Riley valuation for QA-001" }))[0];
+    fireEvent.change(riley, { target: { value: "0" } });
+    expectTotals({ ...initialTotals, Riley: "US$44,000", Average: "US$74,500", Low: "US$44,000" });
+    fireEvent.change(screen.getAllByRole("spinbutton", { name: "Jay valuation for QA-001" })[0], { target: { value: "" } });
+    expectTotals({ Riley: "US$44,000", Jay: "US$102,000", Average: "US$73,000", Low: "US$44,000", High: "US$102,000", "Buyer premium": "US$12,800" });
+    expect(within(mobileTotals).getByText("US$12,800.00")).toBeInTheDocument();
+    expect(riley).toHaveValue(0);
+    expect(screen.getAllByRole("spinbutton", { name: "Jay valuation for QA-001" })[0]).toHaveValue(null);
+    view.unmount();
+  });
+
+  it("keeps an explicitly scoped zero totals row and mobile summary for an empty sheet", async () => {
+    const payload = makePayload();
+    payload.assetScheduleSheet.rows = [];
+    mocks.get.mockResolvedValue(payload);
+    render(<ProposalValuationDialog open pageMode reportId="report-1" />);
+    const footer = await screen.findByRole("rowgroup", { name: "All-lot valuation totals" });
+    expect(within(footer).getByText("All 0 lots")).toBeInTheDocument();
+    for (const column of ["Riley", "Jay", "Chad", "Femi", "Average", "Low", "High", "Buyer premium"]) {
+      expect(within(footer).getByLabelText(`${column} total for all lots`)).toHaveTextContent("US$0");
+    }
+    expect(within(screen.getByRole("region", { name: "All-lot valuation totals" })).getByRole("heading", { name: "Totals · All 0 lots" })).toBeInTheDocument();
   });
 
   it("shows the complete Schedule A field set and every saved evaluator", async () => {

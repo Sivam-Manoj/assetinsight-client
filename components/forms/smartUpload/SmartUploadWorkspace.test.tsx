@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SmartUploadWorkspace from "./SmartUploadWorkspace";
 import type { SmartUploadDraft } from "./storage";
@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   deleteDraft: vi.fn(),
   createDraft: vi.fn(),
+  recover: vi.fn(),
+  getCompletionStatus: vi.fn(),
+  createSession: vi.fn(),
+  uploadFiles: vi.fn(),
 }));
 
 vi.mock("./storage", () => ({
@@ -27,23 +31,26 @@ vi.mock("./storage", () => ({
 vi.mock("@/services/smartUpload", () => ({
   cancelSmartUpload: vi.fn(),
   completeSmartUpload: mocks.complete,
-  createOrResumeSmartUploadSession: vi.fn(),
+  recoverSmartUploadCompletion: mocks.recover,
+  getSmartUploadCompletionStatus: mocks.getCompletionStatus,
+  isSmartUploadCompletionPending: (error: { completionPending?: boolean }) => error?.completionPending === true,
+  createOrResumeSmartUploadSession: mocks.createSession,
   getSmartUploadError: (error: unknown) =>
     error instanceof Error ? error.message : "Smart Upload failed",
   getSmartUploadErrorCode: vi.fn(),
   getSmartUploadGrouping: mocks.getGrouping,
   startSmartUploadDetection: vi.fn(),
   updateSmartUploadDividers: mocks.updateGrouping,
-  uploadSmartUploadFiles: vi.fn(),
+  uploadSmartUploadFiles: mocks.uploadFiles,
   waitForSmartUploadGrouping: vi.fn(),
 }));
 
 const PREVIEW_URL =
   "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 
-function createReviewState() {
+function createReviewState(fileCount = 300, photosPerLot = 3) {
   const files: SmartUploadDraft["files"] = Array.from(
-    { length: 300 },
+    { length: fileCount },
     (_, index) => ({
       fileId: `images-${index}`,
       name: `photo-${index}.jpg`,
@@ -75,10 +82,10 @@ function createReviewState() {
     orderReviewRequired: false,
     unresolvedDividerIds: [],
     hasOrderReviewState: true,
-    groups: Array.from({ length: 100 }, (_, index) => ({
+    groups: Array.from({ length: Math.ceil(fileCount / photosPerLot) }, (_, index) => ({
       groupIndex: index,
-      imageCount: 3,
-      fileIds: [`images-${index * 3}`, `images-${index * 3 + 1}`, `images-${index * 3 + 2}`],
+      imageCount: Math.min(photosPerLot, fileCount - index * photosPerLot),
+      fileIds: files.slice(index * photosPerLot, (index + 1) * photosPerLot).map((file) => file.fileId),
       overLimit: false,
     })),
     dividerFileIds: [],
@@ -114,9 +121,10 @@ function workspace(onSubmitted = vi.fn()) {
 
 describe("SmartUploadWorkspace preview memory bounds", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.updateDraft.mockResolvedValue(undefined);
     mocks.deleteDraft.mockResolvedValue(undefined);
+    mocks.getCompletionStatus.mockResolvedValue({ sessionId: "session-1", status: "ready", accepted: false });
   });
 
   it("pages large reviews instead of accumulating full-resolution images", async () => {
@@ -145,6 +153,43 @@ describe("SmartUploadWorkspace preview memory bounds", () => {
     await waitFor(() => expect(document.querySelectorAll("img")).toHaveLength(21));
   });
 
+  it("keeps a 5,000-image review bounded to visible thumbnail pages", async () => {
+    const { draft, grouping } = createReviewState(5000, 50);
+    mocks.loadDraft.mockResolvedValue(draft);
+    mocks.getGrouping.mockResolvedValue(grouping);
+    render(workspace());
+    await screen.findByText("Images 1-12 of 5000");
+    await screen.findByText("Lots 1-6 of 100");
+    await waitFor(() => expect(document.querySelectorAll("img")).toHaveLength(30));
+    fireEvent.click(screen.getByRole("button", { name: "Next images" }));
+    await screen.findByText("Images 13-24 of 5000");
+    expect(document.querySelectorAll("img")).toHaveLength(30);
+  });
+
+  it.each([4999, 5000, 5001])("checks the Smart Upload image-count boundary at %i without creating another upload", async (count) => {
+    mocks.loadDraft.mockResolvedValue(null);
+    mocks.createDraft.mockImplementation(async (args: { files: File[]; details: Record<string, unknown> }) => ({
+      ...createReviewState(0).draft,
+      stage: "selected",
+      sessionId: undefined,
+      details: args.details,
+      files: args.files.map((file, index) => ({ fileId: `images-${index}`, name: file.name, type: file.type, size: file.size, lastModified: file.lastModified, originalOrder: index, uploaded: false, file })),
+    }));
+    render(workspace());
+    await screen.findByRole("button", { name: "Select images" });
+    expect(screen.getByText(/Up to 5,000 images/)).toBeInTheDocument();
+    const files = Array.from({ length: count }, (_, index) => new File(["x"], `IMG_${String(index).padStart(5, "0")}.jpg`, { type: "image/jpeg", lastModified: index + 1 }));
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files } });
+    if (count <= 5000) {
+      await screen.findByRole("button", { name: "Upload & detect lots" });
+      expect(mocks.createDraft).toHaveBeenCalledTimes(1);
+      expect(mocks.createDraft.mock.calls[0][0].files).toHaveLength(count);
+    } else {
+      await screen.findByText("Select no more than 5,000 images in one Smart Upload.");
+      expect(mocks.createDraft).not.toHaveBeenCalled();
+    }
+  });
+
   it("retries completion without reconfirming a grouping whose response failed", async () => {
     const { draft, grouping } = createReviewState();
     const confirmed = { ...grouping, groupingStatus: "confirmed" as const, revision: 1 };
@@ -168,12 +213,102 @@ describe("SmartUploadWorkspace preview memory bounds", () => {
     render(workspace(onSubmitted));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create preview" }));
-    await screen.findByText("Connection interrupted");
-    fireEvent.click(screen.getByRole("button", { name: "Create preview" }));
+    await screen.findByText(/Connection interrupted/);
+    expect(screen.queryByRole("button", { name: "Resume upload" })).not.toBeInTheDocument();
+    expect(mocks.deleteDraft).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Discard upload" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry preview creation" }));
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(submitted));
     expect(mocks.updateGrouping).toHaveBeenCalledTimes(1);
     expect(mocks.complete).toHaveBeenCalledTimes(2);
+    expect(mocks.complete.mock.calls.every((call) => call[1] === "session-1")).toBe(true);
+    expect(mocks.uploadFiles).not.toHaveBeenCalled();
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("restores submitting state through status recovery without fetching all grouping photos", async () => {
+    const { draft } = createReviewState(5000, 50);
+    const submitted = { message: "Accepted", reportId: "report-1", jobId: "preview-job-1" };
+    mocks.loadDraft.mockResolvedValue({ ...draft, stage: "submitting" });
+    mocks.recover.mockRejectedValueOnce(Object.assign(new Error("Still checking the saved upload"), { completionPending: true }))
+      .mockResolvedValueOnce(submitted);
+    const onSubmitted = vi.fn();
+    render(workspace(onSubmitted));
+    fireEvent.click(await screen.findByRole("button", { name: "Check preview status" }));
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(submitted));
+    expect(mocks.recover).toHaveBeenCalledTimes(2);
+    expect(mocks.getGrouping).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.createSession).not.toHaveBeenCalled();
+    expect(mocks.uploadFiles).not.toHaveBeenCalled();
+    expect(mocks.updateDraft).toHaveBeenCalledWith("user-1", "asset", { sessionId: "session-1", stage: "submitting" }, "scope-1");
+  });
+
+  it("recovers an older review draft if the preview was already accepted", async () => {
+    const { draft } = createReviewState();
+    mocks.loadDraft.mockResolvedValue(draft);
+    mocks.getCompletionStatus.mockResolvedValue({ sessionId: "session-1", accepted: true, status: "queued", reportId: "report-1", jobId: "preview-1" });
+    mocks.recover.mockResolvedValue({ message: "Accepted", reportId: "report-1", jobId: "preview-1" });
+    const onSubmitted = vi.fn();
+    render(workspace(onSubmitted));
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledOnce());
+    expect(mocks.getGrouping).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("retains ready-to-complete recovery without uploading again or falling back to Resume upload", async () => {
+    const { draft } = createReviewState();
+    mocks.loadDraft.mockResolvedValue({ ...draft, stage: "failed", sessionId: undefined });
+    mocks.createSession.mockResolvedValue({ sessionId: "session-1", readyToComplete: true });
+    mocks.complete.mockRejectedValue(Object.assign(new Error("Keep the same saved upload"), { completionPending: true }));
+    render(workspace());
+    fireEvent.click(await screen.findByRole("button", { name: "Resume upload" }));
+    await screen.findByRole("button", { name: "Check preview status" });
+    expect(screen.queryByRole("button", { name: "Resume upload" })).not.toBeInTheDocument();
+    expect(mocks.uploadFiles).not.toHaveBeenCalled();
+    expect(mocks.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("coalesces repeat clicks and keeps recovery metadata when closed during a status check", async () => {
+    const { draft } = createReviewState();
+    mocks.loadDraft.mockResolvedValue({ ...draft, stage: "submitting" });
+    mocks.recover.mockRejectedValueOnce(new Error("Backend status is unavailable"));
+    let resolve!: (value: unknown) => void;
+    const onSubmitted = vi.fn();
+    const view = render(workspace(onSubmitted));
+    const check = await screen.findByRole("button", { name: "Check preview status" });
+    mocks.recover.mockImplementation(() => new Promise((done) => { resolve = done; }));
+    fireEvent.click(check);
+    fireEvent.click(check);
+    await waitFor(() => expect(mocks.recover).toHaveBeenCalledTimes(2));
+    const signal = mocks.recover.mock.calls[1][2].signal as AbortSignal;
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolve({ reportId: "report-1", jobId: "preview-1", message: "Accepted" }));
+    expect(onSubmitted).not.toHaveBeenCalled();
+    expect(mocks.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("only returns to saved review if a fresh status still confirms no acceptance (accepted=%s)", async (nowAccepted) => {
+    const { draft, grouping } = createReviewState();
+    mocks.loadDraft.mockResolvedValue({ ...draft, stage: "submitting" });
+    mocks.recover.mockRejectedValue(Object.assign(new Error("Saved upload ready"), { completionPending: true, reviewAvailable: true }));
+    mocks.getGrouping.mockResolvedValue(grouping);
+    render(workspace());
+    const back = await screen.findByRole("button", { name: "Return to saved review" });
+    mocks.getCompletionStatus.mockResolvedValue({ sessionId: "session-1", accepted: nowAccepted, status: nowAccepted ? "queued" : "ready" });
+    fireEvent.click(back);
+    if (nowAccepted) {
+      await screen.findByText(/The upload status changed/);
+      expect(mocks.getGrouping).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Create preview" })).not.toBeInTheDocument();
+    } else {
+      await screen.findByRole("button", { name: "Create preview" });
+      expect(mocks.getGrouping).toHaveBeenCalledOnce();
+    }
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.uploadFiles).not.toHaveBeenCalled();
   });
 
   it("requires an explicit acknowledgement before uploading a timestamp suggestion", async () => {

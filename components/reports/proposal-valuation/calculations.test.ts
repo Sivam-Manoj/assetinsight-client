@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveProposalValuationSummary } from "./calculations";
+import { deriveProposalValuationSummary, proposalValuationColumnTotals } from "./calculations";
 import type { ProposalValuationSheet } from "./types";
 
 const parityFixture: ProposalValuationSheet = {
@@ -119,6 +119,48 @@ describe("Proposal Valuation admin parity", () => {
         threshold: 4150,
         risk: 0.14819277108433737,
       },
+    });
+  });
+});
+
+describe("whole-report PV column totals", () => {
+  it("sums evaluator values and existing row formulas without rounding or mutating the sheet", () => {
+    const sheet = structuredClone(parityFixture);
+    sheet.rows.push({ ...structuredClone(sheet.rows[0]), lot_id: "second", evaluator_values: { riley: 0, jay: 100.75, chad: null, femi: 200.5 } });
+    const before = structuredClone(sheet);
+    const totals = proposalValuationColumnTotals(sheet);
+    expect(totals.evaluators.map(({ total }) => total)).toEqual([40000, 42100.75, 41000, 43200.5]);
+    expect(totals.average).toBe(41500 + (0 + 100.75 + 200.5) / 3);
+    expect(totals.low).toBe(40000);
+    expect(totals.high).toBe(43200.5);
+    expect(totals.buyerPremium).toBe(2000 + 200.5 * 0.15);
+    expect(totals.lotCount).toBe(2);
+    expect(sheet).toEqual(before);
+  });
+
+  it("ignores absent and nonfinite entries, includes zero, and does not sum percentages", () => {
+    const sheet = structuredClone(parityFixture);
+    sheet.rows[0].evaluator_values = { riley: 0, jay: null, chad: Number.NaN, femi: Infinity };
+    sheet.rows[0].buyer_premium_percent = 99;
+    const totals = proposalValuationColumnTotals(sheet);
+    expect(totals.evaluators.map(({ total }) => total)).toEqual([0, 0, 0, 0]);
+    expect(totals).toMatchObject({ average: 0, low: 0, high: 0, buyerPremium: 0 });
+    expect(totals).not.toHaveProperty("buyerPremiumPercent");
+    sheet.rows[0].evaluator_values = {};
+    expect(proposalValuationColumnTotals(sheet)).toEqual(totals);
+  });
+
+  it("tracks dynamic evaluator order, ignores removed columns, and supports an empty sheet", () => {
+    const sheet = structuredClone(parityFixture);
+    sheet.evaluator_columns = [{ id: "new", name: "New appraiser" }, { id: "jay", name: "Jay renamed" }];
+    sheet.rows[0].evaluator_values.new = 10000;
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({
+      evaluators: [{ id: "new", name: "New appraiser", total: 10000 }, { id: "jay", name: "Jay renamed", total: 42000 }],
+      average: 26000, low: 10000, high: 42000, buyerPremium: 2000,
+    });
+    sheet.rows = [];
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({
+      lotCount: 0, evaluators: [{ total: 0 }, { total: 0 }], average: 0, low: 0, high: 0, buyerPremium: 0,
     });
   });
 });

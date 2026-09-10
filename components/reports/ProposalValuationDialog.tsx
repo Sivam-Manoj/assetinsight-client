@@ -38,6 +38,7 @@ import {
   deriveProposalValuationSummary,
   formatMoney,
   formatPercent,
+  proposalValuationColumnTotals,
   proposalValuationTotals,
   recalculateProposalValuationSheet,
   rowAverage,
@@ -45,6 +46,7 @@ import {
 import EvaluatorPicker from "./proposal-valuation/EvaluatorPicker";
 import FormulaDetailsDialog from "./proposal-valuation/FormulaDetailsDialog";
 import ProposalValuationExcelButton from "./proposal-valuation/ProposalValuationExcelButton";
+import { ColumnTotalsFooter, MobileColumnTotals } from "./proposal-valuation/ColumnTotals";
 import type {
   ProposalValuationCalculation,
   ProposalValuationCandidate,
@@ -1232,6 +1234,10 @@ export default function ProposalValuationDialog({
     () => (sheet ? deriveProposalValuationSummary(sheet) : null),
     [sheet]
   );
+  const columnTotals = useMemo(
+    () => (sheet && localSummary ? proposalValuationColumnTotals(sheet, localSummary) : null),
+    [sheet, localSummary]
+  );
   const summary = !dirty && payload?.summary ? payload.summary : localSummary;
   const calculations = useMemo(() => {
     if (!sheet || !summary) return [];
@@ -1776,7 +1782,7 @@ export default function ProposalValuationDialog({
                     </label>
                   </div>
 
-                  <div className="hidden min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] overscroll-contain md:block">
+                  <div tabIndex={0} role="region" aria-label="Proposal valuation lots table" className="hidden min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] overscroll-contain focus-visible:outline-2 focus-visible:outline-[var(--app-accent)] focus-visible:outline-offset-2 md:block">
                     <table className="w-max min-w-full border-separate border-spacing-0">
                       <thead className="bg-[var(--app-panel-alt)] text-left text-[10px] font-bold uppercase tracking-[0.04em] text-[var(--app-text-muted)]">
                         <tr>
@@ -1819,6 +1825,7 @@ export default function ProposalValuationDialog({
                       <tbody>
                         {pagedRows.map((row) => <ValuationRow key={row.lot_id} row={row} evaluators={sheet.evaluator_columns} currency={currency} canEditAll={workspaceCanEditAll} editableEvaluatorId={workspaceEvaluatorColumnId} onChange={updateRow} onEvaluatorChange={updateEvaluatorValue} onOpenGallery={openPictureGallery} />)}
                       </tbody>
+                      {columnTotals ? <ColumnTotalsFooter totals={columnTotals} currency={currency} /> : null}
                     </table>
                   </div>
 
@@ -1826,6 +1833,7 @@ export default function ProposalValuationDialog({
                     <div className="grid gap-2">
                     {pagedRows.map((row) => <MobileValuationCard key={row.lot_id} row={row} evaluators={sheet.evaluator_columns} currency={currency} canEditAll={workspaceCanEditAll} editableEvaluatorId={workspaceEvaluatorColumnId} onChange={updateRow} onEvaluatorChange={updateEvaluatorValue} onOpenGallery={openPictureGallery} />)}
                     </div>
+                    {columnTotals ? <MobileColumnTotals totals={columnTotals} currency={currency} /> : null}
                   </div>
                   {!filteredRows.length ? <div className="rounded-lg border border-dashed border-[var(--app-border)] p-10 text-center text-sm text-[var(--app-text-muted)]">No assets match this search.</div> : null}
                   {filteredRows.length ? (

@@ -31,11 +31,15 @@ import {
   getSmartUploadErrorCode,
   getSmartUploadError,
   getSmartUploadGrouping,
+  getSmartUploadCompletionStatus,
+  recoverSmartUploadCompletion,
+  isSmartUploadCompletionPending,
   startSmartUploadDetection,
   updateSmartUploadDividers,
   uploadSmartUploadFiles,
   waitForSmartUploadGrouping,
   type SmartUploadGrouping,
+  type SmartUploadCompletionResult,
 } from "@/services/smartUpload";
 import {
   createSmartUploadDraft,
@@ -54,6 +58,7 @@ import {
   type SmartUploadOrderingDiagnostic,
   type SmartUploadOrderingStrategy,
 } from "./ordering";
+import { SMART_UPLOAD_MAX_FILES, SMART_UPLOAD_MAX_FILE_BYTES, SMART_UPLOAD_MAX_TOTAL_BYTES } from "./limits";
 
 type Props = {
   open: boolean;
@@ -101,9 +106,6 @@ const SEQUENCE_PAGE_SIZE = 12;
 const GROUP_PAGE_SIZE = 6;
 const LOT_PHOTO_PAGE_SIZE = 12;
 const THUMBNAIL_SIZE = 256;
-const SMART_UPLOAD_MAX_FILES = 2_000;
-const SMART_UPLOAD_MAX_FILE_BYTES = 50 * 1024 * 1024;
-const SMART_UPLOAD_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024;
 
 function isSupportedSmartUploadImage(file: File) {
   const mimeType = String(file.type || "").trim().toLowerCase();
@@ -524,12 +526,68 @@ export default function SmartUploadWorkspace({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
+  const [checkingCompletion, setCheckingCompletion] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
+  const [completionReviewAvailable, setCompletionReviewAvailable] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const uploadLockRef = useRef(false);
   const completionLockRef = useRef(false);
   const detailsRef = useRef(details);
   detailsRef.current = details;
+  const callbacksRef = useRef({ onSubmitted, onClose });
+  callbacksRef.current = { onSubmitted, onClose };
+
+  const finishCompletion = useCallback(async (result: SmartUploadCompletionResult, signal?: AbortSignal) => {
+    if (signal?.aborted) return;
+    // Only confirmed server acceptance permits deletion of local recovery state.
+    await deleteSmartUploadDraft(userId, kind, scopeId).catch(() => undefined);
+    if (signal?.aborted) return;
+    setDraft(null);
+    setGrouping(null);
+    try {
+      await callbacksRef.current.onSubmitted(result);
+    } catch {
+      toast.warning("The report was accepted, but the dashboard did not refresh. Reload the dashboard to see it.");
+      callbacksRef.current.onClose();
+    }
+  }, [kind, scopeId, userId]);
+
+  const runCompletion = useCallback(async (sessionId: string, retry: boolean) => {
+    if (completionLockRef.current) return;
+    completionLockRef.current = true;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setCheckingCompletion(true);
+    setCompletionReviewAvailable(false);
+    setError(null);
+    setCompletionMessage("Your uploaded images and saved lot arrangement are retained. Checking the same preview request.");
+    setDraft((current) => current ? { ...current, sessionId, stage: "submitting" } : current);
+    try {
+      // Persist before the request so a reload recovers this exact session.
+      await updateSmartUploadDraft(userId, kind, { sessionId, stage: "submitting" }, scopeId);
+      if (controller.signal.aborted) return;
+      const operation = retry ? completeSmartUpload : recoverSmartUploadCompletion;
+      const result = await operation(kind, sessionId, {
+        signal: controller.signal,
+        onStatus: (message) => { if (!controller.signal.aborted) setCompletionMessage(message); },
+      });
+      await finishCompletion(result, controller.signal);
+    } catch (completionError) {
+      if (controller.signal.aborted) return;
+      const message = getSmartUploadError(completionError);
+      setCompletionReviewAvailable(isSmartUploadCompletionPending(completionError) && (completionError as { reviewAvailable?: boolean }).reviewAvailable === true);
+      setCompletionMessage(isSmartUploadCompletionPending(completionError)
+        ? message
+        : `${message} Your saved upload is retained. Retry this same preview request; do not re-upload your images.`);
+    } finally {
+      if (abortRef.current === controller) {
+        completionLockRef.current = false;
+        if (!controller.signal.aborted) setCheckingCompletion(false);
+      }
+    }
+  }, [finishCompletion, kind, scopeId, userId]);
 
   useEffect(() => setMounted(true), []);
 
@@ -546,10 +604,27 @@ export default function SmartUploadWorkspace({
     setDividerBeingPlaced(null);
     setGroupingNotice(null);
     setPreviousGrouping(null);
+    setCheckingCompletion(false);
+    setCompletionMessage(null);
+    setCompletionReviewAvailable(false);
     void loadSmartUploadDraft(userId, kind, scopeId)
       .then(async (saved) => {
         let restored = saved;
         let serverGrouping: SmartUploadGrouping | null = null;
+        if (!restored && resumeSessionId) {
+          // Server-only recovery must not mistake a classification job or a
+          // placeholder report identifier for accepted preview generation.
+          const status = await getSmartUploadCompletionStatus(kind, resumeSessionId).catch(() => null);
+          if (cancelled) return;
+          if (status?.accepted || status?.status === "preparing") {
+            restored = await saveServerSmartUploadDraft({
+              userId, kind, scopeId,
+              clientSubmissionId: clientSubmissionId || newSubmissionId(kind),
+              sessionId: resumeSessionId, details: detailsRef.current,
+              stage: "submitting", files: [],
+            });
+          }
+        }
         if (!restored && resumeSessionId) {
           serverGrouping = await getSmartUploadGrouping(kind, resumeSessionId);
           const serverFiles = [
@@ -645,6 +720,14 @@ export default function SmartUploadWorkspace({
         setSelectedLotIndex(0);
         setSelectedLotPhotoPage(0);
         if (resumed.sessionId) {
+          const completionStatus = resumed.stage === "submitting" ? null
+            : await getSmartUploadCompletionStatus(kind, resumed.sessionId).catch(() => null);
+          if (cancelled) return;
+          if (resumed.stage === "submitting" || completionStatus?.accepted || completionStatus?.status === "preparing") {
+            setLoadingDraft(false);
+            await runCompletion(resumed.sessionId, false);
+            return;
+          }
           try {
             const result =
               serverGrouping ||
@@ -798,13 +881,14 @@ export default function SmartUploadWorkspace({
     return () => {
       cancelled = true;
       abortRef.current?.abort();
+      completionLockRef.current = false;
     };
-  }, [clientSubmissionId, kind, open, resumeSessionId, scopeId, userId]);
+  }, [clientSubmissionId, kind, open, resumeSessionId, runCompletion, scopeId, userId]);
 
   const active =
     draft?.stage === "uploading" ||
     draft?.stage === "classifying" ||
-    draft?.stage === "submitting" ||
+    checkingCompletion ||
     Boolean(busyFileId);
   const hasUnrecoverableLiveFiles = Boolean(
     draft?.files.some((file) => !file.uploaded && Boolean(file.file))
@@ -1189,20 +1273,7 @@ export default function SmartUploadWorkspace({
         return;
       }
       if (session.readyToComplete) {
-        const completed = await completeSmartUpload(kind, session.sessionId);
-        await deleteSmartUploadDraft(userId, kind, scopeId).catch(
-          () => undefined
-        );
-        setDraft(null);
-        setGrouping(null);
-        try {
-          await onSubmitted(completed);
-        } catch {
-          toast.warning(
-            "The report was accepted, but the dashboard did not refresh. Reload the dashboard to see it."
-          );
-          onClose();
-        }
+        await runCompletion(session.sessionId, true);
         return;
       }
 
@@ -1233,15 +1304,14 @@ export default function SmartUploadWorkspace({
         onFilesConfirmed: async (files) => {
           confirmedFiles = files;
           await updateSmartUploadDraft(userId, kind, { files }, scopeId);
+          const confirmedById = new Map(files.map((file) => [file.fileId, file.uploaded]));
           setDraft((current) =>
             current
               ? {
                   ...current,
                   files: current.files.map((item) => ({
                     ...item,
-                    uploaded:
-                      files.find((file) => file.fileId === item.fileId)
-                        ?.uploaded || false,
+                    uploaded: confirmedById.get(item.fileId) || false,
                   })),
                 }
               : current
@@ -1337,15 +1407,20 @@ export default function SmartUploadWorkspace({
     kind,
     onClose,
     onSubmitted,
+    runCompletion,
     scopeId,
     selectionReviewRequired,
     userId,
   ]);
 
   const refreshLatestGrouping = useCallback(
-    async (notice: string) => {
+    async (notice: string, requireReview = false, signal?: AbortSignal) => {
       if (!draft?.sessionId) return false;
       const latest = await getSmartUploadGrouping(kind, draft.sessionId);
+      if (signal?.aborted) return false;
+      if (requireReview && latest.groupingStatus !== "review_ready" && latest.groupingStatus !== "confirmed") {
+        throw new Error("This saved upload is not ready for lot review. Keep the same session and check its status before continuing.");
+      }
       const reviewFiles = attachGroupingUrls(draft.files, latest);
       const reviewDraft = {
         ...draft,
@@ -1390,6 +1465,32 @@ export default function SmartUploadWorkspace({
     },
     [draft, kind, scopeId, userId]
   );
+
+  const returnToSavedReview = useCallback(async () => {
+    if (!draft?.sessionId || completionLockRef.current || !completionReviewAvailable) return;
+    completionLockRef.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setCheckingCompletion(true);
+    try {
+      // Another window may have queued this session since the last status check.
+      const status = await getSmartUploadCompletionStatus(kind, draft.sessionId, controller.signal);
+      if (controller.signal.aborted) return;
+      if (status.accepted || status.status !== "ready") {
+        setCompletionReviewAvailable(false);
+        setCompletionMessage("The upload status changed. Check preview status again before editing its saved lot arrangement.");
+        return;
+      }
+      await refreshLatestGrouping("The same saved lot arrangement is ready to review. No photos were uploaded again.", true, controller.signal);
+    } catch (reviewError) {
+      if (!controller.signal.aborted) setCompletionMessage(getSmartUploadError(reviewError));
+    } finally {
+      if (abortRef.current === controller) {
+        completionLockRef.current = false;
+        if (!controller.signal.aborted) setCheckingCompletion(false);
+      }
+    }
+  }, [completionReviewAvailable, draft?.sessionId, kind, refreshLatestGrouping]);
 
   const recoverStaleGrouping = useCallback(
     async (updateError: unknown) => {
@@ -1809,7 +1910,9 @@ export default function SmartUploadWorkspace({
       return;
     }
     completionLockRef.current = true;
-    let result: Awaited<ReturnType<typeof completeSmartUpload>>;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setCheckingCompletion(true);
     try {
       setError(null);
       setDraft((current) =>
@@ -1821,6 +1924,7 @@ export default function SmartUploadWorkspace({
         { stage: "submitting" },
         scopeId
       );
+      if (controller.signal.aborted) return;
       if (grouping.groupingStatus !== "confirmed") {
         const confirmed = await updateSmartUploadDividers({
           kind,
@@ -1832,10 +1936,11 @@ export default function SmartUploadWorkspace({
           unresolvedDividerIds: [],
           confirm: true,
         });
+        if (controller.signal.aborted) return;
         setGrouping(confirmed);
       }
-      result = await completeSmartUpload(kind, draft.sessionId);
     } catch (submitError) {
+      if (controller.signal.aborted) return;
       const message = getSmartUploadError(submitError);
       try {
         await refreshLatestGrouping(
@@ -1854,40 +1959,26 @@ export default function SmartUploadWorkspace({
       }
       setError(message);
       completionLockRef.current = false;
+      setCheckingCompletion(false);
       return;
     }
-
-    // The report is already accepted at this point. IndexedDB cleanup is
-    // best-effort so a local quota/storage failure cannot suppress the
-    // successful handoff to the dashboard.
-    await deleteSmartUploadDraft(userId, kind, scopeId).catch(() => undefined);
-    setDraft(null);
-    setGrouping(null);
-    try {
-      await onSubmitted(result);
-    } catch {
-      toast.warning(
-        "The report was accepted, but the dashboard did not refresh. Reload the dashboard to see it."
-      );
-      onClose();
-    }
     completionLockRef.current = false;
+    await runCompletion(draft.sessionId, true);
   }, [
     draft?.sessionId,
     dividerSet,
     grouping,
     kind,
-    onClose,
-    onSubmitted,
     orderingReview?.ambiguous,
     refreshLatestGrouping,
+    runCompletion,
     scopeId,
     unplacedDividerIds.length,
     userId,
   ]);
 
   const discard = useCallback(async () => {
-    if (!draft || discarding) return;
+    if (!draft || discarding || draft.stage === "submitting") return;
     setDiscarding(true);
     setError(null);
     try {
@@ -1979,7 +2070,8 @@ export default function SmartUploadWorkspace({
           <button
             type="button"
             onClick={() => void discard()}
-            disabled={active || discarding}
+            disabled={active || discarding || draft.stage === "submitting"}
+            aria-label="Discard upload"
             className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--app-danger-border)] px-3 text-sm font-semibold text-[var(--app-danger)] disabled:opacity-50"
           >
             {discarding ? (
@@ -2107,7 +2199,7 @@ export default function SmartUploadWorkspace({
                   Select images
                 </button>
                 <p className="mt-4 text-xs text-[var(--app-text-muted)]">
-                  JPEG, PNG, WebP, HEIC, and HEIF. Up to 2,000 images, 50 MB
+                  JPEG, PNG, WebP, HEIC, and HEIF. Up to {SMART_UPLOAD_MAX_FILES.toLocaleString("en-US")} images, 50 MB
                   each, 20 GB total, and 200 report photos per detected lot.
                 </p>
               </div>
@@ -2128,8 +2220,7 @@ export default function SmartUploadWorkspace({
                       {progressLabel(draft.stage)}
                     </span>
                     <span className="text-sm text-[var(--app-text-muted)]">
-                      {draft.files.length.toLocaleString()} images -{" "}
-                      {formatBytes(totalBytes)}
+                      {draft.files.length ? `${draft.files.length.toLocaleString()} images - ${formatBytes(totalBytes)}` : "Saved server upload"}
                     </span>
                   </div>
                   <div
@@ -2137,7 +2228,8 @@ export default function SmartUploadWorkspace({
                     role="progressbar"
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    aria-valuenow={Math.round(stagePercent)}
+                    aria-valuenow={draft.stage === "submitting" ? undefined : Math.round(stagePercent)}
+                    aria-label={draft.stage === "submitting" ? "Preview request status" : "Upload progress"}
                   >
                     <div
                       className="h-full bg-[var(--app-accent)] transition-[width] duration-300"
@@ -2151,6 +2243,8 @@ export default function SmartUploadWorkspace({
                         ? `${Math.round(grouping?.progressPercent || 0)}% classified`
                         : draft.stage === "review"
                           ? `${grouping?.groups.length || 0} lots detected - ${grouping?.dividerFileIds.length || 0} dividers excluded`
+                          : draft.stage === "submitting"
+                            ? "Images uploaded. Waiting for preview processing to be confirmed."
                           : selectionReviewRequired
                             ? "Check the suggested image order before uploading"
                             : "Ready to upload in the confirmed order"}
@@ -2169,6 +2263,27 @@ export default function SmartUploadWorkspace({
                 ) : null}
               </section>
 
+              {draft.stage === "submitting" ? (
+                <section aria-label="Preview creation status" className="rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] p-4 sm:p-5">
+                  <h3 className="text-lg font-bold">{checkingCompletion ? "Confirming preview creation" : "Preview status not yet confirmed"}</h3>
+                  <p role="status" aria-live="polite" className="mt-2 text-sm leading-6 text-[var(--app-text-muted)]">
+                    {completionMessage || "Saving the confirmed lot arrangement before queueing your preview."}
+                  </p>
+                  <p className="mt-2 text-sm leading-6">Keep this saved upload. Do not select or upload the same photos again. Your report will appear in the processing queue once accepted.</p>
+                  {!checkingCompletion ? (
+                    <>
+                      <p className="mt-2 text-sm text-[var(--app-text-muted)]">You can close this window and return to the same Smart Upload to continue checking.</p>
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                        <button type="button" onClick={() => draft.sessionId && void runCompletion(draft.sessionId, false)} className="min-h-11 rounded-md bg-[var(--app-accent)] px-4 text-sm font-bold text-[var(--app-on-accent)]">Check preview status</button>
+                        <button type="button" onClick={() => draft.sessionId && void runCompletion(draft.sessionId, true)} className="min-h-11 rounded-md border border-[var(--app-control-border)] px-4 text-sm font-bold">Retry preview creation</button>
+                        {completionReviewAvailable ? <button type="button" onClick={() => void returnToSavedReview()} className="min-h-11 rounded-md border border-[var(--app-control-border)] px-4 text-sm font-bold">Return to saved review</button> : null}
+                      </div>
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {draft.stage !== "submitting" ? <>
               {orderingReview ? (
                 <section
                   className={`rounded-md border px-4 py-3 ${
@@ -2803,6 +2918,7 @@ export default function SmartUploadWorkspace({
                   ) : null}
                 </section>
               ) : null}
+              </> : null}
             </>
           )}
         </div>

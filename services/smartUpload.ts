@@ -506,7 +506,8 @@ export async function getSmartUploadGrouping(
   sessionId: string
 ) {
   const { data: envelope } = await API.get<{ data: SmartUploadGrouping }>(
-    `${endpointFor(kind)}/upload-session/${sessionId}/smart-grouping`
+    `${endpointFor(kind)}/upload-session/${sessionId}/smart-grouping`,
+    { timeout: 20_000 }
   );
   return normalizeSmartUploadGrouping(envelope.data, sessionId);
 }
@@ -580,26 +581,157 @@ export async function updateSmartUploadDividers(args: {
         ? { unresolvedDividerIds: args.unresolvedDividerIds }
         : {}),
       confirm: args.confirm === true,
-    }
+    },
+    { timeout: 45_000 }
   );
   return normalizeSmartUploadGrouping(envelope.data, args.sessionId);
 }
 
-export async function completeSmartUpload(
-  kind: SmartUploadKind,
-  sessionId: string
-) {
-  const { data } = await API.post(
-    `${endpointFor(kind)}/upload-session/${sessionId}/complete`,
-    {}
-  );
-  return data as {
-    message: string;
-    jobId: string;
-    reportId: string;
-    status: string;
-    phase: string;
+export type SmartUploadCompletionResult = {
+  message: string;
+  jobId: string;
+  reportId: string;
+  status: string;
+  phase: string;
+};
+
+export type SmartUploadCompletionStatus = {
+  sessionId: string;
+  status: "ready" | "preparing" | "queued" | "processed" | "failed";
+  accepted: boolean;
+  reportId?: string;
+  jobId?: string;
+  message?: string;
+  phase?: string;
+};
+
+type CompletionOptions = { signal?: AbortSignal; onStatus?: (message: string) => void };
+const COMPLETION_TIMEOUT_MS = 45_000;
+const COMPLETION_STATUS_TIMEOUT_MS = 20_000;
+const COMPLETION_STATUS_ATTEMPTS = 6;
+
+export class SmartUploadCompletionPendingError extends Error {
+  readonly completionPending = true;
+  constructor(message = "Preview creation has not been confirmed yet. Your uploaded images and saved lot arrangement are retained. Check this same upload again; do not re-upload the images.", readonly reviewAvailable = false) {
+    super(message);
+    this.name = "SmartUploadCompletionPendingError";
+  }
+}
+
+export function isSmartUploadCompletionPending(error: unknown) {
+  return (error as { completionPending?: boolean })?.completionPending === true;
+}
+
+function throwIfCompletionAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw new DOMException("Completion status check cancelled.", "AbortError");
+}
+
+function isAmbiguousCompletionError(error: unknown) {
+  const candidate = error as { response?: { status?: number }; code?: string };
+  const status = candidate?.response?.status;
+  return !candidate?.response || [408, 500, 502, 503, 504].includes(Number(status));
+}
+
+function completionResult(value: unknown): SmartUploadCompletionResult | null {
+  if (!isRecord(value) || typeof value.reportId !== "string" || !value.reportId.trim() || typeof value.jobId !== "string" || !value.jobId.trim()) return null;
+  return {
+    reportId: value.reportId,
+    jobId: value.jobId,
+    message: typeof value.message === "string" ? value.message : "Smart Upload was accepted. Preview processing continues in the report queue.",
+    status: typeof value.status === "string" ? value.status : "queued",
+    phase: typeof value.phase === "string" ? value.phase : "queued",
   };
+}
+
+export async function getSmartUploadCompletionStatus(kind: SmartUploadKind, sessionId: string, signal?: AbortSignal): Promise<SmartUploadCompletionStatus> {
+  const { data: envelope } = await API.get<{ data: SmartUploadCompletionStatus }>(
+    `${endpointFor(kind)}/upload-session/${sessionId}/status`,
+    { signal, timeout: COMPLETION_STATUS_TIMEOUT_MS }
+  );
+  const status = envelope.data;
+  if (!isRecord(status) || status.sessionId !== sessionId || !["ready", "preparing", "queued", "processed", "failed"].includes(String(status.status)) || typeof status.accepted !== "boolean") {
+    throw new SmartUploadCompletionPendingError("The server did not return a valid completion status. Your same upload is retained; retry its status check.");
+  }
+  return status;
+}
+
+async function postSmartUploadCompletion(kind: SmartUploadKind, sessionId: string, signal?: AbortSignal) {
+  throwIfCompletionAborted(signal);
+  const { data } = await API.post(
+    `${endpointFor(kind)}/upload-session/${sessionId}/complete`, {},
+    { signal, timeout: COMPLETION_TIMEOUT_MS }
+  );
+  throwIfCompletionAborted(signal);
+  return completionResult(data);
+}
+
+function completionDelay(delay: number, signal?: AbortSignal) {
+  throwIfCompletionAborted(signal);
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Completion status check cancelled.", "AbortError"));
+    };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, delay);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Recover an ambiguous response using the existing session only; never recreate or re-upload. */
+export async function recoverSmartUploadCompletion(kind: SmartUploadKind, sessionId: string, options: CompletionOptions = {}): Promise<SmartUploadCompletionResult> {
+  let handoffRetries = 0;
+  for (let attempt = 0; attempt < COMPLETION_STATUS_ATTEMPTS; attempt += 1) {
+    throwIfCompletionAborted(options.signal);
+    if ((typeof navigator !== "undefined" && navigator.onLine === false) || (typeof document !== "undefined" && document.visibilityState === "hidden")) {
+      throw new SmartUploadCompletionPendingError("Automatic status checks are paused while this page is offline or in the background. Return to this same upload and check preview status; your uploaded images are retained.");
+    }
+    options.onStatus?.("Checking the same saved upload. Preview creation may still be processing; no images are being re-uploaded.");
+    try {
+      const status = await getSmartUploadCompletionStatus(kind, sessionId, options.signal);
+      throwIfCompletionAborted(options.signal);
+      if (status.accepted) {
+        const result = completionResult(status);
+        if (result) return result;
+        throw new SmartUploadCompletionPendingError("The accepted preview did not include its report and job identifiers. Keep this upload and check its status again.");
+      }
+      if (status.status === "ready") {
+        throw new SmartUploadCompletionPendingError("No preview job is confirmed yet. The saved upload is ready; use Retry preview creation to continue the same session without uploading photos again, or return to its saved review.", true);
+      }
+      if (status.status === "failed") {
+        throw new SmartUploadCompletionPendingError(status.message || "The server could not finish this upload. Your session is retained; check its status or contact support before uploading anything again.");
+      }
+      if (status.status === "preparing" && handoffRetries < 2) {
+        handoffRetries += 1;
+        options.onStatus?.("Finishing the same saved upload and queueing its preview. Your images will not be uploaded again.");
+        try {
+          const accepted = await postSmartUploadCompletion(kind, sessionId, options.signal);
+          if (accepted) return accepted;
+        } catch (error) {
+          throwIfCompletionAborted(options.signal);
+          if (!isAmbiguousCompletionError(error)) throw new SmartUploadCompletionPendingError(getSmartUploadError(error));
+        }
+      }
+    } catch (error) {
+      throwIfCompletionAborted(options.signal);
+      if (isSmartUploadCompletionPending(error)) throw error;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 404) throw new SmartUploadCompletionPendingError("Completion status is not available on this server yet. Keep this saved upload and retry the same preview creation after the backend update; do not re-upload your images.");
+      if (!isAmbiguousCompletionError(error)) throw new SmartUploadCompletionPendingError(getSmartUploadError(error));
+    }
+    if (attempt + 1 < COMPLETION_STATUS_ATTEMPTS) await completionDelay(Math.min(1500 * 2 ** attempt, 8000), options.signal);
+  }
+  throw new SmartUploadCompletionPendingError();
+}
+
+export async function completeSmartUpload(kind: SmartUploadKind, sessionId: string, options: CompletionOptions = {}): Promise<SmartUploadCompletionResult> {
+  try {
+    const result = await postSmartUploadCompletion(kind, sessionId, options.signal);
+    if (result) return result;
+  } catch (error) {
+    throwIfCompletionAborted(options.signal);
+    if (!isAmbiguousCompletionError(error)) throw error;
+  }
+  return recoverSmartUploadCompletion(kind, sessionId, options);
 }
 
 export async function cancelSmartUpload(
