@@ -234,6 +234,9 @@ function statusTone(
     stopped: { bg: "var(--app-warning-soft)", color: "var(--app-warning)", label: "Stopped" },
   };
   if (workflowStage && workflowLabels[workflowStage]) return workflowLabels[workflowStage];
+  if (generationState === "error" || reportStatus === "error") {
+    return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Failed" };
+  }
   if (reportStatus === "processing") {
     return { bg: "var(--app-info-soft)", color: "var(--app-info)", label: "Generating" };
   }
@@ -245,9 +248,6 @@ function statusTone(
   }
   if (reportStatus === "declined") {
     return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Changes required" };
-  }
-  if (generationState === "error") {
-    return { bg: "var(--app-danger-soft)", color: "var(--app-danger)", label: "Failed" };
   }
   if (isGeneratingFiles) {
     return {
@@ -486,6 +486,8 @@ export default function ReportsPage() {
   const [deliveryDialogItem, setDeliveryDialogItem] =
     useState<AuctioneerDeliverySummary | null>(null);
   const loadingReportsRef = useRef(false);
+  const retryingKeysRef = useRef(new Set<string>());
+  const [retryingKeys, setRetryingKeys] = useState<ReadonlySet<string>>(() => new Set());
 
   useEffect(() => {
     const globalSearchQuery =
@@ -662,6 +664,9 @@ export default function ReportsPage() {
       router.push(salvageStatusPath(group.key));
       return;
     }
+    if (retryingKeysRef.current.has(group.key)) return;
+    retryingKeysRef.current.add(group.key);
+    setRetryingKeys(new Set(retryingKeysRef.current));
     try {
       const type = String(group.type || "").toLowerCase();
       if (type === "asset") await resubmitReport(group.key);
@@ -671,6 +676,9 @@ export default function ReportsPage() {
       await loadReports();
     } catch (retryError: any) {
       toast.error(retryError?.response?.data?.message || retryError?.message || "Retry failed");
+    } finally {
+      retryingKeysRef.current.delete(group.key);
+      setRetryingKeys(new Set(retryingKeysRef.current));
     }
   }
 
@@ -1069,7 +1077,7 @@ export default function ReportsPage() {
         workflowProgressPercent: (listing as any).workflow_progress_percent,
         reportStatus: listing.status,
         generationProgress: (listing as any).generation_progress,
-        jobError: (listing as any).job_error,
+        jobError: listing.job_error || listing.error_message,
         lotSummary: summarizeLotNumbers(lots, listing._id),
         lotCount: lots.length,
         thumbnail: getFirstReportImage(lots, listing),
@@ -1329,14 +1337,30 @@ export default function ReportsPage() {
     const showGeneratingOnly =
       group.workflowStage === "generating_files" ||
       (!group.workflowStage && Boolean(group.isGeneratingFiles) && !hasDownloads);
-    const showErrorOnly =
-      (group.workflowStage === "error" || group.generationState === "error") &&
-      !hasDownloads &&
-      !["processing", "preview", "declined"].includes(
-        String(group.reportStatus || "")
-      );
+    // Old artifact URLs can survive failed regeneration. They do not prove
+    // that the edited revision completed, or suppress its actionable error.
+    const showErrorOnly = group.workflowStage === "error" ||
+      (!group.workflowStage && (group.generationState === "error" || group.reportStatus === "error"));
     const downloadable = group.downloadable !== false;
 
+    if (showErrorOnly) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="break-words text-xs font-semibold text-[var(--app-danger)]">
+            {group.jobError || group.workflowMessage || "File generation failed. Open Preview to review your saved changes, then retry."}
+          </span>
+          <button
+            type="button"
+            disabled={retryingKeys.has(group.key)}
+            aria-busy={retryingKeys.has(group.key)}
+            className="rounded-md border border-[var(--app-danger-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)] disabled:cursor-wait disabled:opacity-60"
+            onClick={() => void handleRetry(group)}
+          >
+            {retryingKeys.has(group.key) ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      );
+    }
     if (isPreparingPreview) {
       return (
         <GeneratingFilesProgress
@@ -1355,20 +1379,12 @@ export default function ReportsPage() {
     if (showGeneratingOnly) {
       return <GeneratingFilesProgress progress={workflowProgress} />;
     }
-    if (showErrorOnly) {
+    if (group.type === "LotListing" && (!downloadable ||
+        group.workflowStage === "awaiting_approval" || group.workflowStage === "awaiting_release")) {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-[var(--app-danger)]">
-            {group.jobError || "File generation failed."}
-          </span>
-          <button
-            type="button"
-            className="rounded-md border border-[var(--app-danger-border)] px-2.5 py-1.5 text-xs font-semibold text-[var(--app-danger)] hover:bg-[var(--app-danger-soft)]"
-            onClick={() => void handleRetry(group)}
-          >
-            Retry
-          </button>
-        </div>
+        <span className="text-xs font-semibold text-[var(--app-warning)]">
+          Lot Listings release automatically after files finish generating. Open Preview to regenerate incomplete files.
+        </span>
       );
     }
     if (group.workflowStage === "awaiting_approval") {

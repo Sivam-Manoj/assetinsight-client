@@ -218,11 +218,78 @@ describe("My Reports thumbnails", () => {
     mocks.downloadCr.mockReset();
     mocks.downloadCrDocx.mockReset();
     mocks.routerPush.mockReset();
+    mocks.resubmitLotListing.mockReset().mockResolvedValue({});
     vi.stubGlobal("IntersectionObserver", ImmediatelyIntersectingObserver);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each(["approved", "error", "preview"] as const)("shows a failed Lot Listing's actual error despite old files and status %s", async (status) => {
+    mocks.getAssetReports.mockResolvedValue({ data: [] });
+    mocks.getLotListings.mockResolvedValue({ data: [{
+      ...previewReadyLotListing, status,
+      workflow_stage: "error", generation_state: "error", downloadable: false,
+      job_error: "Photo archive could not be generated",
+      preview_files: { excel: "/old.xlsx", images: "/old.zip" },
+    }] });
+    render(<ReportsPage />);
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /CV-LOT-PREVIEW/ });
+    expect(within(row).getByText("Photo archive could not be generated")).toBeInTheDocument();
+    expect(screen.queryByText("Files available after release")).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: /Preview Lot Listing report/ })).toBeInTheDocument();
+    expect(within(screen.getByRole("list")).getByText("Photo archive could not be generated")).toBeInTheDocument();
+
+    let finishRetry!: () => void;
+    mocks.resubmitLotListing.mockReturnValueOnce(new Promise<void>((resolve) => { finishRetry = resolve; }));
+    const retry = within(row).getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(mocks.resubmitLotListing).toHaveBeenCalledTimes(1);
+    expect(mocks.resubmitLotListing).toHaveBeenCalledWith("lot-preview-ready");
+    expect(retry).toBeDisabled();
+    mocks.getLotListings.mockResolvedValue({ data: [{
+      ...previewReadyLotListing, workflow_stage: "generating_files", downloadable: false,
+      workflow_message: "Generating updated files", files_generating: true,
+    }] });
+    finishRetry();
+    await waitFor(() => expect(within(row).getByText("Generating updated files")).toBeInTheDocument());
+    expect(within(row).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Asset release gates while explaining automatic Lot Listing release", async () => {
+    mocks.getAssetReports.mockResolvedValue({ data: [{
+      ...reportWithThumbnail, workflow_stage: "awaiting_release", downloadable: false,
+    }] });
+    mocks.getLotListings.mockResolvedValue({ data: [{
+      ...previewReadyLotListing, status: "approved", workflow_stage: "awaiting_release",
+      generation_state: "ready", downloadable: false,
+      preview_files: { excel: "/old.xlsx", images: "/old.zip" },
+    }] });
+    render(<ReportsPage />);
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const asset = within(table).getByRole("row", { name: /CV-THUMB-100/ });
+    const lot = within(table).getByRole("row", { name: /CV-LOT-PREVIEW/ });
+    expect(within(asset).getByText("Approved; awaiting release")).toBeInTheDocument();
+    expect(within(lot).getByText(/Lot Listings release automatically/)).toBeInTheDocument();
+    expect(within(lot).queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
+  });
+
+  it("shows legacy error_message when no canonical workflow state is available", async () => {
+    mocks.getAssetReports.mockResolvedValue({ data: [] });
+    mocks.getLotListings.mockResolvedValue({ data: [{
+      ...previewReadyLotListing, status: "error", workflow_stage: undefined, generation_state: undefined,
+      error_message: "Unable to publish report files", downloadable: false,
+    }] });
+    render(<ReportsPage />);
+    const table = await screen.findByRole("table", { name: "Generated reports" });
+    const row = within(table).getByRole("row", { name: /CV-LOT-PREVIEW/ });
+    expect(within(row).getByText("Failed")).toBeInTheDocument();
+    expect(within(row).getByText("Unable to publish report files")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
   it("wires a source thumbnail into both responsive report presentations", async () => {

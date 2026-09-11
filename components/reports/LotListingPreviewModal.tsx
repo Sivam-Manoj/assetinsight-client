@@ -529,9 +529,7 @@ export default function LotListingPreviewModal({
           assumeFilesRegenerating: true,
         });
         toast.success(
-          isAssignedApprovalMode
-            ? "Lot listing files are being regenerated and will remain pending approval."
-            : "Lot listing files are being regenerated and will remain automatically released."
+          "Lot listing files will be approved and released automatically after generation succeeds."
         );
       } else {
         // Submit the edited snapshot once. Saving first and then submitting the
