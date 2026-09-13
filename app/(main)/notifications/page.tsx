@@ -6,6 +6,8 @@ import useSWR, { mutate } from "swr";
 import { toast } from "@/components/ui/toast";
 import { notificationCacheKey, NotificationsService, type WorkspaceNotification } from "@/services/notifications";
 import styles from "./Notifications.module.css";
+import PreviewReminderContent from "@/components/notifications/PreviewReminderContent";
+import { previewReminderDetails } from "@/lib/previewReminderNotification";
 
 type Filter = "all" | "new" | "seen";
 
@@ -64,7 +66,14 @@ export default function NotificationsPage() {
           ) : items.map((item) => (
             <article className={styles.row} data-unread={!item.read} key={item.id}>
               <span className={styles.rowIcon}><Bell size={18} /></span>
-              <div className={styles.rowCopy}><div><strong>{item.title}</strong>{!item.read ? <span>New</span> : null}</div><p>{item.body}</p><time>{formatDate(item.createdAt)}</time></div>
+              <div className={styles.rowCopy}><div><strong>{item.title}</strong>{!item.read ? <span>New</span> : null}</div>
+                {previewReminderDetails(item) ? <details className={styles.messageDetails} onToggle={(event) => {
+                  if (event.currentTarget.open) void markRead(item).catch(() => undefined);
+                }}>
+                  <summary>Read message and report guidance</summary>
+                  <PreviewReminderContent item={item} />
+                </details> : <p>{item.body}</p>}
+                <time>{formatDate(item.createdAt)}</time></div>
               <div className={styles.actions}>
                 {!item.read ? <button title="Mark read" aria-label={`Mark ${item.title} read`} onClick={() => void markRead(item)}><Check size={17} /></button> : null}
                 <button title="Delete" aria-label={`Delete ${item.title}`} onClick={() => void remove(item)}><Trash2 size={17} /></button>

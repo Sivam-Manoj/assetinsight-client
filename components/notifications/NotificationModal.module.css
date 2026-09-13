@@ -71,6 +71,22 @@
 .itemCopy strong { font-size: .84rem; }
 .itemCopy > span { overflow: hidden; color: var(--app-text-muted); font-size: .78rem; line-height: 1.42; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .itemCopy small { color: var(--app-text-subtle); font-size: .69rem; }
+.messagePane { padding: 16px; outline: none; }
+.backButton { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--app-accent); min-height: 40px; padding: 0; margin-bottom: 12px; font-weight: 700; }
+.message { min-width: 0; display: grid; gap: 16px; color: var(--app-text); overflow-wrap: anywhere; }
+.message h3 { margin: 0; font-size: 1.06rem; line-height: 1.4; }
+.message h4 { margin: 0 0 7px; font-size: .85rem; }
+.messageMeta { margin: 0; display: grid; gap: 7px; font-size: .78rem; padding-bottom: 12px; border-bottom: 1px solid var(--app-border); }
+.messageMeta > div { display: grid; grid-template-columns: 48px minmax(0,1fr); gap: 10px; }
+.messageMeta dt { color: var(--app-text-muted); }
+.messageMeta dd { margin: 0; }
+.messageText { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: .85rem; line-height: 1.6; color: var(--app-text); }
+.messageIssue { border-left: 3px solid var(--app-danger); padding: 12px; background: var(--app-danger-soft); border-radius: 4px; }
+.message ol { margin: 0; padding-left: 22px; font-size: .84rem; line-height: 1.6; }
+.message li { white-space: pre-wrap; margin-bottom: 8px; }
+.messageNote { margin: 0; font-size: .76rem; line-height: 1.5; color: var(--app-text-muted); }
+.previewLink { display: flex; align-items: center; justify-content: center; padding: 11px 14px; min-height: 44px; border-radius: 7px; background: var(--app-accent); color: var(--app-on-accent); text-decoration: none; text-align: center; font-weight: 750; font-size: .85rem; }
+.backButton:focus-visible, .previewLink:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 3px; }
 .deleteButton { position: absolute; right: 12px; bottom: 13px; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--app-text-subtle); }
 .deleteButton:hover { background: var(--app-danger-soft); color: var(--app-danger); }
 

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck, ChevronRight, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, Bell, CheckCheck, ChevronRight, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { mutate } from "swr";
 import {
   notificationCacheKey,
@@ -11,6 +11,8 @@ import {
   type WorkspaceNotification,
 } from "@/services/notifications";
 import styles from "./NotificationModal.module.css";
+import { previewReminderDetails } from "@/lib/previewReminderNotification";
+import PreviewReminderContent from "./PreviewReminderContent";
 
 function notificationHref(item: WorkspaceNotification) {
   const data = item.data || {};
@@ -36,6 +38,9 @@ function relativeDate(value: string) {
 export default function NotificationModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [selected, setSelected] = useState<WorkspaceNotification | null>(null);
+  const returnFocusRef = useRef<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
   const cacheKey = notificationCacheKey(1, 10);
   const { data, isLoading, error } = useSWR(cacheKey, () => NotificationsService.list(1, 10), {
     revalidateOnFocus: true,
@@ -43,19 +48,38 @@ export default function NotificationModal({ onClose }: { onClose: () => void }) 
 
   useEffect(() => {
     const previous = document.body.style.overflow;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (event.key === "Tab" && panelRef.current) {
+        const controls = Array.from(panelRef.current.querySelectorAll<HTMLElement>("button, a[href], [tabindex='0']"));
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first?.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     panelRef.current?.focus();
     return () => {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
     };
   }, [onClose]);
 
   const items = useMemo(() => data?.items || [], [data?.items]);
+
+  useEffect(() => {
+    if (selected) detailRef.current?.focus();
+    else if (returnFocusRef.current) {
+      Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[data-notification-id]") || [])
+        .find((element) => element.dataset.notificationId === returnFocusRef.current)?.focus();
+    }
+  }, [selected]);
 
   const refreshNotificationCaches = async () => {
     await mutate((key) => typeof key === "string" && key.startsWith("/notifications?"));
@@ -63,8 +87,10 @@ export default function NotificationModal({ onClose }: { onClose: () => void }) 
 
   const markRead = async (item: WorkspaceNotification) => {
     if (!item.read) {
-      await NotificationsService.markRead(item.id);
-      await refreshNotificationCaches();
+      try {
+        await NotificationsService.markRead(item.id);
+        await refreshNotificationCaches();
+      } catch { /* Keep the full message readable during an offline read receipt. */ }
     }
   };
 
@@ -110,7 +136,10 @@ export default function NotificationModal({ onClose }: { onClose: () => void }) 
         </header>
 
         <div className={styles.list}>
-          {isLoading ? (
+          {selected ? <div ref={detailRef} tabIndex={-1} className={styles.messagePane}>
+            <button type="button" className={styles.backButton} onClick={() => setSelected(null)}><ArrowLeft size={16} /> Back to notifications</button>
+            <PreviewReminderContent item={selected} onOpenPreview={onClose} />
+          </div> : isLoading ? (
             Array.from({ length: 4 }).map((_, index) => <div className={styles.skeleton} key={index} />)
           ) : error ? (
             <div className={styles.state}>Notifications could not be loaded. Try again shortly.</div>
@@ -121,8 +150,16 @@ export default function NotificationModal({ onClose }: { onClose: () => void }) 
               <article className={styles.item} data-unread={!item.read} key={item.id}>
                 <Link
                   className={styles.itemLink}
+                  data-notification-id={item.id}
                   href={notificationHref(item)}
-                  onClick={() => { void markRead(item); onClose(); }}
+                  onClick={(event) => {
+                    void markRead(item);
+                    if (previewReminderDetails(item)) {
+                      event.preventDefault();
+                      returnFocusRef.current = item.id;
+                      setSelected(item);
+                    } else onClose();
+                  }}
                 >
                   <span className={styles.unreadDot} aria-hidden />
                   <span className={styles.itemCopy}>
