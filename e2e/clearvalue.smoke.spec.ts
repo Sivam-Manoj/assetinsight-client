@@ -1001,7 +1001,7 @@ test("mobile preview actions remain visible without page overflow", async ({
   await expectNoHorizontalOverflow(page);
 });
 
-test("asset preview cover and bulk Legal controls stay responsive in both themes", async ({
+test("asset preview cover and bulk required selections stay responsive in both themes", async ({
   page,
 }, testInfo) => {
   test.skip(!["desktop", "mobile"].includes(testInfo.project.name));
@@ -1055,7 +1055,7 @@ test("asset preview cover and bulk Legal controls stay responsive in both themes
   ).toHaveAttribute("aria-pressed", "true");
 
   const selectionControl = preview.getByRole("group", {
-    name: "Select lots for bulk Legal assignment",
+    name: "Select lots for bulk required selections",
   });
   await selectionControl
     .getByRole("button", { name: "Select all 45 lots" })
@@ -1105,6 +1105,139 @@ test("asset preview cover and bulk Legal controls stay responsive in both themes
   );
   await expectNoHorizontalOverflow(page);
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`asset preview bulk selections persist selected and all 100 lots in ${theme} theme`, async ({ page }, testInfo) => {
+    test.skip(!["desktop", "mobile"].includes(testInfo.project.name));
+    test.setTimeout(90_000);
+    if (testInfo.project.name === "mobile" && theme === "light") {
+      await page.setViewportSize({ width: 320, height: 720 });
+    }
+    const consoleErrors: string[] = [];
+    page.on("pageerror", (error) => consoleErrors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
+    await initializeTheme(page, theme);
+    await mockAuthenticatedApi(page);
+    const originalLots = Array.from({ length: 100 }, (_, index) => ({
+      lot_id: `bulk-lot-${index + 1}`,
+      lot_number: String(index + 1),
+      title: `Bulk test asset ${index + 1}`,
+      description: `Original description for lot ${index + 1}\nSecond line retained.`,
+      categories: "Construction Equipment",
+      estimated_value: "GBP 1,000",
+      sub_mode: "per_item",
+      mixed_group_index: 1,
+      image_indexes: [0],
+      image_urls: [reportThumbnailUrl],
+      condition_report_specs: { "Inspector note": `Keep note ${index + 1}` },
+      condition_report_selections: { condition: "N/A", completeness: "Incomplete Unit", legal: "No Title" },
+    }));
+    let savedPreview = {
+      client_name: "E2E Asset Preview", location: "Leeds Equipment Yard, United Kingdom",
+      currency: "GBP", grouping_mode: "per_item", valuation_methods: [],
+      valuation_data: { methods: [] }, lots: structuredClone(originalLots),
+    };
+    const saves: typeof savedPreview[] = [];
+    await page.route("**/api/asset/e2e-asset-preview/preview", async (route) => {
+      const request = route.request();
+      if (request.method() === "PUT") {
+        savedPreview = request.postDataJSON().preview_data;
+        saves.push(structuredClone(savedPreview));
+      }
+      await route.fulfill({
+        status: 200, headers: { "access-control-allow-origin": "*", "content-type": "application/json" },
+        body: JSON.stringify(request.method() === "PUT"
+          ? { message: "Saved", data: savedPreview, imageUrls: [reportThumbnailUrl], image_count: 1 }
+          : { data: { status: "preview", grouping_mode: "per_item", imageUrls: [reportThumbnailUrl], image_count: 1, preview_data: savedPreview } }),
+      });
+    });
+    const openPreview = async () => {
+      await page.goto("/previews");
+      await expect(page).toHaveURL(/\/previews$/);
+      await expect(page).toHaveTitle(/Asset Insight/i);
+      await page.getByRole("button", { name: "Preview Asset report: E2E Asset Preview" }).click();
+      await expect(page.getByRole("dialog", { name: "Preview & Edit Report" })).toBeVisible();
+    };
+    await openPreview();
+    const preview = page.getByRole("dialog", { name: "Preview & Edit Report" });
+    const selection = preview.getByRole("group", { name: "Select lots for bulk required selections" });
+    const apply = async (group: string, value: string, count: number) => {
+      await preview.getByRole("group", { name: `Apply ${group} value to selected lots` })
+        .getByRole("button", { name: `Apply ${value} to ${count} selected lots`, exact: true }).click();
+    };
+    const field = (group: string, number: number) => preview.getByRole("combobox", {
+      name: `${group} for lot ${number}, row ${number}`, exact: true,
+    });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    await expect(preview.getByRole("group", { name: "Apply Running Condition value to selected lots" })
+      .getByRole("button", { name: "Apply Starts and Runs to 0 selected lots", exact: true })).toBeDisabled();
+    for (const number of [4, 8, 9]) {
+      await preview.getByRole("checkbox", { name: `Select lot ${number}, row ${number}`, exact: true }).check();
+    }
+    await apply("Running Condition", "Starts and Runs", 3);
+    await apply("Completeness", "Has Keys", 3);
+    await apply("Legal", "Salvage", 3);
+    await field("Running Condition", 8).selectOption("Does not Start or Run");
+    expect(saves).toHaveLength(0);
+    await preview.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect.poll(() => saves.length).toBe(1);
+    for (const [index, lot] of saves[0].lots.entries()) {
+      const original = originalLots[index];
+      expect(lot).toMatchObject({
+        lot_id: original.lot_id, lot_number: original.lot_number,
+        title: original.title, description: original.description,
+        image_indexes: original.image_indexes, image_urls: original.image_urls,
+        condition_report_specs: original.condition_report_specs,
+      });
+      expect(lot.condition_report_selections).toEqual([3, 7, 8].includes(index)
+        ? { condition: index === 7 ? "Does not Start or Run" : "Starts and Runs", completeness: "Has Keys", legal: "Salvage" }
+        : original.condition_report_selections);
+    }
+    await expect(preview.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+    await openPreview();
+    await expect(field("Running Condition", 8)).toHaveValue("Does not Start or Run");
+    await expect(field("Completeness", 4)).toHaveValue("Has Keys");
+    await expect(field("Legal", 9)).toHaveValue("Salvage");
+    await expect(preview.getByRole("checkbox", { name: "Select lot 4, row 4", exact: true })).not.toBeChecked();
+    await selection.getByRole("button", { name: "Select all 100 lots", exact: true }).click();
+    await apply("Running Condition", "Starts and Runs with Boost", 100);
+    await apply("Completeness", "Missing Parts", 100);
+    await apply("Legal", "N/A", 100);
+    await field("Legal", 4).selectOption("No Title");
+    await preview.getByRole("button", { name: "Next lots page", exact: true }).click();
+    await expect(preview.getByRole("checkbox", { name: "Select lot 21, row 21", exact: true })).toBeChecked();
+    await expect(field("Running Condition", 21)).toHaveValue("Starts and Runs with Boost");
+    await expect(field("Completeness", 21)).toHaveValue("Missing Parts");
+    await expect(field("Legal", 21)).toHaveValue("N/A");
+    // Let transient feedback settle before inspecting unobstructed controls.
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0);
+    await preview.getByRole("region", { name: "Bulk required selections" }).scrollIntoViewIfNeeded();
+    await expectNoHorizontalOverflow(page);
+    const accessibility = await new AxeBuilder({ page })
+      .include('section[aria-label="Bulk required selections"]')
+      .analyze();
+    expect(accessibility.violations.filter((violation) => ["serious", "critical"].includes(violation.impact || ""))).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath(`asset-bulk-${testInfo.project.name}-${theme}.png`) });
+    await preview.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect.poll(() => saves.length).toBe(2);
+    for (const [index, lot] of saves[1].lots.entries()) {
+      expect(lot.condition_report_selections).toEqual({
+        condition: "Starts and Runs with Boost", completeness: "Missing Parts", legal: index === 3 ? "No Title" : "N/A",
+      });
+      expect(lot.image_urls).toEqual(originalLots[index].image_urls);
+      expect(lot.description).toBe(originalLots[index].description);
+    }
+    await expect(preview.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+    await openPreview();
+    await expect(field("Running Condition", 1)).toHaveValue("Starts and Runs with Boost");
+    await expect(field("Completeness", 1)).toHaveValue("Missing Parts");
+    await expect(field("Legal", 4)).toHaveValue("No Title");
+    await expect(field("Legal", 1)).toHaveValue("N/A");
+    expect(consoleErrors).toEqual([]);
+  });
+}
 
 test("preview save is single-flight and blocks editing until the write settles", async ({
   page,

@@ -47,6 +47,14 @@ import {
   normalizeAssetCoverImageUrls,
 } from "@/lib/assetCoverImages";
 import { useExclusivePreviewMutation } from "@/components/reports/useExclusivePreviewMutation";
+import AssetConditionSelectionFields from "@/components/reports/AssetConditionSelectionFields";
+import {
+  ASSET_CONDITION_SELECTION_GROUPS,
+  applyAssetConditionSelectionToLots,
+  getSharedAssetConditionSelection,
+  normalizeAssetConditionSelection,
+  type AssetConditionSelectionKey,
+} from "@/lib/assetConditionSelections";
 
 interface PreviewModalProps {
   reportId: string;
@@ -121,17 +129,7 @@ type LotGalleryState = {
   currentIdx: number;
 };
 
-const LEGAL_SELECTION_OPTIONS = ["Salvage", "No Title", "N/A"] as const;
 const LOTS_PER_PAGE = 20;
-
-const normalizeLegalSelection = (value: unknown) => {
-  const normalized = String(value ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-  if (normalized === "na" || normalized === "not applicable") return "n/a";
-  return normalized;
-};
 
 function useDesktopPreviewLayout() {
   const [isDesktop, setIsDesktop] = useState(() => {
@@ -427,6 +425,7 @@ export default function PreviewModal({
   const [selectedLotIndexes, setSelectedLotIndexes] = useState<Set<number>>(
     () => new Set()
   );
+  const [bulkSelectionStatus, setBulkSelectionStatus] = useState("");
   const [expandedLotTextEditor, setExpandedLotTextEditor] = useState<ExpandedLotTextEditor | null>(null);
   // For lot-specific gallery view
   const [galleryLotImages, setGalleryLotImages] = useState<LotGalleryState | null>(null);
@@ -865,21 +864,17 @@ export default function PreviewModal({
     setHasChanges(true);
   };
 
-  const updateLotLegalSelection = (index: number, value: string) => {
-    setPreviewData((prev: any) => {
-      const newLots = [...(prev?.lots || [])];
-      const lot = { ...(newLots[index] || {}) };
-      lot.condition_report_selections = {
-        ...(lot.condition_report_selections || {}),
-        legal: value,
-      };
-      newLots[index] = lot;
-      return { ...prev, lots: newLots };
-    });
+  const updateLotConditionSelection = (index: number, key: AssetConditionSelectionKey, value: string) => {
+    if (isMutationLocked() || filesGenerating || filesRegenerating) return;
+    setPreviewData((prev: any) => ({
+      ...prev,
+      lots: applyAssetConditionSelectionToLots(prev?.lots || [], new Set([index]), key, value),
+    }));
     setHasChanges(true);
   };
 
-  const applyLegalSelectionToSelectedLots = (value: string) => {
+  const applyConditionSelectionToSelectedLots = (key: AssetConditionSelectionKey, value: string) => {
+    if (isMutationLocked() || filesGenerating || filesRegenerating) return;
     const lotCount = Array.isArray(previewData?.lots)
       ? previewData.lots.length
       : 0;
@@ -889,31 +884,19 @@ export default function PreviewModal({
       )
     );
     if (targetIndexes.size === 0) {
-      toast.info("Select at least one lot before applying a Legal value.");
+      toast.info("Select at least one lot before applying a required selection.");
       return;
     }
 
     setPreviewData((prev: any) => ({
       ...prev,
-      lots: Array.isArray(prev?.lots)
-        ? prev.lots.map((rawLot: any, index: number) =>
-            targetIndexes.has(index)
-              ? {
-                  ...(rawLot || {}),
-                  condition_report_selections: {
-                    ...(rawLot?.condition_report_selections || {}),
-                    legal: value,
-                  },
-                }
-              : rawLot
-          )
-        : [],
+      lots: applyAssetConditionSelectionToLots(prev?.lots || [], targetIndexes, key, value),
     }));
     setHasChanges(true);
-    toast.success(
+    setBulkSelectionStatus(
       `${value} applied to ${targetIndexes.size} selected lot${
         targetIndexes.size === 1 ? "" : "s"
-      }.`
+      }.`,
     );
   };
 
@@ -1219,15 +1202,7 @@ export default function PreviewModal({
   };
 
   const deleteLot = (index: number) => {
-    setSelectedLotIndexes((current) => {
-      if (current.size === 0) return current;
-      const next = new Set<number>();
-      for (const selectedIndex of current) {
-        if (selectedIndex === index) continue;
-        next.add(selectedIndex > index ? selectedIndex - 1 : selectedIndex);
-      }
-      return next;
-    });
+    setSelectedLotIndexes(new Set());
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
       lots.splice(index, 1);
@@ -1237,6 +1212,7 @@ export default function PreviewModal({
   };
 
   const addLot = () => {
+    setSelectedLotIndexes(new Set());
     setLotPage(Math.max(1, Math.ceil((lotsArray.length + 1) / LOTS_PER_PAGE)));
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
@@ -1364,15 +1340,8 @@ export default function PreviewModal({
   }, [lotPageCount]);
 
   useEffect(() => {
-    setSelectedLotIndexes((current) => {
-      const next = new Set(
-        Array.from(current).filter(
-          (index) => index >= 0 && index < lotsArray.length
-        )
-      );
-      return next.size === current.size ? current : next;
-    });
-  }, [lotsArray.length]);
+    setBulkSelectionStatus("");
+  }, [selectedLotIndexes]);
 
   const toggleLotSelection = (index: number) => {
     setSelectedLotIndexes((current) => {
@@ -1441,72 +1410,30 @@ export default function PreviewModal({
       });
   }, [firstVisibleLotIndex, lastVisibleLotIndex, lotsArray]);
 
-  const sharedSelectedLegalSelection = React.useMemo(() => {
-    const selectedIndexes = Array.from(validSelectedLotIndexes);
-    if (selectedIndexes.length === 0) return "";
-    const first = normalizeLegalSelection(
-      lotsArray[selectedIndexes[0]]?.condition_report_selections?.legal
-    );
-    if (
-      !first ||
-      !LEGAL_SELECTION_OPTIONS.some(
-        (option) => normalizeLegalSelection(option) === first
-      )
-    ) {
-      return "";
-    }
-    return selectedIndexes.every(
-      (index) =>
-        normalizeLegalSelection(
-          lotsArray[index]?.condition_report_selections?.legal
-        ) === first
-    )
-      ? first
-      : "";
-  }, [lotsArray, validSelectedLotIndexes]);
+  const sharedSelectedConditionValues = React.useMemo(
+    () => Object.fromEntries(
+      ASSET_CONDITION_SELECTION_GROUPS.map((group) => [
+        group.key,
+        getSharedAssetConditionSelection(lotsArray, validSelectedLotIndexes, group.key),
+      ]),
+    ),
+    [lotsArray, validSelectedLotIndexes],
+  );
 
-  const renderLegalSelection = (
+  const renderConditionSelections = (
     lot: any,
     index: number,
-    variant: "mobile" | "desktop"
-  ) => {
-    const selectedValue = normalizeLegalSelection(
-      lot?.condition_report_selections?.legal
-    );
-
-    return (
-      <fieldset className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] p-2.5">
-        <legend className="px-1 text-[11px] font-bold uppercase tracking-wide text-[var(--app-text-muted)]">
-          Legal
-        </legend>
-        <div className="flex flex-wrap gap-1.5">
-          {LEGAL_SELECTION_OPTIONS.map((option) => {
-            const checked =
-              selectedValue === normalizeLegalSelection(option);
-            return (
-              <label
-                key={option}
-                className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
-                  checked
-                    ? "border-[var(--app-accent)] bg-[var(--app-accent-soft)] text-[var(--app-accent)]"
-                    : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-[var(--app-accent)] hover:text-[var(--app-text)]"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name={`asset-lot-${index}-${variant}-legal`}
-                  checked={checked}
-                  onChange={() => updateLotLegalSelection(index, option)}
-                  className="h-3.5 w-3.5 accent-[var(--app-accent)]"
-                />
-                {option}
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
-    );
-  };
+    variant: "mobile" | "desktop",
+  ) => (
+    <AssetConditionSelectionFields
+      lot={lot}
+      lotIndex={index}
+      lotLabel={getLotDisplayNumber(lot, index)}
+      variant={variant}
+      disabled={activeMutation !== null || filesGenerating || filesRegenerating}
+      onChange={updateLotConditionSelection}
+    />
+  );
 
   const renderLotSelectionCheckbox = (
     lot: any,
@@ -1539,19 +1466,19 @@ export default function PreviewModal({
     );
   };
 
-  const renderBulkLegalSelection = () => {
+  const renderBulkConditionSelection = () => {
     if (lotsArray.length < 2) return null;
 
     return (
       <section
-        aria-label="Bulk Legal assignment"
+        aria-label="Bulk required selections"
         className="rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-3"
       >
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h4 className="text-sm font-bold text-[var(--app-text-strong)]">
-                Bulk Legal assignment
+                Bulk required selections
               </h4>
               <p
                 className="text-xs text-[var(--app-text-muted)]"
@@ -1559,13 +1486,13 @@ export default function PreviewModal({
               >
                 {selectedLotCount > 0
                   ? `${selectedLotCount} of ${lotsArray.length} lots selected. Apply a value below or adjust any lot individually.`
-                  : "Select the lots that should receive the same Legal value."}
+                  : "Select the lots that should receive the same required selections."}
               </p>
             </div>
             <div
               className="flex flex-wrap gap-2"
               role="group"
-              aria-label="Select lots for bulk Legal assignment"
+              aria-label="Select lots for bulk required selections"
             >
               {lotPageCount > 1 ? (
                 <button
@@ -1611,41 +1538,43 @@ export default function PreviewModal({
               </button>
             </div>
           </div>
-          <div className="flex flex-col gap-2 border-t border-[var(--app-info-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-xs font-bold text-[var(--app-text-strong)]">
-              Apply to selected lots
-            </span>
-            <div
-              className="flex flex-wrap gap-2"
-              role="group"
-              aria-label="Apply Legal value to selected lots"
-            >
-              {LEGAL_SELECTION_OPTIONS.map((option) => {
-                const selected =
-                  selectedLotCount > 0 &&
-                  sharedSelectedLegalSelection ===
-                    normalizeLegalSelection(option);
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => applyLegalSelectionToSelectedLots(option)}
-                    disabled={selectedLotCount === 0}
-                    aria-pressed={selected}
-                    aria-label={`Apply ${option} to ${selectedLotCount} selected lot${
-                      selectedLotCount === 1 ? "" : "s"
-                    }`}
-                    className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
-                      selected
-                        ? "app-button--primary"
-                        : "app-button--secondary"
-                    }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="space-y-2 border-t border-[var(--app-info-border)] pt-3">
+            {ASSET_CONDITION_SELECTION_GROUPS.map((group) => (
+              <div key={group.key} className="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:gap-3">
+                <span className="text-xs font-bold text-[var(--app-text-strong)] lg:w-32 lg:shrink-0">
+                  {group.label}
+                </span>
+                <div
+                  className="flex min-w-0 flex-wrap gap-1.5"
+                  role="group"
+                  aria-label={`Apply ${group.label} value to selected lots`}
+                >
+                  {group.options.map((option) => {
+                    const selected = selectedLotCount > 0 &&
+                      sharedSelectedConditionValues[group.key] === normalizeAssetConditionSelection(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => applyConditionSelectionToSelectedLots(group.key, option)}
+                        disabled={selectedLotCount === 0 || activeMutation !== null || filesGenerating || filesRegenerating}
+                        aria-pressed={selected}
+                        aria-label={`Apply ${option} to ${selectedLotCount} selected lot${selectedLotCount === 1 ? "" : "s"}`}
+                        className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${selected ? "app-button--primary" : "app-button--secondary"}`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-[var(--app-text-muted)]">
+              Each choice changes only that group for the selected lots. Other selections are kept; any lot can be adjusted individually.
+            </p>
+            <p role="status" aria-live="polite" className="min-h-4 text-xs font-semibold text-[var(--app-success)]">
+              {bulkSelectionStatus}
+            </p>
           </div>
         </div>
       </section>
@@ -2386,7 +2315,7 @@ export default function PreviewModal({
                 Add Lot
               </button>
             </div>
-            {renderBulkLegalSelection()}
+            {renderBulkConditionSelection()}
             {renderLotPagination()}
             {groupedLots.length ? (
               <>
@@ -2562,7 +2491,7 @@ export default function PreviewModal({
                                   placeholder="Auctioneer Import category"
                                 />
                               </div>
-                              {renderLegalSelection(lot, idx, "mobile")}
+                              {renderConditionSelections(lot, idx, "mobile")}
                               <div>
                                 <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
                                 {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
@@ -2637,7 +2566,7 @@ export default function PreviewModal({
                             <th className="w-[13%] px-2 py-2 text-left">Category</th>
                             <th className="w-[15%] px-2 py-2 text-left">Description</th>
                             <th className="w-[14%] px-2 py-2 text-left">Specs</th>
-                            <th className="w-[11%] px-2 py-2 text-left">Legal / valuations</th>
+                            <th className="w-[11%] px-2 py-2 text-left">Selections / valuations</th>
                             <th className="w-[11%] px-2 py-2 text-left">Value</th>
                             <th className="w-[4%] px-2 py-2 text-left">Actions</th>
                           </tr>
@@ -2798,7 +2727,7 @@ export default function PreviewModal({
                                 {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
                               </td>
                               <td className="px-2 py-2 align-top">
-                                {renderLegalSelection(lot, idx, "desktop")}
+                                {renderConditionSelections(lot, idx, "desktop")}
                                 <div className="mt-2">
                                 <SelectedValuationMethods lines={valuationLines} lotLabel={lotLabel} />
                                 </div>

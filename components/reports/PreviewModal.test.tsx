@@ -268,20 +268,20 @@ describe("PreviewModal valuation methods", () => {
     ).toBeInTheDocument();
   });
 
-  it("applies Legal only to lots 4, 8, and 9 while preserving individual overrides", async () => {
+  it("applies each required group only to lots 4, 8, and 9 of 100 and preserves individual overrides after save/reopen", async () => {
     const response = makePreviewResponse();
-    response.data.preview_data.lots = Array.from({ length: 10 }, (_, index) => ({
+    response.data.preview_data.lots = Array.from({ length: 100 }, (_, index) => ({
       ...response.data.preview_data.lots[0],
       lot_number: String(index + 1),
       title: `Asset ${index + 1}`,
-      condition_report_selections: { legal: "" },
+      condition_report_selections: { condition: "N/A", completeness: "N/A", legal: "" },
     }));
     const updatePreview = vi.fn().mockImplementation(async (_id, previewData) => ({
       message: "Saved",
       data: previewData,
     }));
 
-    render(
+    const view = render(
       <PreviewModal
         isOpen
         reportId="report-selected-lots"
@@ -313,7 +313,7 @@ describe("PreviewModal valuation methods", () => {
 
     expect(
       screen.getByText(
-        "3 of 10 lots selected. Apply a value below or adjust any lot individually."
+        "3 of 100 lots selected. Apply a value below or adjust any lot individually."
       )
     ).toBeInTheDocument();
     expect(saveButton).toBeDisabled();
@@ -325,19 +325,19 @@ describe("PreviewModal valuation methods", () => {
     );
     expect(saveButton).toBeEnabled();
 
-    const legalControls = screen.getAllByRole("group", { name: "Legal" });
-    expect(
-      within(legalControls[0]).getByRole("radio", { name: "N/A" })
-    ).not.toBeChecked();
+    for (const [group, option] of [["Running Condition", "Starts and Runs with Boost"], ["Completeness", "Has Keys"]]) {
+      fireEvent.click(within(screen.getByRole("group", { name: `Apply ${group} value to selected lots` })).getByRole("button", { name: `Apply ${option} to 3 selected lots` }));
+    }
+    expect(screen.getByRole("combobox", { name: "Legal for lot 1, row 1" })).toHaveValue("");
     for (const index of [3, 7, 8]) {
       expect(
-        within(legalControls[index]).getByRole("radio", { name: "N/A" })
-      ).toBeChecked();
+        screen.getByRole("combobox", { name: `Legal for lot ${index + 1}, row ${index + 1}` })
+      ).toHaveValue("N/A");
     }
 
-    fireEvent.click(
-      within(legalControls[7]).getByRole("radio", { name: "No Title" })
-    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Legal for lot 8, row 8" }), { target: { value: "No Title" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Running Condition for lot 4, row 4" }), { target: { value: "Does not Start or Run" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Completeness for lot 9, row 9" }), { target: { value: "Missing Parts" } });
     fireEvent.click(saveButton);
 
     await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
@@ -346,10 +346,16 @@ describe("PreviewModal valuation methods", () => {
       savedPreview.lots.map(
         (lot: any) => lot.condition_report_selections?.legal || ""
       )
-    ).toEqual(["", "", "", "N/A", "", "", "", "No Title", "N/A", ""]);
+    ).toEqual(Array.from({ length: 100 }, (_, index) => index === 7 ? "No Title" : [3, 8].includes(index) ? "N/A" : ""));
+    for (let index = 0; index < 100; index += 1) {
+      expect(savedPreview.lots[index].condition_report_selections.condition).toBe(index === 3 ? "Does not Start or Run" : [7, 8].includes(index) ? "Starts and Runs with Boost" : "N/A");
+      expect(savedPreview.lots[index].condition_report_selections.completeness).toBe(index === 8 ? "Missing Parts" : [3, 7].includes(index) ? "Has Keys" : "N/A");
+      for (const key of ["lot_number", "description", "details", "image_indices", "extra_image_urls"]) expect(savedPreview.lots[index][key]).toEqual((response.data.preview_data.lots[index] as any)[key]);
+    }
+    expect(savedPreview.lots[3].condition_report_specs["Running Condition"]).toBe("Does not Start or Run");
     await waitFor(() => {
       expect(
-        screen.getByText("Select the lots that should receive the same Legal value.")
+        screen.getByText("Select the lots that should receive the same required selections.")
       ).toBeInTheDocument();
     });
     expect(
@@ -357,7 +363,13 @@ describe("PreviewModal valuation methods", () => {
         name: "Apply N/A to 0 selected lots",
       })
     ).toBeDisabled();
-  });
+    view.unmount();
+    render(<PreviewModal isOpen reportId="report-selected-lots" onClose={vi.fn()} loadPreviewDataOverride={vi.fn().mockResolvedValue({ data: { ...response.data, preview_data: savedPreview } })} />);
+    expect(await screen.findByRole("combobox", { name: "Running Condition for lot 4, row 4" })).toHaveValue("Does not Start or Run");
+    expect(screen.getByRole("combobox", { name: "Completeness for lot 9, row 9" })).toHaveValue("Missing Parts");
+    expect(screen.getByRole("combobox", { name: "Legal for lot 8, row 8" })).toHaveValue("No Title");
+    expect(screen.getByRole("checkbox", { name: "Select lot 8, row 8" })).not.toBeChecked();
+  }, 20_000);
 
   it("pages large reports, preserves focus, and selects every off-page lot", async () => {
     const response = makePreviewResponse();
@@ -393,7 +405,7 @@ describe("PreviewModal valuation methods", () => {
     expect(firstTitle).toHaveFocus();
 
     const selectionControl = screen.getByRole("group", {
-      name: "Select lots for bulk Legal assignment",
+      name: "Select lots for bulk required selections",
     });
     fireEvent.click(
       within(selectionControl).getByRole("button", {
@@ -414,10 +426,10 @@ describe("PreviewModal valuation methods", () => {
         name: "Apply N/A to 205 selected lots",
       })
     );
-    const firstLegalControl = screen.getAllByRole("group", { name: "Legal" })[0];
-    expect(within(firstLegalControl).getByRole("radio", { name: "N/A" })).toBeChecked();
+    const firstLegalControl = screen.getByRole("combobox", { name: "Legal for lot 1, row 1" });
+    expect(firstLegalControl).toHaveValue("N/A");
 
-    fireEvent.click(within(firstLegalControl).getByRole("radio", { name: "No Title" }));
+    fireEvent.change(firstLegalControl, { target: { value: "No Title" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updatePreview).toHaveBeenCalledTimes(1));
@@ -425,12 +437,79 @@ describe("PreviewModal valuation methods", () => {
     expect(savedPreview.lots[0].condition_report_selections.legal).toBe("No Title");
     expect(savedPreview.lots[204].condition_report_selections.legal).toBe("N/A");
     expect(
-      screen.getByText("Select the lots that should receive the same Legal value.")
+      screen.getByText("Select the lots that should receive the same required selections.")
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next lots page" }));
     expect(await screen.findByDisplayValue("Asset 21")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("Focused asset")).toBeNull();
+  });
+
+  it("preserves selected lots across pages, applies page/all groups, and clears without changing values", async () => {
+    const response = makePreviewResponse();
+    response.data.preview_data.lots = Array.from({ length: 100 }, (_, index) => ({ ...response.data.preview_data.lots[0], lot_number: String(index + 1), title: `Asset ${index + 1}` }));
+    const update = vi.fn().mockImplementation(async (_id, data) => ({ message: "Saved", data }));
+    render(<PreviewModal isOpen reportId="page-selections" onClose={vi.fn()} loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} updatePreviewDataOverride={update} />);
+    await screen.findByDisplayValue("Asset 1");
+    for (const label of ["Running Condition", "Completeness", "Legal"]) {
+      expect(within(screen.getByRole("group", { name: `Apply ${label} value to selected lots` })).getByRole("button", { name: "Apply N/A to 0 selected lots" })).toBeDisabled();
+    }
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select lot 4, row 4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next lots page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select 20 lots on this page" }));
+    expect(screen.getByText("21 of 100 lots selected. Apply a value below or adjust any lot individually.")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("group", { name: "Apply Running Condition value to selected lots" })).getByRole("button", { name: "Apply Unverified Running Condition to 21 selected lots" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unselect 20 lots on this page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous lots page" }));
+    expect(screen.getByRole("checkbox", { name: "Select lot 4, row 4" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Select all 100 lots" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "Apply Completeness value to selected lots" })).getByRole("button", { name: "Apply Incomplete Unit to 100 selected lots" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByRole("button", { name: "Clear selection" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Running Condition for lot 4, row 4" })).toHaveValue("Unverified Running Condition");
+    expect(screen.getByRole("combobox", { name: "Completeness for lot 1, row 1" })).toHaveValue("Incomplete Unit");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    const lots = update.mock.calls[0][1].lots;
+    lots.forEach((lot: any, index: number) => {
+      expect(lot.condition_report_selections.completeness).toBe("Incomplete Unit");
+      expect(lot.condition_report_selections.condition || "").toBe(index === 3 || (index >= 20 && index < 40) ? "Unverified Running Condition" : "");
+      expect(lot.condition_report_selections.legal).toBeUndefined();
+    });
+  }, 20_000);
+
+  it.each([0, 1])("handles %i lots without bulk controls and keeps single-lot overrides available", async (count) => {
+    const response = makePreviewResponse();
+    response.data.preview_data.lots = response.data.preview_data.lots.slice(0, count);
+    render(<PreviewModal isOpen reportId={`lot-count-${count}`} onClose={vi.fn()} loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} />);
+    await screen.findByRole("heading", { name: "Assets / Lots" });
+    expect(screen.queryByRole("region", { name: "Bulk required selections" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /Select lot/ })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Asset lots pagination" })).toBeNull();
+    if (count === 1) for (const label of ["Running Condition", "Completeness", "Legal"]) {
+      const field = screen.getByRole("combobox", { name: `${label} for lot 1, row 1` });
+      fireEvent.change(field, { target: { value: "N/A" } });
+      expect(field).toHaveValue("N/A");
+    }
+  });
+
+  it("clears transient selection on lot insertion, deletion and explicit reload", async () => {
+    const response = makePreviewResponse();
+    response.data.preview_data.lots = Array.from({ length: 3 }, (_, index) => ({ ...response.data.preview_data.lots[0], lot_number: String(index + 1) }));
+    const load = vi.fn().mockResolvedValue(response);
+    const view = render(<PreviewModal isOpen reportId="structure-selection" onClose={vi.fn()} loadPreviewDataOverride={load} />);
+    await screen.findByRole("heading", { name: "Assets / Lots" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select lot 2, row 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Lot" }));
+    expect(screen.getByRole("button", { name: "Clear selection" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select lot 2, row 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete lot 1" }));
+    expect(screen.getByRole("button", { name: "Clear selection" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select lot 2, row 1" }));
+    view.rerender(<PreviewModal isOpen={false} reportId="structure-selection" onClose={vi.fn()} loadPreviewDataOverride={load} />);
+    view.rerender(<PreviewModal isOpen reportId="structure-selection" onClose={vi.fn()} loadPreviewDataOverride={load} />);
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear selection" })).toBeDisabled());
   });
 
   it("saves the selected appraiser cover images in the chosen order", async () => {

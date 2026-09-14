@@ -32,6 +32,24 @@ lots/media remain available for review. Reports without saved preview data link
 to Drafts instead of offering an empty preview or an unusable file-generation
 retry. Generation/download readiness is not inferred from preview availability.
 
+### Asset preview required selections
+
+Asset previews support Running Condition, Completeness and Legal choices for
+selected lots, the current 20-lot page, or every lot. Selection persists across
+pagination; each Apply changes only its named group, not other choices, lot
+numbers, descriptions or media. Each lot retains compact individual overrides,
+including N/A. Running/Working Condition specs update alongside the selected
+condition and are suppressed for N/A. The existing saved
+`condition_report_selections` contract is unchanged.
+
+Selection clears after save/reload, photo round trips, or adding/deleting lots,
+so index-based targets cannot accidentally refer to changed rows. Applying a
+choice reports inline status without stacking mobile notifications. Save and
+submit remain explicit; bulk editing never queues files. Lot Listing controls
+are unchanged. Focused tests: `components/reports/PreviewModal.test.tsx` and
+`lib/assetConditionSelections.test.ts`; browser coverage is in
+`e2e/clearvalue.smoke.spec.ts`.
+
 ### Salvage review workflow
 
 Saved previews optionally include backend-built `report_enrichment` v1: localized executive summary, assignment/condition, repair provenance, comparable verification, calculations, evidence/photo review, checklist, revision history and references. Web displays its supplied paragraphs and tables without recomputing values or promoting research notes into facts. The optional preview-only `report_context` editor collects explicitly appraiser-supplied narrative context. Saves use the existing `baseRevision`; omitted context keys retain prior notes and blank/null clears a note. The serializer allowlists context fields and never sends enrichment, evidence or original media as edits. Context saves do not trigger paid research. Focused coverage: `components/reports/SalvageReportEnrichment.test.tsx` and `e2e/salvage-enrichment.spec.ts`.
