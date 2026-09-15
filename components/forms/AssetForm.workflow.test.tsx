@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuctioneerWorkItemSetup } from "@/services/auctioneer";
 import type { ReportDraftRecord } from "@/services/reportDrafts";
 import AssetForm from "./AssetForm";
+import type { MixedLot } from "./mixed/types";
 
 type DraftProgress = {
   phase: "preparing" | "uploading" | "verifying" | "complete";
@@ -55,23 +57,11 @@ vi.mock("next/dynamic", async () => {
       return function TestMixedSection({
         value,
         onChange,
+        lockLotStructure,
       }: {
-        value: Array<{
-          id: string;
-          mode?: "single_lot" | "per_item" | "per_photo";
-          files: File[];
-          extraFiles: File[];
-          videoFiles?: File[];
-          coverIndex: number;
-        }>;
-        onChange: (value: Array<{
-          id: string;
-          mode?: "single_lot" | "per_item" | "per_photo";
-          files: File[];
-          extraFiles: File[];
-          videoFiles?: File[];
-          coverIndex: number;
-        }>) => void;
+        value: MixedLot[];
+        onChange: (value: MixedLot[]) => void;
+        lockLotStructure?: boolean;
       }) {
         const selectedName = value[0]?.files[0]?.name || "No media selected";
         return React.createElement(
@@ -82,9 +72,13 @@ vi.mock("next/dynamic", async () => {
             {
               type: "button",
               onClick: () =>
-                onChange([
-                  {
-                    id: "lot-test-1",
+                onChange((value.length ? value : [{
+                  id: "lot-test-1",
+                  files: [],
+                  extraFiles: [],
+                  coverIndex: 0,
+                }]).map((lot) => ({
+                    ...lot,
                     mode: "single_lot",
                     files: [
                       new File(["asset-photo"], "asset-photo.jpg", {
@@ -95,8 +89,7 @@ vi.mock("next/dynamic", async () => {
                     extraFiles: [],
                     videoFiles: [],
                     coverIndex: 0,
-                  },
-                ]),
+                  }))),
             },
             "Add test media"
           ),
@@ -104,6 +97,14 @@ vi.mock("next/dynamic", async () => {
             "output",
             { "data-testid": "selected-asset-media" },
             selectedName
+          ),
+          React.createElement(
+            "output",
+            { "data-testid": "asset-source-locks" },
+            JSON.stringify({
+              lockLotStructure: Boolean(lockLotStructure),
+              sources: value.map((lot) => lot.source),
+            })
           )
         );
       };
@@ -232,6 +233,31 @@ function fillRequiredReportFields() {
   });
 }
 
+function makeAuctioneerSetup(
+  kind: AuctioneerWorkItemSetup["kind"] = "unknown"
+): AuctioneerWorkItemSetup {
+  return {
+    workItemId: "asset-work-imported",
+    cycleKey: "asset-cycle-imported",
+    kind,
+    reportType: "asset",
+    clientSubmissionId: "asset-imported-submission",
+    status: "claimed",
+    contract: {
+      id: "imported-contract",
+      contractNo: "IMPORTED-100",
+      customerName: "Imported customer",
+      eventTitle: "Imported auction",
+      eventDate: "2026-09-14T10:00:00.000Z",
+      location: "Imported inspection yard",
+    },
+    lots: kind === "scheduleA" ? [
+      { sourceKey: "source-1", lotId: "upstream-lot-1", submissionId: "task-1", lotNumber: "10" },
+      { sourceKey: "source-2", lotId: "upstream-lot-2", submissionId: "task-2", lotNumber: "11" },
+    ] : [],
+  };
+}
+
 async function waitForResolvedAssetLocation() {
   const location = screen.getByLabelText(/Inspection location/i);
   await waitFor(() =>
@@ -304,6 +330,190 @@ describe("AssetForm manual save and submission workflow", () => {
     }
   });
 
+  it.each(["unknown", "scheduleA"] as const)(
+    "continues an imported %s report once after acceptance and old-draft cleanup",
+    async (kind) => {
+      const upload = deferred<Record<string, unknown>>();
+      const cleanup = deferred<void>();
+      const onAcceptedAndContinue = vi.fn();
+      const onSuccess = vi.fn();
+      const auctioneer = makeAuctioneerSetup(kind);
+      mocks.createAsset.mockReturnValueOnce(upload.promise);
+      mocks.deleteDraftByClientId.mockReturnValueOnce(cleanup.promise);
+      render(<AssetForm auctioneer={auctioneer} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
+      addTestMedia();
+
+      const sources = JSON.parse(screen.getByTestId("asset-source-locks").textContent || "{}");
+      expect(sources.lockLotStructure).toBe(kind === "scheduleA");
+      if (kind === "scheduleA") {
+        expect(sources.sources.map((source: { locked: boolean }) => source.locked)).toEqual([true, true]);
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+      await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+      expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+      expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+      const details = mocks.createAsset.mock.calls[0][0];
+      expect(details).toMatchObject({
+        auctioneer_work_item_id: auctioneer.workItemId,
+        client_submission_id: auctioneer.clientSubmissionId,
+        contract_no: auctioneer.contract.contractNo,
+      });
+      if (kind === "scheduleA") {
+        expect(details.mixed_lots).toEqual(auctioneer.lots.map((lot) => expect.objectContaining({
+          source_key: lot.sourceKey,
+          source_lot_id: lot.lotId,
+          source_submission_id: lot.submissionId,
+          mode: "single_lot",
+        })));
+      }
+
+      await act(async () => upload.resolve({ reportId: "accepted-asset-report", status: "processing" }));
+      await waitFor(() => expect(mocks.deleteDraftByClientId).toHaveBeenCalledExactlyOnceWith(auctioneer.clientSubmissionId, "asset"));
+      expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+      expect(onSuccess).not.toHaveBeenCalled();
+      await act(async () => cleanup.resolve());
+
+      await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-asset-report"));
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(mocks.createAsset).toHaveBeenCalledOnce();
+      expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("No media selected");
+    }
+  );
+
+  it("preserves imported media and submission identity when the new-lot upload fails and is retried", async () => {
+    const onAcceptedAndContinue = vi.fn();
+    const onSuccess = vi.fn();
+    mocks.createAsset
+      .mockRejectedValueOnce(new Error("Connection interrupted"))
+      .mockResolvedValueOnce({ reportId: "accepted-after-retry" });
+    render(<AssetForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
+    addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate files & new lot" })).toBeEnabled());
+    expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("asset-photo.jpg");
+    expect(screen.getByLabelText(/Contract number/i)).toHaveValue("IMPORTED-100");
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+    expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+    const original = mocks.createAsset.mock.calls[0];
+    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry"));
+    expect(mocks.createAsset).toHaveBeenCalledTimes(2);
+    expect(mocks.createAsset.mock.calls[1][0].client_submission_id).toBe(original[0].client_submission_id);
+    expect(mocks.createAsset.mock.calls[1][1]).toEqual(original[1]);
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each(["continue", "normal", "save"] as const)(
+    "keeps rapid new-lot, normal-submit, and save clicks in the first %s intent",
+    async (first) => {
+      const pending = deferred<Record<string, unknown>>();
+      const onAcceptedAndContinue = vi.fn();
+      const onSuccess = vi.fn();
+      mocks.createAsset.mockReturnValue(pending.promise);
+      mocks.upsertWithMedia.mockReturnValue(pending.promise);
+      render(<AssetForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
+      addTestMedia();
+      const actions = {
+        continue: screen.getByRole("button", { name: "Generate files & new lot" }),
+        normal: screen.getByRole("button", { name: "Create report" }),
+        save: screen.getByRole("button", { name: /Save draft/i }),
+      };
+      act(() => {
+        actions[first].click();
+        actions.continue.click();
+        actions.normal.click();
+        actions.save.click();
+      });
+
+      if (first === "save") {
+        await waitFor(() => expect(mocks.upsertWithMedia).toHaveBeenCalledOnce());
+        expect(mocks.createAsset).not.toHaveBeenCalled();
+      } else {
+        await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+        expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+      }
+      await act(async () => pending.resolve({ _id: "saved-draft", media: [], reportId: "accepted-single-flight" }));
+      if (first === "continue") {
+        await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-single-flight"));
+        expect(onSuccess).not.toHaveBeenCalled();
+      } else if (first === "normal") {
+        await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+        expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+      } else {
+        expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+        expect(onSuccess).not.toHaveBeenCalled();
+      }
+    }
+  );
+
+  it("continues accepted imported work even when old-draft cleanup fails", async () => {
+    const onAcceptedAndContinue = vi.fn();
+    const onSuccess = vi.fn();
+    mocks.createAsset.mockResolvedValueOnce({ reportId: "accepted-cleanup-failure" });
+    mocks.deleteScopedDraft.mockRejectedValueOnce(new Error("Local storage unavailable"));
+    render(<AssetForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
+    addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure"));
+    expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringContaining("Report submitted"));
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.createAsset).toHaveBeenCalledOnce();
+  });
+
+  it("shows no new-lot action without both an imported contract and continuation callback", () => {
+    const view = render(<AssetForm onAcceptedAndContinue={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Generate files & new lot" })).not.toBeInTheDocument();
+    view.rerender(<AssetForm auctioneer={makeAuctioneerSetup()} />);
+    expect(screen.queryByRole("button", { name: "Generate files & new lot" })).not.toBeInTheDocument();
+  });
+
+  it("saves and resumes a fresh successor under its own work item and submission identity", async () => {
+    const previous = makeAuctioneerSetup();
+    const next = { ...previous, workItemId: "asset-successor-work", clientSubmissionId: "asset-successor-submission" };
+    const onSuccess = vi.fn();
+    mocks.upsertWithMedia.mockResolvedValueOnce({ _id: "successor-draft", media: [] });
+    const first = render(<AssetForm auctioneer={next} />);
+    addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
+    await waitFor(() => expect(mocks.upsertWithMedia).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Saving your draft" })).not.toBeInTheDocument());
+    const [saved, lots] = mocks.upsertWithMedia.mock.calls[0];
+    expect(saved).toMatchObject({
+      clientDraftId: next.clientSubmissionId,
+      formData: { clientSubmissionId: next.clientSubmissionId, auctioneerWorkItemId: next.workItemId },
+    });
+    expect(saved.clientDraftId).not.toBe(previous.clientSubmissionId);
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+    first.unmount();
+
+    const resumeDraft: ReportDraftRecord = {
+      ...makeAssetResumeDraft(next.contract.location),
+      clientDraftId: saved.clientDraftId,
+      contractNo: saved.contractNo,
+      revision: saved.revision,
+      formData: saved.formData,
+      lots,
+    };
+    mocks.restoreLots.mockResolvedValueOnce(lots);
+    mocks.deleteScopedDraft.mockClear();
+    mocks.createAsset.mockResolvedValueOnce({ reportId: "successor-accepted" });
+    render(<AssetForm auctioneer={next} resumeDraft={resumeDraft} onSuccess={onSuccess} />);
+    await waitFor(() => expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("asset-photo.jpg"));
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+
+    expect(mocks.createAsset.mock.calls[0][0]).toMatchObject({
+      auctioneer_work_item_id: next.workItemId,
+      client_submission_id: next.clientSubmissionId,
+      contract_no: previous.contract.contractNo,
+    });
+    expect(mocks.deleteDraftByClientId).toHaveBeenCalledExactlyOnceWith(next.clientSubmissionId, "asset");
+    expect(mocks.deleteScopedDraft).toHaveBeenCalledExactlyOnceWith("user-asset-workflow", "asset", next.clientSubmissionId);
+  });
+
   it("defaults new Asset reports to no watermark and allows explicit opt-in", async () => {
     render(<AssetForm />);
     await waitForResolvedAssetLocation();
@@ -367,6 +577,7 @@ describe("AssetForm manual save and submission workflow", () => {
 
     await waitFor(() => expect(mocks.upsertWithMedia).toHaveBeenCalledOnce());
     expect(mocks.upsertWithMedia.mock.calls[0][0].formData.watermarkImages).toBe(false);
+    expect(mocks.upsertWithMedia.mock.calls[0][0].formData).not.toHaveProperty("auctioneerWorkItemId");
     const [, lots, , signal] = mocks.upsertWithMedia.mock.calls[0];
     expect(lots[0].files[0].name).toBe("asset-photo.jpg");
     expect(signal).toBeInstanceOf(AbortSignal);

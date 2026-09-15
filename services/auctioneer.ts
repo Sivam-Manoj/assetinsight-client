@@ -59,6 +59,9 @@ export type AuctioneerWorkItemSetup = {
   kind: AuctioneerIncomingKind;
   reportType: AuctioneerReportType;
   clientSubmissionId?: string;
+  status?: AuctioneerIncomingStatus;
+  reportId?: string;
+  canResumeUpload?: boolean;
   contract: {
     id: string;
     contractNo: string;
@@ -321,6 +324,7 @@ function normalizeSetup(value: unknown): AuctioneerWorkItemSetup {
     [];
 
   const workItemId = textValue(raw.workItemId, raw.work_item_id, raw.id, raw._id);
+  const status = textValue(raw.status, raw.state);
   return {
     workItemId,
     cycleKey: textValue(raw.cycleKey, raw.cycle_key),
@@ -337,6 +341,9 @@ function normalizeSetup(value: unknown): AuctioneerWorkItemSetup {
       ) || "asset",
     clientSubmissionId:
       textValue(raw.clientSubmissionId, raw.client_submission_id) || undefined,
+    status: status ? normalizeStatus(status) : undefined,
+    reportId: textValue(raw.reportId, raw.report_id) || undefined,
+    canResumeUpload: typeof raw.canResumeUpload === "boolean" ? raw.canResumeUpload : undefined,
     contract: {
       id: textValue(
         raw.contractId,
@@ -486,9 +493,21 @@ export const AuctioneerService = {
     return claimed;
   },
 
-  async getSetup(workItemId: string) {
+  async getSetup(workItemId: string, options?: { signal?: AbortSignal }) {
     const response = await API.get(
-      `/auctioneer/work-items/${encodeURIComponent(workItemId)}/setup`
+      `/auctioneer/work-items/${encodeURIComponent(workItemId)}/setup`,
+      options
+    );
+    return normalizeSetup(response.data);
+  },
+
+  async continueWorkItem(
+    workItemId: string,
+    reportId: string
+  ): Promise<AuctioneerWorkItemSetup> {
+    const response = await API.post(
+      `/auctioneer/work-items/${encodeURIComponent(workItemId)}/continue`,
+      { reportId }
     );
     return normalizeSetup(response.data);
   },

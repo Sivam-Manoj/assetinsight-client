@@ -51,6 +51,8 @@ import {
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import DuplicateDraftDialog from "./DuplicateDraftDialog";
 import { saveManualDraftOnly } from "./manualDraftSave";
+import AuctioneerContinueAction from "./AuctioneerContinueAction";
+import { acceptedAuctioneerReportId } from "./auctioneerContinuation";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -103,6 +105,7 @@ const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
 
 type Props = {
   onSuccess?: (message?: string) => void;
+  onAcceptedAndContinue?: (reportId: string | undefined) => void;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
@@ -112,6 +115,7 @@ type Props = {
 };
 
 type DraftSnapshot = {
+  auctioneerWorkItemId?: string;
   contractNo: string;
   salesDate: string;
   location: string;
@@ -279,6 +283,7 @@ function draftFailureGuidance(error: unknown): DraftIssue {
 
 export default function LotListingForm({
   onSuccess,
+  onAcceptedAndContinue,
   onCancel: _onCancel,
   onDraftStatusChange,
   auctioneer,
@@ -445,6 +450,7 @@ export default function LotListingForm({
     bankPhotosEnabled,
     watermarkImages,
     clientSubmissionId: jobIdRef.current,
+    ...(auctioneer ? { auctioneerWorkItemId: auctioneer.workItemId } : {}),
     lots: mixedLots,
   };
 
@@ -1386,7 +1392,7 @@ export default function LotListingForm({
   }, [clearAcceptedDraft, dispatchReportCreated, onSuccess]);
 
   const onSubmit = useCallback(
-    async (event?: React.FormEvent) => {
+    async (event?: React.FormEvent, continueWithNewLot = false) => {
       event?.preventDefault();
       if (activeFormOperationRef.current || submitLockRef.current) return;
       setError(null);
@@ -1579,8 +1585,11 @@ export default function LotListingForm({
             "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
           );
         }
-        onSuccess?.(acceptedMessage);
-        void responseData;
+        if (continueWithNewLot && auctioneer && onAcceptedAndContinue) {
+          onAcceptedAndContinue(acceptedAuctioneerReportId(responseData));
+        } else {
+          onSuccess?.(acceptedMessage);
+        }
       } catch (submitError: any) {
         const isConflict =
           submitError?.response?.status === 409 &&
@@ -1659,6 +1668,7 @@ export default function LotListingForm({
       longitude,
       mixedLots,
       onSuccess,
+      onAcceptedAndContinue,
       reportDraftStatus,
       salesDate,
       watermarkImages,
@@ -2175,6 +2185,12 @@ export default function LotListingForm({
             {submitting ? "Uploading..." : "Create Lot Listing"}
           </button>
         </span>
+        {auctioneer && onAcceptedAndContinue ? (
+          <AuctioneerContinueAction
+            disabled={submitting || restoringDraft || draftSaving}
+            onClick={() => void onSubmit(undefined, true)}
+          />
+        ) : null}
         </FormActionBar>
       </div>
 

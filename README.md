@@ -22,6 +22,34 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Incoming contracts: generate and start a new lot
+
+Asset and Lot Listing forms opened from Incoming include **Generate files & new
+lot** alongside their ordinary create action. It submits the current media through
+the existing analysis pipeline; it does not skip preview, approval or release.
+After the upload is accepted, the client sends the accepted report ID to
+`POST /auctioneer/work-items/:id/continue` and opens a fresh form of the same type.
+Imported contract, customer, event and location details come from the server;
+photos, videos, annotations, source-lot mappings and submission/draft identity
+are not reused. The original Schedule A form remains locked to its assigned lots;
+the continuation is a new unknown lot, not another copy of the Schedule A.
+
+If opening the next form fails, the accepted report remains accepted. **Retry open
+new form** repeats only the idempotent continuation request. If another tab has
+already used that successor, the UI offers Reports rather than an empty form
+under an old submission ID. Ordinary create actions still open Previews. Saving
+a new imported draft preserves its work-item reference, and reopening validates
+the current setup and exact saved submission identity before enabling editing.
+An upload placeholder marked `report_created` can resume only when the backend
+explicitly advertises `canResumeUpload: true`; accepted reports cannot. Legacy ordinary drafts keep
+their existing behavior.
+
+Backend continuation/setup support must be deployed first. Focused coverage is
+in `services/auctioneer.test.ts`, `components/forms/auctioneerContinuation.test.ts`,
+`components/forms/ReportFormPage.test.tsx` and both Asset/Lot Listing workflow
+suites. Tests use synthetic fixtures, with no live Auctioneer delivery or report
+generation required.
+
 ### Failed Asset and Lot Listing preview recovery
 
 The preview queue and report deep links keep Preview available after generation

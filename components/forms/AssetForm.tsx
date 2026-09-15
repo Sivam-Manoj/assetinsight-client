@@ -47,6 +47,8 @@ import { BrowserLocationService } from "@/services/browserLocation";
 import ActiveReportConflictDialog from "./ActiveReportConflictDialog";
 import DuplicateDraftDialog from "./DuplicateDraftDialog";
 import { saveManualDraftOnly } from "./manualDraftSave";
+import AuctioneerContinueAction from "./AuctioneerContinueAction";
+import { acceptedAuctioneerReportId } from "./auctioneerContinuation";
 import {
   auctioneerDateOnly,
   auctioneerDraftScope,
@@ -99,6 +101,7 @@ const SmartUploadWorkspace = dynamic(
 
 type Props = {
   onSuccess?: (message?: string) => void;
+  onAcceptedAndContinue?: (reportId: string | undefined) => void;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
@@ -149,6 +152,7 @@ type LocalDraftMedia = FileDescriptor & {
 
 type AssetDraftFormData = {
   clientSubmissionId: string;
+  auctioneerWorkItemId?: string;
   clientName: string;
   effectiveDate: string;
   appraisalPurpose: string;
@@ -312,6 +316,7 @@ const valuationOptions: Array<{
 const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   {
     onSuccess,
+    onAcceptedAndContinue,
     onCancel,
     onDraftStatusChange,
     auctioneer,
@@ -531,6 +536,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const currentFormData: AssetDraftFormData = {
     clientSubmissionId: jobIdRef.current || "",
+    ...(auctioneer ? { auctioneerWorkItemId: auctioneer.workItemId } : {}),
     clientName,
     effectiveDate,
     appraisalPurpose,
@@ -1812,7 +1818,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return `About ${Math.ceil(remainingSeconds / 60)}m remaining`;
   };
 
-  async function onSubmit(event?: React.FormEvent) {
+  async function onSubmit(event?: React.FormEvent, continueWithNewLot = false) {
     event?.preventDefault();
     if (
       activeFormOperationRef.current ||
@@ -1925,7 +1931,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         startTime: Date.now(),
       });
 
-      await AssetService.create(payload, filesToSend, videosToSend, {
+      const response = await AssetService.create(payload, filesToSend, videosToSend, {
         onUploadProgress: (fraction) => {
           const progress = Math.max(0, Math.min(1, fraction));
           setUploadProgress(progress * 100);
@@ -1968,7 +1974,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         autoSaveBlockedRef.current = false;
         setDraftHydrated(true);
       }, 0);
-      onSuccess?.(accepted);
+      if (continueWithNewLot && auctioneer && onAcceptedAndContinue) {
+        onAcceptedAndContinue(acceptedAuctioneerReportId(response));
+      } else {
+        onSuccess?.(accepted);
+      }
     } catch (submitError: any) {
       autoSaveBlockedRef.current = false;
       if (controller.signal.aborted) {
@@ -2569,7 +2579,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         </div>
       </div>
 
-      <FormActionBar className="flex-nowrap">
+      <FormActionBar className={auctioneer && onAcceptedAndContinue ? undefined : "flex-nowrap"}>
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
@@ -2605,6 +2615,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             {submitting ? "Uploading…" : "Create report"}
           </button>
         </div>
+        {auctioneer && onAcceptedAndContinue ? (
+          <AuctioneerContinueAction
+            disabled={submitting || draftSaving}
+            onClick={() => void onSubmit(undefined, true)}
+          />
+        ) : null}
         </FormActionBar>
       </div>
 
