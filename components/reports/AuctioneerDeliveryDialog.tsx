@@ -22,13 +22,33 @@ export type AuctioneerDeliveryDialogProps = {
   onUpdated: (delivery: AuctioneerDeliverySummary) => void;
 };
 
-function errorMessage(error: any, fallback: string) {
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    fallback
-  );
+function errorRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function errorText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  const failure = errorRecord(error);
+  const body = errorRecord(errorRecord(failure.response).data);
+  const nested = errorRecord(body.error);
+  const message =
+    errorText(body.message) ||
+    errorText(body.error) ||
+    errorText(nested.message) ||
+    errorText(failure.message) ||
+    fallback;
+  const rawCode = errorText(body.code) || errorText(nested.code);
+  // Only the API's named error fields cross this boundary. Never render objects,
+  // response dumps or Axios transport codes in place of the actual rejection.
+  const code = rawCode && /^[a-z][a-z\d_-]{0,95}$/i.test(rawCode) ? rawCode : undefined;
+  return code && !message.toUpperCase().includes(code.toUpperCase())
+    ? `${message} (${code})`
+    : message;
 }
 
 function isLotListingDelivery(
@@ -73,7 +93,7 @@ function Notice({
                 : "var(--app-info)",
         }}
       />
-      <span>{children}</span>
+      <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{children}</span>
     </div>
   );
 }
@@ -149,7 +169,7 @@ export default function AuctioneerDeliveryDialog({
           : "Auctioneer delivery queued."
       );
       onClose();
-    } catch (sendError: any) {
+    } catch (sendError: unknown) {
       setError(errorMessage(sendError, "Unable to queue the Auctioneer delivery."));
     } finally {
       setBusy(false);
@@ -179,7 +199,7 @@ export default function AuctioneerDeliveryDialog({
       onUpdated(updated);
       toast.success("Delivery reconciliation saved.");
       onClose();
-    } catch (reconcileError: any) {
+    } catch (reconcileError: unknown) {
       setError(
         errorMessage(reconcileError, "Unable to reconcile this Auctioneer lot.")
       );

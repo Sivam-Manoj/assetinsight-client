@@ -156,4 +156,188 @@ describe("AuctioneerDeliveryDialog", () => {
       )
     ).toBeInTheDocument();
   });
+
+  it("keeps the full saved delivery failure visible when the dialog is reopened", async () => {
+    const savedError =
+      "LOT_NUMBER_CONFLICT: Lot number 1 is already assigned within this event.";
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={{ ...delivery, state: "failed", error: savedError }}
+        onClose={vi.fn()}
+        onUpdated={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(savedError);
+    expect(screen.getByRole("button", { name: "Retry delivery" })).toBeEnabled();
+    expect(mocks.sendDelivery).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "top-level error message",
+      data: {
+        message: "Lot number 1 is already assigned within this event.",
+        code: "LOT_NUMBER_CONFLICT",
+      },
+      expected:
+        "Lot number 1 is already assigned within this event. (LOT_NUMBER_CONFLICT)",
+    },
+    {
+      name: "string error field",
+      data: {
+        error: "Lot number 1 is already assigned within this event.",
+        code: "LOT_NUMBER_CONFLICT",
+      },
+      expected:
+        "Lot number 1 is already assigned within this event. (LOT_NUMBER_CONFLICT)",
+    },
+    {
+      name: "nested error fields",
+      data: {
+        message: { unsafe: "not a message" },
+        error: {
+          message: "Lot number 1 is already assigned within this event.",
+          code: "LOT_NUMBER_CONFLICT",
+        },
+      },
+      expected:
+        "Lot number 1 is already assigned within this event. (LOT_NUMBER_CONFLICT)",
+    },
+    {
+      name: "code already included in the server message",
+      data: {
+        message:
+          "LOT_NUMBER_CONFLICT: Lot number 1 is already assigned within this event.",
+        code: "LOT_NUMBER_CONFLICT",
+      },
+      expected:
+        "LOT_NUMBER_CONFLICT: Lot number 1 is already assigned within this event.",
+    },
+  ])("shows $name without replacing it with Axios status text", async ({ data, expected }) => {
+    const onClose = vi.fn();
+    const onUpdated = vi.fn();
+    mocks.sendDelivery.mockRejectedValueOnce({
+      response: { status: 409, data },
+      message: "Request failed with status code 409",
+    });
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={delivery}
+        onClose={onClose}
+        onUpdated={onUpdated}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send report" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(expected);
+    expect(alert.textContent?.match(/LOT_NUMBER_CONFLICT/g)).toHaveLength(1);
+    expect(alert).not.toHaveTextContent("status code 409");
+    expect(screen.getByRole("dialog", { name: "Send to Auctioneer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send report" })).toBeEnabled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    { response: { data: { message: [], error: { details: { private: "hidden" } }, code: {} } } },
+    { response: { data: ["not an error envelope"] } },
+    { response: { data: { message: "  ", code: "invalid code <tag>" } } },
+  ])("uses a safe fallback for malformed failures: %j", async (failure) => {
+    mocks.sendDelivery.mockRejectedValueOnce(failure);
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={delivery}
+        onClose={vi.fn()}
+        onUpdated={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send report" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to queue the Auctioneer delivery."
+    );
+    expect(screen.queryByText(/private|hidden|\[object Object\]|invalid code/)).not.toBeInTheDocument();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("retains original failed-delivery settings across a rejected retry", async () => {
+    const onClose = vi.fn();
+    const onUpdated = vi.fn();
+    mocks.sendDelivery.mockRejectedValue({
+      response: {
+        status: 409,
+        data: { message: "Lot number 1 is already assigned within this event.", code: "LOT_NUMBER_CONFLICT" },
+      },
+    });
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={{
+          ...delivery,
+          state: "failed",
+          destination: "OpToDoBoard",
+          opTaskDescription: "Inspect before auction",
+          completeContract: true,
+        }}
+        onClose={onClose}
+        onUpdated={onUpdated}
+      />
+    );
+    expect(screen.getByRole("combobox", { name: "Destination" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: /Operations To-Do note/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Mark the contract task complete/ })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry delivery" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Retry delivery" }));
+
+    await waitFor(() => expect(mocks.sendDelivery).toHaveBeenCalledTimes(2));
+    expect(mocks.sendDelivery.mock.calls).toEqual([
+      ["work-100", { destination: "OpToDoBoard", opTaskDescription: "Inspect before auction", completeContract: true }],
+      ["work-100", { destination: "OpToDoBoard", opTaskDescription: "Inspect before auction", completeContract: true }],
+    ]);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("shows reconciliation rejection details without closing or announcing success", async () => {
+    const onClose = vi.fn();
+    const onUpdated = vi.fn();
+    mocks.reconcileDelivery.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { error: { message: "The lot belongs to a different contract.", code: "LOT_CONTRACT_MISMATCH" } },
+      },
+      message: "Request failed with status code 409",
+    });
+    render(
+      <AuctioneerDeliveryDialog
+        open
+        delivery={{ ...delivery, state: "needs_reconciliation" }}
+        onClose={onClose}
+        onUpdated={onUpdated}
+      />
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /Existing Auctioneer lot ID/ }), {
+      target: { value: "external-lot" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save reconciliation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The lot belongs to a different contract. (LOT_CONTRACT_MISMATCH)"
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+  });
 });
