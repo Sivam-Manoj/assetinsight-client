@@ -1,4 +1,5 @@
 "use client";
+import { useReportActivity } from "./drafts/useReportActivity";
 
 import {
   forwardRef,
@@ -399,6 +400,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     buildAuctioneerSeedLots(auctioneer)
   );
 
+
   const [openSections, setOpenSections] = useState<Set<SectionId>>(
     () => new Set(["report", "media"])
   );
@@ -434,6 +436,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [discarding, setDiscarding] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
+  useReportActivity(userId, draftScopeId, "asset", contractNo, mixedLots, watermarkImages, draftHydrated);
 
   const currencyPromptedRef = useRef(false);
   const jobIdRef = useRef<string | null>(
@@ -1705,6 +1708,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       include_damage_analysis: includeDamageAnalysis,
       bank_photos_enabled: bankPhotosEnabled,
       watermark_images: watermarkImages,
+      activity_id: draftScopeId,
       force_new: forceNewSubmissionRef.current,
       ...(auctioneer && {
         auctioneer_work_item_id: auctioneer.workItemId,
@@ -1874,6 +1878,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         bank_photos_enabled: bankPhotosEnabled,
         watermark_images: watermarkImages,
         progress_id: jobId,
+        activity_id: draftScopeId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
         ...(supersededSubmissionIdRef.current

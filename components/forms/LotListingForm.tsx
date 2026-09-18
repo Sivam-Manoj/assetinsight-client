@@ -1,4 +1,5 @@
 "use client";
+import { useReportActivity } from "./drafts/useReportActivity";
 
 import React, {
   useCallback,
@@ -337,6 +338,7 @@ export default function LotListingForm({
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
   const [watermarkImages, setWatermarkImages] = useState(false);
 
+
   const [openSections, setOpenSections] = useState({
     details: true,
     media: true,
@@ -366,6 +368,7 @@ export default function LotListingForm({
     useState<ReportDraftSaveProgress | null>(null);
   const [draftSaveActive, setDraftSaveActive] = useState(false);
   const [restoringDraft, setRestoringDraft] = useState(false);
+  useReportActivity(userId, draftScopeId, "lot-listing", contractNo, mixedLots, watermarkImages, !restoringDraft);
   const [confirmAction, setConfirmAction] = useState<
     "clear" | "discard" | null
   >(null);
@@ -1336,6 +1339,7 @@ export default function LotListingForm({
       include_damage_analysis: true,
       bank_photos_enabled: bankPhotosEnabled,
       watermark_images: watermarkImages,
+      activity_id: draftScopeId,
       force_new: forceNewSubmissionRef.current,
       ...(auctioneer && {
         auctioneer_work_item_id: auctioneer.workItemId,
@@ -1461,6 +1465,7 @@ export default function LotListingForm({
         bank_photos_enabled: bankPhotosEnabled,
         watermark_images: watermarkImages,
         progress_id: jobId,
+        activity_id: draftScopeId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
         ...(supersededSubmissionIdRef.current

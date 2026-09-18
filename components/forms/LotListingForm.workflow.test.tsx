@@ -159,6 +159,7 @@ vi.mock("./drafts/storage", () => {
     DraftEnvelopeError,
     DraftPersistenceError,
     FORM_DRAFT_VERSION: 3,
+    recordBrowserObservation: vi.fn(async () => undefined),
     deleteScopedDraft: mocks.deleteScopedDraft,
     getScopedDraftKey: () => "lot-listing-draft-key",
     hasScopedDraft: mocks.hasScopedDraft,

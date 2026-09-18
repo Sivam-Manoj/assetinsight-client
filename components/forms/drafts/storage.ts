@@ -1,7 +1,32 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { activityBatch, activityCounts, observeActivity, type ActivityState, type DeviceActivity } from "@/lib/reportActivityObservation";
 
 export const FORM_DRAFT_VERSION = 3 as const;
 export const LEGACY_FORM_DRAFT_VERSION = 2 as const;
+
+export function browserActivityState(value: unknown): ActivityState {
+  const envelope = value as Record<string, any>;
+  const form = envelope.formData || envelope.data || {};
+  const lots = (envelope.lots || form.lots || []) as Array<Record<string, any>>;
+  const photo = (item: any) => ({ id: String(item?.id || item?.clientFileId || item?.mediaId || "not-recorded"), camera: false });
+  return { lots: lots.map(lot => ({ id: lot.id, lotNumber: String(lot.lotNumber || ""),
+    main: (lot.files || lot.mainImages || []).map(photo), extra: (lot.extraFiles || lot.extraImages || []).map(photo),
+    cover: Number.isInteger(lot.coverIndex) ? lot.coverIndex : null })),
+    activeLot: lots[envelope.activeLotIdx || form.activeLotIdx || 0]?.id || null,
+    logo: typeof form.watermarkImages === "boolean" ? form.watermarkImages : null, mode: "online", status: "local" };
+}
+
+export async function pendingBrowserActivity(owner: string) {
+  const database = await getDatabase();
+  const rows = await database.getAllFromIndex("activity", "by-owner", owner, 100);
+  return activityBatch(rows.map(row => row.event));
+}
+export async function acknowledgeBrowserActivity(owner: string, ids: string[]) {
+  const database = await getDatabase();
+  const tx = database.transaction("activity", "readwrite");
+  for (const id of ids.slice(0, 100)) await tx.store.delete(`${owner}:${id}`);
+  await tx.done;
+}
 
 export type FormDraftKind = "asset" | "lot-listing";
 
@@ -36,6 +61,12 @@ type StoredDraft = {
 };
 
 interface DraftDatabase extends DBSchema {
+  activitySnapshots: { key: string; value: { id: string; state: ActivityState; revision: number } };
+  activity: {
+    key: string;
+    value: { id: string; owner: string; event: DeviceActivity };
+    indexes: { "by-owner": string };
+  };
   drafts: {
     key: string;
     value: StoredDraft;
@@ -85,10 +116,36 @@ export class DraftPersistenceError extends Error {
 }
 
 const DB_NAME = "clearvalue-form-drafts";
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 let databasePromise: Promise<IDBPDatabase<DraftDatabase>> | null = null;
 let persistenceRequested = false;
 const mediaIdByBlob = new WeakMap<Blob, string>();
+
+export async function recordBrowserObservation(owner: string, activityId: string, kind: FormDraftKind, contract: string, lots: Array<{ id: string; lotNumber?: string; files: File[]; extraFiles?: File[]; coverIndex: number }>, logo: boolean, baseline = false) {
+  const scope = scopeFor(owner, kind, activityId);
+  const photo = (file: File) => {
+    const id = mediaIdByBlob.get(file) || createMediaId(scope, file.name);
+    mediaIdByBlob.set(file, id); return { id, camera: false };
+  };
+  const state: ActivityState = { lots: lots.map(lot => ({ id: lot.id, lotNumber: String(lot.lotNumber || ""),
+    main: lot.files.map(photo), extra: (lot.extraFiles || []).map(photo), cover: lot.coverIndex })), activeLot: null, logo, mode: "online", status: "local" };
+  const database = await getDatabase();
+  const tx = database.transaction(["activity", "activitySnapshots"], "readwrite");
+  const previous = await tx.objectStore("activitySnapshots").get(scope);
+  // Mount/restore establishes current state; it must not invent removals while
+  // hydration replaces an empty form, or replay imports already saved yesterday.
+  const observations = baseline
+    ? previous ? [] : observeActivity(null, state).filter(event => event.action === "history_started")
+    : observeActivity(previous?.state || null, state).filter(event => event.action !== "draft_saved");
+  const revision = (previous?.revision || 0) + 1;
+  for (const [index, observation] of observations.entries()) {
+    const event: DeviceActivity = { ...observation, eventId: `observe:${activityId}:${revision}:${index}`, activityId,
+      reportType: kind === "asset" ? "asset" : "lotListing", contract, source: "web", sequence: revision, sequenceScope: scope, observedAt: new Date().toISOString() };
+    await tx.objectStore("activity").add({ id: `${owner}:${event.eventId}`, owner, event });
+  }
+  await tx.objectStore("activitySnapshots").put({ id: scope, state, revision });
+  await tx.done;
+}
 
 function normalizeScopeId(scopeId?: string) {
   const normalized = String(scopeId || "").trim();
@@ -112,9 +169,13 @@ function getDatabase() {
   if (!databasePromise) {
     databasePromise = openDB<DraftDatabase>(DB_NAME, DB_VERSION, {
       upgrade(database) {
-        database.createObjectStore("drafts", { keyPath: "scope" });
-        const media = database.createObjectStore("media", { keyPath: "id" });
-        media.createIndex("by-scope", "scope");
+        if (!database.objectStoreNames.contains("drafts")) database.createObjectStore("drafts", { keyPath: "scope" });
+        if (!database.objectStoreNames.contains("media")) {
+          const media = database.createObjectStore("media", { keyPath: "id" });
+          media.createIndex("by-scope", "scope");
+        }
+        if (!database.objectStoreNames.contains("activity")) database.createObjectStore("activity", { keyPath: "id" }).createIndex("by-owner", "owner");
+        if (!database.objectStoreNames.contains("activitySnapshots")) database.createObjectStore("activitySnapshots", { keyPath: "id" });
       },
     }).catch((error) => {
       databasePromise = null;
@@ -281,10 +342,28 @@ export async function saveScopedDraft<T extends ScopedDraftEnvelope>(
   const scope = scopeFor(envelope.userId, envelope.kind, scopeId);
   const nextMedia = new Map<string, StoredMedia>();
   const serialized = await serializeValue(envelope, "draft", scope, nextMedia);
-  const transaction = database.transaction(["drafts", "media"], "readwrite");
+  const transaction = database.transaction(["drafts", "media", "activity"], "readwrite");
 
   try {
     const previous = await transaction.objectStore("drafts").get(scope);
+    const draftData = serialized as Record<string, any>;
+    const form = draftData.formData || draftData.data || {};
+    const activityId = String(scopeId || form.captureId || form.clientSubmissionId || scope);
+    const oldForm = (previous?.envelope as Record<string, any> | undefined)?.formData || (previous?.envelope as Record<string, any> | undefined)?.data || {};
+    const observations = [{ action: "draft_saved", outcome: "completed" as const, data: {
+      beforeCounts: activityCounts(previous ? browserActivityState(previous.envelope) : null),
+      afterCounts: activityCounts(browserActivityState(serialized)), uploadLogo: typeof form.watermarkImages === "boolean" ? form.watermarkImages : null,
+      cameraStamp: "not_recorded", captureMode: "online",
+      fields: Object.keys(form).filter(key => !/lot|image|photo|file|uri|url/i.test(key) && JSON.stringify(oldForm[key]) !== JSON.stringify(form[key])).slice(0, 100),
+    } }];
+    const operationId = createMediaId("event", scope);
+    for (const [index, observation] of observations.entries()) {
+      const event: DeviceActivity = { ...observation, eventId: `${operationId}:${index}`, activityId,
+        reportType: envelope.kind === "asset" ? "asset" : "lotListing", contract: String(form.contractNo || ""),
+        source: "web", sequence: Math.max(1, envelope.revision), sequenceScope: `saved:${scope}`,
+        observedAt: envelope.savedAt };
+      await transaction.objectStore("activity").add({ id: `${envelope.userId}:${event.eventId}`, owner: envelope.userId, event });
+    }
     for (const record of nextMedia.values()) {
       const existing = await transaction.objectStore("media").get(record.id);
       if (

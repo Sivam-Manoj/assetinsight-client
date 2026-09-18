@@ -20,6 +20,7 @@ import {
   type RestrictedDeviceAccess,
 } from "@/lib/device-access";
 import { DeviceAccessService } from "@/services/device-access";
+import { startReportActivitySync } from "@/services/reportActivitySync";
 
 export type AuthContextType = {
   user: AuthUser | null;
@@ -47,6 +48,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [deviceAccess, setDeviceAccess] = useState<RestrictedDeviceAccess | null>(null);
   const statusRequest = useRef<Promise<void> | null>(null);
+  useEffect(() => {
+    if (!user?._id || loggingOut || deviceAccess) return;
+    return startReportActivitySync(user._id);
+  }, [user?._id, loggingOut, deviceAccess]);
 
   const applyResponse = useCallback((data: AuthResponse) => {
     if (data.authState === "authenticated") {

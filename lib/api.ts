@@ -14,6 +14,10 @@ const API = axios.create({
 });
 
 API.interceptors.request.use(async (config) => {
+  config.headers["X-Activity-Source"] = "web";
+  const details = config.data?.details || config.data?.formData || config.data;
+  const activityId = details?.activity_id || details?.capture_id || config.data?.clientDraftId || details?.client_submission_id || details?.clientSubmissionId;
+  if (typeof activityId === "string" && /^[a-zA-Z0-9._:-]{1,160}$/.test(activityId)) config.headers["X-Activity-Id"] = activityId;
   const token = getAccessToken();
   if (token) {
     config.headers = config.headers || {};

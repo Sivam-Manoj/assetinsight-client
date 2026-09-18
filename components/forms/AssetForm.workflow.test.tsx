@@ -161,6 +161,7 @@ vi.mock("@/services/savedInputs", () => ({
 }));
 
 vi.mock("./drafts/storage", () => ({
+  recordBrowserObservation: vi.fn(async () => undefined),
   FORM_DRAFT_VERSION: 3,
   deleteScopedDraft: mocks.deleteScopedDraft,
   getScopedDraftKey: () => "asset-workflow-storage-key",

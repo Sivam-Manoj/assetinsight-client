@@ -72,6 +72,7 @@ export interface LotListing {
   };
   include_damage_analysis?: boolean;
   watermark_images?: boolean;
+  activity_id?: string;
   progress?: {
     phase: string;
     percent: number;

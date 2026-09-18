@@ -9,9 +9,48 @@ import {
   listScopedDrafts,
   parseScopedDraftEnvelope,
   saveScopedDraft,
+  recordBrowserObservation,
+  pendingBrowserActivity,
+  acknowledgeBrowserActivity,
 } from "./storage";
 
 describe("scoped v2 form drafts", () => {
+  it("restores a baseline without inventing deletions or replaying imports on save", async () => {
+    const owner = "restored-activity", id = "stable-draft";
+    const lots = [{ id: "lot", lotNumber: "157", files: [new File(["x"], "photo.jpg")], extraFiles: [], coverIndex: 0 }];
+    await recordBrowserObservation(owner, id, "asset", "93530", lots, false);
+    const initial = await pendingBrowserActivity(owner);
+    await acknowledgeBrowserActivity(owner, initial.map(event => event.eventId));
+    await recordBrowserObservation(owner, id, "asset", "93530", [], false, true);
+    await recordBrowserObservation(owner, id, "asset", "93530", lots, false, true);
+    expect(await pendingBrowserActivity(owner)).toEqual([]);
+    await saveScopedDraft({ version: 3, kind: "asset", userId: owner, revision: 1, savedAt: new Date().toISOString(), formData: { contractNo: "93530", description: "Private pre-submission text", watermarkImages: false }, lots }, id);
+    const saved = await pendingBrowserActivity(owner);
+    expect(saved.map(event => event.action)).toEqual(["draft_saved"]);
+    expect(saved[0].activityId).toBe(id);
+    expect(saved[0].data.fields).toContain("description");
+    expect(JSON.stringify(saved)).not.toContain("Private pre-submission text");
+  });
+  it("retains metadata-only upload/remove/order history without saving photos or submitting", async () => {
+    const owner = "activity-browser-user", id = "activity-browser-draft";
+    const a = new File(["private image"], "private-camera.jpg", { type: "image/jpeg" });
+    const b = new File(["other"], "other.jpg", { type: "image/jpeg" });
+    const lots = [{ id: "lot-1", files: [a, b], extraFiles: [], coverIndex: 0 }];
+    await recordBrowserObservation(owner, id, "asset", "93530", lots, false);
+    const first = await pendingBrowserActivity(owner);
+    expect(first.some(event => event.action === "photos_imported")).toBe(true);
+    expect(JSON.stringify(first)).not.toMatch(/private image|private-camera|other.jpg/);
+    expect(await hasScopedDraft(owner, "asset", id)).toBe(false);
+    await acknowledgeBrowserActivity(owner, first.map(event => event.eventId));
+    await recordBrowserObservation(owner, id, "asset", "93530", [{ ...lots[0], files: [b, a], coverIndex: 1 }], true);
+    const changes = await pendingBrowserActivity(owner);
+    expect(changes.map(event => event.action)).toEqual(expect.arrayContaining(["photos_reordered", "logo_changed", "cover_changed"]));
+    expect(await pendingBrowserActivity("different-user")).toEqual([]);
+    await acknowledgeBrowserActivity("different-user", changes.map(event => event.eventId));
+    expect(await pendingBrowserActivity(owner)).toEqual(changes);
+    await recordBrowserObservation(owner, id, "asset", "93530", [], true);
+    expect((await pendingBrowserActivity(owner)).some(event => event.action === "lot_removed")).toBe(true);
+  });
   it("isolates users and form types in their storage keys", () => {
     expect(getScopedDraftKey("user-a", "asset")).toBe(
       "cv:user-a:asset:draft:v2"

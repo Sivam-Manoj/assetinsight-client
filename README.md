@@ -22,6 +22,23 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Asset/Lot activity metadata
+
+Both forms queue owner-scoped operational observations in IndexedDB: imports,
+lot/photo removal and ordering, cover changes, logo choices and explicit draft
+saves. Draft restoration establishes a baseline, not a new import or deletion.
+No photo bytes or unfinished field values are added to this queue, and ordinary
+text changes do not generate keystroke events. Server-side preview/report
+transitions provide the confirmed saved-change history.
+
+While signed in and foregrounded, reconnect/periodic sync sends at most 100 events
+and 256 KiB to `/api/report-activity/events`, with stable event IDs and an explicit
+owner fence. Only acknowledged IDs are removed. This never uploads media or starts
+report submission. Account changes abort sync and preserve the old owner's queue.
+The optional `activity_id` links normal/Smart Upload submissions to local history;
+existing submission/session retry identities and report limits are unchanged.
+Backend support must be deployed first. No new package is required.
+
 ### Incoming contracts: generate and start a new lot
 
 Asset and Lot Listing forms opened from Incoming include **Generate files & new

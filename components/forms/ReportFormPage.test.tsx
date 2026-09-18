@@ -131,7 +131,8 @@ describe("ReportFormPage handoff", () => {
     expect(screen.getByTestId(`${kind}-handoff`)).toHaveTextContent("CV-E2E-100");
     expect(mocks.continueWorkItem).toHaveBeenCalledExactlyOnceWith("work-100", "accepted-report-1");
     expect(mocks.routerPush).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveFocus();
+    // The continuation commits the new form before its focus effect runs.
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveFocus());
   });
 
   it("retries only continuation with the same accepted receipt, with a single-flight lock", async () => {
