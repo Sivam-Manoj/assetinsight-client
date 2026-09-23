@@ -66,6 +66,11 @@ export type AuthUser = {
   isReportApprover?: boolean;
   isReleaseManager?: boolean;
   proposalValuationEnabled?: boolean;
+  isCrmAgent?: boolean;
+  role?: 'user' | 'admin' | 'superadmin';
+  crmAddress?: string;
+  crmQuadrant?: string;
+  crmSpecializations?: string[];
   avatarUrl?: string;
   avatarUploadedAt?: string;
   authProvider?: string;

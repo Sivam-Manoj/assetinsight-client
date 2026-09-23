@@ -1,6 +1,7 @@
 "use client";
 
 import { Bell, Check, CheckCheck, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { toast } from "@/components/ui/toast";
@@ -8,6 +9,7 @@ import { notificationCacheKey, NotificationsService, type WorkspaceNotification 
 import styles from "./Notifications.module.css";
 import PreviewReminderContent from "@/components/notifications/PreviewReminderContent";
 import { previewReminderDetails } from "@/lib/previewReminderNotification";
+import { crmNotificationHref } from "@/lib/crmNotification";
 
 type Filter = "all" | "new" | "seen";
 
@@ -73,6 +75,7 @@ export default function NotificationsPage() {
                   <summary>Read message and report guidance</summary>
                   <PreviewReminderContent item={item} />
                 </details> : <p>{item.body}</p>}
+                {crmNotificationHref(item) ? <Link className="app-button app-button--secondary" href={crmNotificationHref(item)!} onClick={() => { void markRead(item).catch(() => undefined); }}>Open CRM</Link> : null}
                 <time>{formatDate(item.createdAt)}</time></div>
               <div className={styles.actions}>
                 {!item.read ? <button title="Mark read" aria-label={`Mark ${item.title} read`} onClick={() => void markRead(item)}><Check size={17} /></button> : null}

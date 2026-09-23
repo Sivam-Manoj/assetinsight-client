@@ -9,6 +9,7 @@ import {
   LifeBuoy,
   Settings,
   ShieldCheck,
+  UsersRound,
 } from "lucide-react";
 import type { AuthUser } from "@/services/auth";
 
@@ -30,6 +31,12 @@ export const PRIMARY_NAVIGATION: readonly NavItem[] = [
     label: "Incoming",
     href: "/incoming",
     icon: Inbox,
+  },
+  {
+    label: "CRM",
+    href: "/crm",
+    icon: UsersRound,
+    visible: (user) => user?.isCrmAgent === true,
   },
   {
     label: "My Reports",
@@ -85,6 +92,7 @@ export function isNavItemActive(item: NavItem, pathname: string) {
 export const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/incoming": "Incoming",
+  "/crm": "CRM",
   "/reports": "My Reports",
   "/proposal-valuations": "Proposal Valuation",
   "/previews": "Previews",

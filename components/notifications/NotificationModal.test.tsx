@@ -73,6 +73,26 @@ describe("full saved preview notification messages", () => {
     expect(screen.queryByLabelText("Report notification details")).toBeNull();
   });
 
+  it("links canonical CRM task and transfer notices to the new workspace", () => {
+    mocks.swr.mockReturnValue({ data: { items: [
+      { ...reminder, id: "crm-task", type: "crm_due", title: "Call prospect", data: { taskId: reportId, route: "/incoming" } },
+      { ...reminder, id: "crm-transfer", type: "crm_transfer_request", title: "Transfer request", data: { leadId: reportId } },
+    ] } });
+    render(<NotificationModal onClose={vi.fn()} />);
+    expect(screen.getByRole("link", { name: /Call prospect/ })).toHaveAttribute("href", `/crm?task=${reportId}`);
+    expect(screen.getByRole("link", { name: /Transfer request/ })).toHaveAttribute("href", "/crm?view=transfers");
+    expect(NotificationsService.markRead).not.toHaveBeenCalled();
+  });
+
+  it("offers the same CRM task link in the full notification center", () => {
+    mocks.swr.mockReturnValue({ data: { items: [{ ...reminder, type: "crm_due", title: "Call prospect", data: { taskId: reportId } }], total: 1, unreadCount: 1 } });
+    render(<NotificationsPage />);
+    expect(screen.getByRole("link", { name: "Open CRM" })).toHaveAttribute("href", `/crm?task=${reportId}`);
+    expect(NotificationsService.markRead).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("link", { name: "Open CRM" }));
+    expect(NotificationsService.markRead).toHaveBeenCalledWith("notice-1");
+  });
+
   it.each(["javascript:alert(1)", "../../account", "report-1", ""])("does not create a preview link from invalid id %s", (id) => {
     expect(previewReminderDetails({ ...reminder, data: { ...reminder.data, reportId: id } })?.previewHref).toBeNull();
   });

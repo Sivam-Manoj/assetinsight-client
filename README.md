@@ -22,6 +22,13 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Appraiser CRM
+
+Enabled CRM agents now have a compact `/crm` workspace with paginated tasks,
+follow-ups and attachments, lead creation, coverage, transfers, email tools and
+explicit Outlook export. Deploy the additive backend summary/detail/history reads
+first. See [CRM workflow, performance and verification notes](docs/crm.md).
+
 ### Asset/Lot activity metadata
 
 Both forms queue owner-scoped operational observations in IndexedDB: imports,

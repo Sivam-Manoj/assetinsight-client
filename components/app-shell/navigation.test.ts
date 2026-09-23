@@ -78,6 +78,18 @@ describe("centralized app navigation", () => {
     ).toContain("Proposal Valuations");
   });
 
+  it("shows CRM only for an explicitly enabled CRM agent", () => {
+    expect(visibleLabels(null)).not.toContain("CRM");
+    expect(visibleLabels(basicUser)).not.toContain("CRM");
+    expect(visibleLabels({ ...basicUser, isCrmAgent: false })).not.toContain("CRM");
+    expect(visibleLabels({ ...basicUser, isReportApprover: true, isReleaseManager: true })).not.toContain("CRM");
+    expect(visibleLabels({ ...basicUser, isCrmAgent: true })).toContain("CRM");
+    expect(visibleLabels({ ...basicUser, isCrmAgent: "true" } as unknown as AuthUser)).not.toContain("CRM");
+    const crm = PRIMARY_NAVIGATION.find((item) => item.href === "/crm")!;
+    expect(isNavItemActive(crm, "/crm/tasks/task-1")).toBe(true);
+    expect(isNavItemActive(crm, "/crm-archive")).toBe(false);
+  });
+
   it("matches nested routes without activating similarly named routes", () => {
     const incoming = PRIMARY_NAVIGATION.find(
       (item) => item.href === "/incoming"

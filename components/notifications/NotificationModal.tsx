@@ -12,9 +12,12 @@ import {
 } from "@/services/notifications";
 import styles from "./NotificationModal.module.css";
 import { previewReminderDetails } from "@/lib/previewReminderNotification";
+import { crmNotificationHref } from "@/lib/crmNotification";
 import PreviewReminderContent from "./PreviewReminderContent";
 
 function notificationHref(item: WorkspaceNotification) {
+  const crmHref = crmNotificationHref(item);
+  if (crmHref) return crmHref;
   const data = item.data || {};
   for (const key of ["href", "url", "path", "route"] as const) {
     const value = data[key];
@@ -22,7 +25,7 @@ function notificationHref(item: WorkspaceNotification) {
       return value;
     }
   }
-  return item.category === "crm" ? "/incoming" : "/reports";
+  return "/reports";
 }
 
 function relativeDate(value: string) {
