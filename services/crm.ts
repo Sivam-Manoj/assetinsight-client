@@ -114,6 +114,16 @@ export type CrmTasksResponse = CrmPage<CrmTaskSummary> & {
   statusCounts?: Array<{ _id?: CrmTaskStatus; status?: CrmTaskStatus; count: number }>;
   leadSourceCounts?: { total: number; generic: number; organic: number };
 };
+export type CrmDashboardTask = Pick<CrmTaskItem, "_id" | "title" | "clientName" | "companyName" | "status" | "lostReason" | "taskStartDate"> & { dueDate: string };
+export type CrmDashboardSnapshot = {
+  asOf: string;
+  total: number;
+  statusCounts: Array<{ _id: CrmTaskStatus; count: number }>;
+  leadSourceCounts: { total: number; generic: number; organic: number };
+  dueCounts: { overdue: number; upcoming: number };
+  overdueTasks: CrmDashboardTask[];
+  upcomingTasks: CrmDashboardTask[];
+};
 export type CrmTransferStatus = "pending" | "accepted" | "rejected" | "cancelled";
 export type CrmTransferAgent = CrmPerson & {
   _id: string;
@@ -257,6 +267,58 @@ export function crmStatusChange(
 function integer(value: unknown, minimum: number): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
 }
+function dashboardTimestamp(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+}
+/** Never turn a partial dashboard or page-limited rows into authoritative zeros. */
+export function parseCrmDashboard(value: unknown): CrmDashboardSnapshot {
+  const data = record(value);
+  const source = record(data.leadSourceCounts);
+  const due = record(data.dueCounts);
+  const invalid = () => new Error("The server returned an incomplete CRM dashboard. Please refresh.");
+  if (!dashboardTimestamp(data.asOf) || !integer(data.total, 0) || !Array.isArray(data.statusCounts) || data.statusCounts.length !== CRM_STATUSES.length ||
+    !integer(source.total, 0) || !integer(source.generic, 0) || !integer(source.organic, 0) || source.total !== data.total || source.generic + source.organic !== data.total ||
+    !integer(due.overdue, 0) || !integer(due.upcoming, 0)) throw invalid();
+  const counts = new Map<CrmTaskStatus, number>();
+  for (const value of data.statusCounts) {
+    const entry = record(value);
+    if (typeof entry._id !== "string" || !CRM_STATUSES.includes(entry._id as CrmTaskStatus) || counts.has(entry._id as CrmTaskStatus) || !integer(entry.count, 0)) throw invalid();
+    counts.set(entry._id as CrmTaskStatus, entry.count);
+  }
+  if (Array.from(counts.values()).reduce((sum, count) => sum + count, 0) !== data.total) throw invalid();
+  const openTotal = CRM_OPEN_STATUSES.reduce((sum, status) => sum + (counts.get(status) || 0), 0);
+  if (due.overdue + due.upcoming > openTotal) throw invalid();
+  const asOf = Date.parse(data.asOf);
+  const ids = new Set<string>();
+  function tasks(value: unknown, total: number, group: "overdue" | "upcoming"): CrmDashboardTask[] {
+    if (!Array.isArray(value) || value.length !== Math.min(total, 5)) throw invalid();
+    return value.map((raw) => {
+      const item = record(raw);
+      if (typeof item._id !== "string" || !isCrmId(item._id) || ids.has(item._id) || typeof item.clientName !== "string" ||
+        !CRM_OPEN_STATUSES.includes(item.status as CrmTaskStatus) || !dashboardTimestamp(item.dueDate) ||
+        (item.taskStartDate != null && !dashboardTimestamp(item.taskStartDate)) ||
+        (item.title != null && typeof item.title !== "string") || (item.companyName != null && typeof item.companyName !== "string") ||
+        (item.lostReason != null && !CRM_LOST_REASONS.includes(item.lostReason as CrmLostReason))) throw invalid();
+      const time = Date.parse(item.dueDate);
+      if (group === "overdue" ? time >= asOf : time < asOf || time > asOf + 7 * 24 * 60 * 60 * 1000) throw invalid();
+      ids.add(item._id);
+      return { _id: item._id, clientName: item.clientName, status: item.status as CrmTaskStatus, dueDate: item.dueDate,
+        ...(item.title != null ? { title: item.title as string } : {}),
+        ...(item.companyName != null ? { companyName: item.companyName as string } : {}),
+        ...(item.lostReason != null ? { lostReason: item.lostReason as CrmLostReason } : {}),
+        ...(item.taskStartDate != null ? { taskStartDate: item.taskStartDate as string } : {}),
+      };
+    });
+  }
+  return {
+    asOf: data.asOf, total: data.total,
+    statusCounts: CRM_STATUSES.map((_id) => ({ _id, count: counts.get(_id)! })),
+    leadSourceCounts: { total: source.total, generic: source.generic, organic: source.organic },
+    dueCounts: { overdue: due.overdue, upcoming: due.upcoming },
+    overdueTasks: tasks(data.overdueTasks, due.overdue, "overdue"),
+    upcomingTasks: tasks(data.upcomingTasks, due.upcoming, "upcoming"),
+  };
+}
 function checkedPage<T>(value: unknown): CrmPage<T> {
   const data = record(value);
   if (!Array.isArray(data.items) || !integer(data.total, 0) || !integer(data.page, 1) || !integer(data.limit, 1)) {
@@ -326,6 +388,11 @@ function checkedCalendarBatch(value: unknown, taskIds: string[]): CrmBulkCalenda
 }
 
 export const CrmService = {
+  async getDashboard(options?: CrmReadOptions): Promise<CrmDashboardSnapshot> {
+    const { data } = await API.get("/crm/tasks/dashboard", readOptions(options));
+    return parseCrmDashboard(data);
+  },
+
   async getMyTasks(params: GetMyTasksParams = {}, options?: CrmReadOptions): Promise<CrmTasksResponse> {
     const query = {
       ...params,

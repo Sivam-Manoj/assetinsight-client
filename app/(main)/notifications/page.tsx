@@ -10,6 +10,7 @@ import styles from "./Notifications.module.css";
 import PreviewReminderContent from "@/components/notifications/PreviewReminderContent";
 import { previewReminderDetails } from "@/lib/previewReminderNotification";
 import { crmNotificationHref } from "@/lib/crmNotification";
+import { useAuthContext } from "@/context/AuthContext";
 
 type Filter = "all" | "new" | "seen";
 
@@ -18,13 +19,15 @@ function formatDate(value: string) {
 }
 
 export default function NotificationsPage() {
+  const { user } = useAuthContext();
+  const ownerId = user?._id || user?.id;
   const [filter, setFilter] = useState<Filter>("all");
-  const cacheKey = notificationCacheKey(1, 100);
+  const cacheKey = ownerId ? notificationCacheKey(1, 100, ownerId) : null;
   const { data, isLoading, error } = useSWR(cacheKey, () => NotificationsService.list(1, 100), { revalidateOnFocus: true });
   const items = useMemo(() => (data?.items || []).filter((item) => filter === "all" || (filter === "new" ? !item.read : item.read)), [data?.items, filter]);
   const seenCount = Math.max(0, (data?.total || 0) - (data?.unreadCount || 0));
 
-  const refresh = () => mutate((key) => typeof key === "string" && key.startsWith("/notifications?"));
+  const refresh = () => mutate((key) => typeof key === "string" && key.startsWith("/notifications?") && key.endsWith(`&cacheOwner=${encodeURIComponent(ownerId || "")}`));
   const markRead = async (item: WorkspaceNotification) => {
     if (item.read) return;
     await NotificationsService.markRead(item.id);

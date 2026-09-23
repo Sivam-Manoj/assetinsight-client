@@ -10,10 +10,10 @@ const CRM_NOTIFICATION_TYPES = new Set([
 export function crmNotificationHref(item: Pick<WorkspaceNotification, "category" | "type" | "data">): string | null {
   const types = [item.type, item.data?.type].filter((value): value is string => typeof value === "string");
   if (item.category !== "crm" && !types.some((type) => CRM_NOTIFICATION_TYPES.has(type))) return null;
-  if (types.includes("crm_transfer_request")) return "/crm?view=transfers";
+  if (types.includes("crm_transfer_request")) return "/crm/transfers";
   for (const value of [item.data?.taskId, item.data?.leadId]) {
     if (typeof value === "string" && /^[a-f\d]{24}$/i.test(value.trim())) {
-      return `/crm?task=${encodeURIComponent(value.trim())}`;
+      return `/crm/tasks?task=${encodeURIComponent(value.trim())}`;
     }
   }
   return "/crm";

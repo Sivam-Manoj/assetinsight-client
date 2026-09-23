@@ -14,6 +14,72 @@ beforeEach(() => { vi.mocked(CrmService.getMyTasks).mockResolvedValue(response);
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("compact CRM list", () => {
+  it("accepts route-backed filters and emits history-preserving filter and page changes", async () => {
+    const onQueryChange = vi.fn();
+    const query = { q: "Alex", status: "all" as const, leadSource: "organic" as const, due: "overdue" as const, page: 1, limit: 50 };
+    render(<SWRConfig value={{ provider: () => new Map(), revalidateOnFocus: false }}><CrmTaskList ownerId="route-owner" query={query} onQueryChange={onQueryChange} onOpenTask={vi.fn()} /></SWRConfig>);
+    await screen.findByText("Alex Morgan");
+    expect(CrmService.getMyTasks).toHaveBeenCalledWith(query, expect.anything());
+    expect(screen.getByRole("searchbox")).toHaveValue("Alex");
+    expect(screen.getByLabelText("Task stage")).toHaveValue("all");
+    fireEvent.change(screen.getByLabelText("Task stage"), { target: { value: "lost" } });
+    expect(onQueryChange).toHaveBeenLastCalledWith({ ...query, status: "lost", page: 1 }, { replace: false });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(onQueryChange).toHaveBeenLastCalledWith({ ...query, page: 2 }, { replace: false });
+  });
+  it("restores back/forward URL state and cancels a pending search without losing focus on typing", async () => {
+    const cache = new Map();
+    const onQueryChange = vi.fn();
+    const props = { ownerId: "history-owner", onOpenTask: vi.fn(), onQueryChange };
+    const query = { q: "current", status: "all" as const, page: 1, limit: 20 };
+    const view = render(<SWRConfig value={{ provider: () => cache, revalidateOnFocus: false }}><CrmTaskList {...props} query={query} /></SWRConfig>);
+    await screen.findByText("Alex Morgan");
+    const search = screen.getByRole("searchbox"); search.focus();
+    fireEvent.change(search, { target: { value: "pending" } });
+    expect(search).toHaveFocus();
+    view.rerender(<SWRConfig value={{ provider: () => cache, revalidateOnFocus: false }}><CrmTaskList {...props} query={{ ...query, q: "previous", status: "won" }} /></SWRConfig>);
+    await waitFor(() => expect(search).toHaveValue("previous"));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
+    expect(onQueryChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Task stage")).toHaveValue("won");
+  });
+  it("debounces route search as a replace instead of adding an entry per keystroke", async () => {
+    const onQueryChange = vi.fn();
+    render(<SWRConfig value={{ provider: () => new Map(), revalidateOnFocus: false }}><CrmTaskList ownerId="search-owner" query={{ status: "all", page: 1, limit: 20 }} onQueryChange={onQueryChange} onOpenTask={vi.fn()} /></SWRConfig>);
+    await screen.findByText("Alex Morgan");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Smith (+1)" } });
+    await waitFor(() => expect(onQueryChange).toHaveBeenCalledWith({ q: "Smith (+1)", status: "all", page: 1, limit: 20 }, { replace: true }));
+    expect(CrmService.getMyTasks).toHaveBeenCalledTimes(1);
+  });
+  it("does not re-request an invalid URL page while its replacement navigation is pending", async () => {
+    const onQueryChange = vi.fn();
+    vi.mocked(CrmService.getMyTasks).mockResolvedValue({ ...response, items: [], page: 3, total: 20 });
+    render(<SWRConfig value={{ provider: () => new Map(), revalidateOnFocus: false }}><CrmTaskList ownerId="recovery-owner" query={{ page: 3, limit: 20 }} onQueryChange={onQueryChange} onOpenTask={vi.fn()} /></SWRConfig>);
+    await waitFor(() => expect(onQueryChange).toHaveBeenCalledWith({ page: 1, limit: 20 }, { replace: true }));
+    expect(CrmService.getMyTasks).toHaveBeenCalledTimes(1);
+  });
+  it("cancels a pending URL search when a visible task is opened", async () => {
+    const onQueryChange = vi.fn(); const onOpenTask = vi.fn();
+    render(<SWRConfig value={{ provider: () => new Map(), revalidateOnFocus: false }}><CrmTaskList ownerId="open-owner" query={{ page: 1, limit: 20 }} onQueryChange={onQueryChange} onOpenTask={onOpenTask} /></SWRConfig>);
+    await screen.findByText("Alex Morgan");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "not yet applied" } });
+    fireEvent.click(screen.getByRole("button", { name: "Alex Morgan" }));
+    expect(onOpenTask).toHaveBeenCalledWith(row._id);
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
+    expect(onQueryChange).not.toHaveBeenCalled();
+  });
+  it("cancels pending search for task-only navigation such as a notification link", async () => {
+    const cache = new Map(); const onQueryChange = vi.fn();
+    const props = { ownerId: "notification-owner", query: { page: 1, limit: 20 }, onQueryChange, onOpenTask: vi.fn() };
+    const view = render(<SWRConfig value={{ provider: () => cache, revalidateOnFocus: false }}><CrmTaskList {...props} navigationKey="" /></SWRConfig>);
+    await screen.findByText("Alex Morgan");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "not yet applied" } });
+    view.rerender(<SWRConfig value={{ provider: () => cache, revalidateOnFocus: false }}><CrmTaskList {...props} navigationKey={`task=${row._id}`} /></SWRConfig>);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
+    expect(onQueryChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+  });
   it("requests only a 20-row summary and uses server totals", async () => {
     mount();
     expect(await screen.findByText("124 matching tasks")).toBeInTheDocument();
