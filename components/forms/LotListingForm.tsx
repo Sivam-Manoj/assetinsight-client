@@ -368,7 +368,17 @@ export default function LotListingForm({
     useState<ReportDraftSaveProgress | null>(null);
   const [draftSaveActive, setDraftSaveActive] = useState(false);
   const [restoringDraft, setRestoringDraft] = useState(false);
-  useReportActivity(userId, draftScopeId, "lot-listing", contractNo, mixedLots, watermarkImages, !restoringDraft);
+  const [restoredAccountKey, setRestoredAccountKey] = useState<string | null>(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [restoreProgress, setRestoreProgress] = useState({ completed: 0, total: 0 });
+  const accountRestoreKey = resumeDraft
+    ? `${userId || ""}:${resumeDraft._id || resumeDraft.id}:${resumeDraft.revision}`
+    : null;
+  const accountRestoreBlocked = Boolean(resumeDraft) && restoredAccountKey !== accountRestoreKey;
+  const restoreBlocked = restoringDraft || accountRestoreBlocked;
+  const restoreBlockedRef = useRef(restoreBlocked);
+  restoreBlockedRef.current = restoreBlocked;
+  useReportActivity(userId, draftScopeId, "lot-listing", contractNo, mixedLots, watermarkImages, !restoreBlocked);
   const [confirmAction, setConfirmAction] = useState<
     "clear" | "discard" | null
   >(null);
@@ -619,7 +629,7 @@ export default function LotListingForm({
   );
 
   const flushDraft = useCallback(async (signal?: AbortSignal): Promise<boolean> => {
-    if (!draftKey || !userId || autosaveBlockedRef.current) return false;
+    if (!draftKey || !userId || autosaveBlockedRef.current || restoreBlockedRef.current) return false;
     if (saveFlightRef.current) return saveFlightRef.current;
 
     let task: Promise<boolean>;
@@ -759,7 +769,7 @@ export default function LotListingForm({
   ]);
 
   const markDirty = useCallback(() => {
-    if (autosaveBlockedRef.current) return;
+    if (autosaveBlockedRef.current || restoreBlockedRef.current) return;
     requestedRevisionRef.current += 1;
     reportDraftStatus("dirty");
   }, [reportDraftStatus]);
@@ -876,7 +886,7 @@ export default function LotListingForm({
   );
 
   useEffect(() => {
-    if (!draftKey || !userId) return;
+    if (!draftKey || !userId || resumeDraft) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -927,7 +937,7 @@ export default function LotListingForm({
     return () => {
       cancelled = true;
     };
-  }, [draftKey, draftScopeId, reportDraftStatus, userId]);
+  }, [draftKey, draftScopeId, reportDraftStatus, resumeDraft, userId]);
 
   const clearFieldError = (field: string) => {
     setErrors((current) => {
@@ -940,6 +950,7 @@ export default function LotListingForm({
 
   const handleLotsChange = useCallback(
     (lots: MixedLot[]) => {
+      if (restoreBlockedRef.current) return;
       setMixedLots(lots);
       clearFieldError("media");
       markDirty();
@@ -1022,14 +1033,27 @@ export default function LotListingForm({
     userId,
   ]);
 
-  const restoreAccountDraft = useCallback(async () => {
-    if (!resumeDraft || !userId) return false;
-
+  useEffect(() => {
+    if (!resumeDraft || !userId) return;
+    const controller = new AbortController();
+    setRestoringDraft(true);
+    setRestoredAccountKey(null);
+    setDraftIssue(null);
+    setRestoreProgress({ completed: 0, total: resumeDraft.media?.length || 0 });
+    if (resumeDraft.user !== userId) {
+      setMixedLots([]);
+      setContractNo("");
+      setDraftIssue({ tone: "error", title: "Draft belongs to another account", message: "Return to Drafts and open a draft belonging to the signed-in account." });
+      setRestoringDraft(false);
+      return () => controller.abort();
+    }
     const formData = resumeDraft.formData as Record<string, unknown>;
-    const restoredLots: MixedLot[] =
-      resumeDraft.storageMode === "smart_upload"
-        ? []
-        : await ReportDraftService.restoreLots<MixedLot>(resumeDraft);
+    // Show saved fields immediately. Empty File arrays here are placeholders,
+    // never editable/savable state until every saved original has downloaded.
+    const metadataLots = (resumeDraft.lots || []).map((value, index) => {
+      const lot = value as MixedLot & { lot_id?: string; _id?: string };
+      return { ...lot, id: String(lot.id || lot.lot_id || lot._id || `draft-lot-${index + 1}`), files: [], extraFiles: [], videoFiles: [] };
+    });
     const serverSnapshot: DraftSnapshot = {
       contractNo: String(
         formData.contractNo || formData.contract_no || resumeDraft.contractNo || ""
@@ -1053,44 +1077,42 @@ export default function LotListingForm({
       watermarkImages:
         (formData.watermarkImages ?? formData.watermark_images) === true,
       clientSubmissionId: resumeDraft.clientDraftId,
-      lots: restoredLots,
+      lots: resumeDraft.storageMode === "smart_upload" ? [] : metadataLots,
     };
     applyRestoredDraft(serverSnapshot, resumeDraft.revision || 0, 0);
 
-    if (resumeDraft.storageMode === "smart_upload") {
-      setDraftIssue(null);
-      setSmartUploadOpen(true);
-      reportDraftStatus("saved", "Smart Upload restored");
-    } else {
-      setDraftIssue(null);
+    reportDraftStatus("partial", "Loading saved media…");
+    void (async () => {
+      if (resumeDraft.storageMode === "smart_upload") {
+        setSmartUploadOpen(true);
+      } else {
+        const lots = await ReportDraftService.restoreLots<MixedLot>(resumeDraft, {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (!controller.signal.aborted) setRestoreProgress(progress);
+          },
+        });
+        if (controller.signal.aborted) return;
+        setMixedLots(lots);
+      }
+      if (controller.signal.aborted) return;
+      setRestoredAccountKey(accountRestoreKey);
       reportDraftStatus("saved", "Draft and photos restored");
-    }
-    return true;
-  }, [
-    applyRestoredDraft,
-    draftScopeId,
-    reportDraftStatus,
-    resumeDraft,
-    userId,
-  ]);
-
-  useEffect(() => {
-    if (!resumeDraft || mountRestoreStartedRef.current) return;
-    mountRestoreStartedRef.current = true;
-    setRestoringDraft(true);
-    void restoreAccountDraft()
-      .then(() => toast.success("Draft restored"))
+      toast.success("Draft restored");
+    })()
       .catch((restoreError) => {
+        if (controller.signal.aborted) return;
         const message =
           restoreError instanceof Error
             ? restoreError.message
             : "The saved draft could not be restored.";
-        setDraftIssue({ tone: "error", title: "Draft restore failed", message });
+        setDraftIssue({ tone: "error", title: "Draft restore failed", message: `${message} Your saved draft is unchanged. Retry loading before editing or submitting.` });
         reportDraftStatus("error", "Draft restore failed");
         toast.error(message);
       })
-      .finally(() => setRestoringDraft(false));
-  }, [reportDraftStatus, restoreAccountDraft, resumeDraft]);
+      .finally(() => { if (!controller.signal.aborted) setRestoringDraft(false); });
+    return () => controller.abort();
+  }, [accountRestoreKey, applyRestoredDraft, reportDraftStatus, restoreAttempt, resumeDraft, userId]);
 
   useEffect(() => {
     if (
@@ -1180,6 +1202,7 @@ export default function LotListingForm({
   ]);
 
   const handleConfirmedAction = useCallback(async () => {
+    if (restoreBlockedRef.current) return;
     const action = confirmAction;
     setConfirmAction(null);
     try {
@@ -1209,6 +1232,7 @@ export default function LotListingForm({
   const handleSaveDraft = useCallback(async () => {
     if (
       activeFormOperationRef.current ||
+      restoreBlockedRef.current ||
       submitting ||
       restoringDraft ||
       draftSaveAbortRef.current ||
@@ -1398,7 +1422,7 @@ export default function LotListingForm({
   const onSubmit = useCallback(
     async (event?: React.FormEvent, continueWithNewLot = false) => {
       event?.preventDefault();
-      if (activeFormOperationRef.current || submitLockRef.current) return;
+      if (activeFormOperationRef.current || submitLockRef.current || restoreBlockedRef.current) return;
       setError(null);
 
       if (!validateForm()) {
@@ -1764,7 +1788,7 @@ export default function LotListingForm({
     <form
       className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--app-bg)] text-[var(--app-text)]"
       onSubmit={onSubmit}
-      aria-busy={submitting || draftSaving}
+      aria-busy={submitting || draftSaving || restoringDraft}
       noValidate
     >
       {draftSaving ? (
@@ -1846,9 +1870,22 @@ export default function LotListingForm({
             <FormAlert
               tone={draftIssue.tone}
               title={draftIssue.title}
-              onDismiss={() => setDraftIssue(null)}
+              onDismiss={accountRestoreBlocked ? undefined : () => setDraftIssue(null)}
             >
               {draftIssue.message}
+              {accountRestoreBlocked && resumeDraft?.user === userId && !restoringDraft ? (
+                <button type="button" className={secondaryButtonClass + " mt-3"} onClick={() => setRestoreAttempt((value) => value + 1)}>
+                  Retry loading draft
+                </button>
+              ) : null}
+            </FormAlert>
+          ) : null}
+
+          {accountRestoreBlocked && !draftIssue ? (
+            <FormAlert tone="info" title="Loading your saved draft">
+              <p role="status">{userId ? `${resumeDraft?.lots.length || 0} saved lots · ${restoreProgress.completed} of ${restoreProgress.total} media files loaded` : "Waiting for your account…"}</p>
+              <p>Saved details appear below. Photos download in their saved order; large drafts can take several minutes. Editing, saving and submitting stay disabled until loading finishes. Your saved draft is unchanged.</p>
+              <progress aria-label="Saved media loading" value={restoreProgress.completed} max={Math.max(1, restoreProgress.total)} className="mt-2 w-full" />
             </FormAlert>
           ) : null}
 
@@ -1881,6 +1918,7 @@ export default function LotListingForm({
             </FormAlert>
           ) : null}
 
+          <fieldset disabled={restoreBlocked} className="contents">
           <FormSection
             id="lot-listing-details"
             sectionNumber={1}
@@ -2128,6 +2166,7 @@ export default function LotListingForm({
               />
             </div>
           </FormSection>
+          </fieldset>
         </div>
       </div>
 
@@ -2136,7 +2175,7 @@ export default function LotListingForm({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={submitting || restoringDraft || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             className={secondaryButtonClass}
           >
             <Save className="h-4 w-4" aria-hidden="true" />
@@ -2145,7 +2184,7 @@ export default function LotListingForm({
           <button
             type="button"
             onClick={() => setConfirmAction("clear")}
-            disabled={submitting}
+            disabled={submitting || restoreBlocked}
             className={secondaryButtonClass}
           >
             Clear
@@ -2156,7 +2195,7 @@ export default function LotListingForm({
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
-            disabled={submitting || restoringDraft || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             className={formClassNames(secondaryButtonClass, "min-w-0 px-2")}
           >
             <Save className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -2170,14 +2209,14 @@ export default function LotListingForm({
             aria-haspopup="menu"
             aria-expanded={Boolean(moreAnchor)}
             onClick={(event) => setMoreAnchor(event.currentTarget)}
-            disabled={submitting || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             className={iconButtonClass}
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
           {!(auctioneer && onAcceptedAndContinue) ? <button
             type="submit"
-            disabled={submitting || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             className={formClassNames(primaryButtonClass, "min-w-0 px-2")}
           >
             <span className="truncate">
@@ -2189,7 +2228,7 @@ export default function LotListingForm({
         {!(auctioneer && onAcceptedAndContinue) ? <span className="hidden sm:inline">
           <button
             type="submit"
-            disabled={submitting || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             className={primaryButtonClass}
           >
             {submitting ? "Uploading..." : "Create Lot Listing"}
@@ -2197,7 +2236,7 @@ export default function LotListingForm({
         </span> : null}
         {auctioneer && onAcceptedAndContinue ? (
           <AuctioneerContinueAction
-            disabled={submitting || restoringDraft || draftSaving}
+            disabled={submitting || restoreBlocked || draftSaving}
             onClick={() => void onSubmit(undefined, true)}
           />
         ) : null}

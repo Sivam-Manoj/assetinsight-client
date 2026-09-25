@@ -281,7 +281,7 @@ export default function ReportFormPage({ kind }: Props) {
           </div>
         ) : kind === "asset" ? (
           <AssetForm
-            key={handoff?.auctioneer?.workItemId || "asset"}
+            key={handoff?.resumeDraft?.clientDraftId || handoff?.auctioneer?.workItemId || "asset"}
             onSuccess={complete}
             onAcceptedAndContinue={handoff?.auctioneer ? continueAfterAccepted : undefined}
             onCancel={() => router.push(returnTo)}
@@ -300,7 +300,7 @@ export default function ReportFormPage({ kind }: Props) {
           />
         ) : (
           <LotListingForm
-            key={handoff?.auctioneer?.workItemId || "lot-listing"}
+            key={handoff?.resumeDraft?.clientDraftId || handoff?.auctioneer?.workItemId || "lot-listing"}
             onSuccess={complete}
             onAcceptedAndContinue={handoff?.auctioneer ? continueAfterAccepted : undefined}
             onCancel={() => router.push(returnTo)}

@@ -10,9 +10,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctioneerWorkItemSetup } from "@/services/auctioneer";
 import type { ReportDraftRecord } from "@/services/reportDrafts";
 import LotListingForm from "./LotListingForm";
+import { StrictMode } from "react";
 import type { MixedLot } from "./mixed/types";
 
 const mocks = vi.hoisted(() => ({
+  userId: "user-1" as string | null,
   apiPost: vi.fn(),
   deleteByClientId: vi.fn(),
   deleteScopedDraft: vi.fn(),
@@ -110,7 +112,7 @@ vi.mock("next/dynamic", async () => {
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
-    user: { _id: "user-1", username: "Test Appraiser" },
+    user: mocks.userId ? { _id: mocks.userId, username: "Test Appraiser" } : null,
   }),
 }));
 
@@ -268,6 +270,7 @@ function makeLotResumeDraft(): ReportDraftRecord {
 
 describe("LotListingForm explicit save and upload workflow", () => {
   beforeEach(() => {
+    mocks.userId = "user-1";
     vi.useRealTimers();
     mocks.apiPost.mockReset();
     mocks.deleteByClientId.mockReset().mockResolvedValue(undefined);
@@ -297,6 +300,83 @@ describe("LotListingForm explicit save and upload workflow", () => {
       value: { getCurrentPosition: mocks.getCurrentPosition },
     });
     window.localStorage.clear();
+  });
+
+  it("shows all 85 saved lots and fields before downloading media, without allowing empty saves", async () => {
+    const download = deferred<MixedLot[]>();
+    mocks.restoreLots.mockReturnValue(download.promise);
+    const draft = { ...makeLotResumeDraft(), contractNo: "93257", formData: { location: "Alvarado, Texas", salesDate: "2026-09-25", currency: "CAD" },
+      lots: Array.from({ length: 85 }, (_, i) => ({ id: `saved-${i}`, mode: "single_lot", lotNumber: String(i + 1), coverIndex: 0 })),
+    };
+    render(<LotListingForm resumeDraft={draft} />);
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("93257");
+    expect(screen.getByTestId("test-lot-count")).toHaveTextContent("85");
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Save Draft" })[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
+    fireEvent.submit(screen.getByRole("button", { name: "Create Lot Listing" }).closest("form")!);
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+    act(() => mocks.restoreLots.mock.calls[0][1].onProgress({ completed: 12, total: 693 }));
+    expect(screen.getByText(/12 of 693 media files loaded/)).toBeVisible();
+    const lots = draft.lots.map((lot) => ({ ...lot, files: [], extraFiles: [], videoFiles: [] })) as MixedLot[];
+    await act(async () => download.resolve(lots));
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeEnabled();
+    expect(screen.getByTestId("test-lot-count")).toHaveTextContent("85");
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+  });
+
+  it("retains fields after a download failure and requires a successful explicit retry before saving", async () => {
+    mocks.restoreLots.mockRejectedValueOnce(new Error("Photo download interrupted"));
+    const draft = makeLotResumeDraft();
+    render(<LotListingForm resumeDraft={draft} />);
+    const retry = await screen.findByRole("button", { name: "Retry loading draft" });
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue(draft.contractNo);
+    expect(screen.getAllByRole("button", { name: "Save Draft" })[0]).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeDisabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Save Draft" })[0]).toBeEnabled());
+    expect(mocks.restoreLots).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+    expect(mocks.deleteByClientId).not.toHaveBeenCalled();
+  });
+
+  it("waits for authentication and restores after it arrives", async () => {
+    mocks.userId = null;
+    const draft = makeLotResumeDraft();
+    const view = render(<LotListingForm resumeDraft={draft} />);
+    expect(mocks.restoreLots).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeDisabled();
+    mocks.userId = "user-1";
+    view.rerender(<LotListingForm resumeDraft={draft} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeEnabled());
+    expect(mocks.restoreLots).toHaveBeenCalledOnce();
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue(draft.contractNo);
+  });
+
+  it("cancels obsolete downloads on account changes and ignores their late completion", async () => {
+    const download = deferred<MixedLot[]>();
+    mocks.restoreLots.mockReturnValue(download.promise);
+    const draft = makeLotResumeDraft();
+    const view = render(<LotListingForm resumeDraft={draft} />);
+    const signal = mocks.restoreLots.mock.calls[0][1].signal as AbortSignal;
+    mocks.userId = "another-user";
+    view.rerender(<LotListingForm resumeDraft={draft} />);
+    expect(signal.aborted).toBe(true);
+    await act(async () => download.resolve([{ id: "private", files: [], extraFiles: [], coverIndex: 0 }]));
+    expect(screen.getByTestId("test-lot-count")).toHaveTextContent("0");
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeDisabled();
+    expect(mocks.restoreLots).toHaveBeenCalledOnce();
+  });
+
+  it("restarts safely after StrictMode cleanup and aborts media loading on unmount", async () => {
+    mocks.restoreLots.mockReturnValue(new Promise(() => {}));
+    const view = render(<StrictMode><LotListingForm resumeDraft={makeLotResumeDraft()} /></StrictMode>);
+    expect(mocks.restoreLots).toHaveBeenCalledTimes(2);
+    expect(mocks.restoreLots.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(mocks.restoreLots.mock.calls[1][1].signal.aborted).toBe(false);
+    view.unmount();
+    expect(mocks.restoreLots.mock.calls[1][1].signal.aborted).toBe(true);
   });
 
   it.each(["unknown", "scheduleA"] as const)(
