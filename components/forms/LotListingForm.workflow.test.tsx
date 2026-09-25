@@ -300,7 +300,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
   });
 
   it.each(["unknown", "scheduleA"] as const)(
-    "continues an imported %s listing once after acceptance and old-draft cleanup",
+    "continues an imported %s listing at acceptance without waiting for processing or old-draft cleanup",
     async (kind) => {
       const upload = deferred<Record<string, unknown>>();
       const cleanup = deferred<void>();
@@ -317,7 +317,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       if (kind === "scheduleA") {
         expect(sources.sources.map((source: { locked: boolean }) => source.locked)).toEqual([true, true]);
       }
-      fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+      fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
       await waitFor(() => expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce());
       expect(onAcceptedAndContinue).not.toHaveBeenCalled();
       expect(mocks.deleteByClientId).not.toHaveBeenCalled();
@@ -338,7 +338,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
 
       await act(async () => upload.resolve({ reportId: "accepted-listing-report", status: "processing" }));
       await waitFor(() => expect(mocks.deleteByClientId).toHaveBeenCalledExactlyOnceWith(auctioneer.clientSubmissionId, "lot-listing"));
-      expect(onAcceptedAndContinue).not.toHaveBeenCalled();
+      expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-listing-report");
       expect(onSuccess).not.toHaveBeenCalled();
       await act(async () => cleanup.resolve());
 
@@ -357,15 +357,15 @@ describe("LotListingForm explicit save and upload workflow", () => {
       .mockResolvedValueOnce({ reportId: "accepted-after-retry" });
     render(<LotListingForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
     fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
-    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Generate files & new lot" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create Lot & Continue" })).toBeEnabled());
     expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("lot-photo.jpg");
     expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("IMPORTED-100");
     expect(mocks.deleteByClientId).not.toHaveBeenCalled();
     expect(onAcceptedAndContinue).not.toHaveBeenCalled();
     const original = mocks.uploadReportFilesDirectToR2.mock.calls[0][0];
-    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
     await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry"));
     expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledTimes(2);
@@ -386,8 +386,8 @@ describe("LotListingForm explicit save and upload workflow", () => {
       render(<LotListingForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
       fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
       const actions = {
-        continue: screen.getByRole("button", { name: "Generate files & new lot" }),
-        normal: screen.getByRole("button", { name: "Create Lot Listing" }),
+        continue: screen.getByRole("button", { name: "Create Lot & Continue" }),
+        normal: screen.getByRole("button", { name: "Create Lot & Close" }),
         save: screen.getAllByRole("button", { name: "Save Draft" })[0],
       };
       act(() => {
@@ -425,7 +425,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     mocks.deleteScopedDraft.mockRejectedValueOnce(new Error("Local storage unavailable"));
     render(<LotListingForm auctioneer={makeAuctioneerSetup()} onAcceptedAndContinue={onAcceptedAndContinue} onSuccess={onSuccess} />);
     fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
-    fireEvent.click(screen.getByRole("button", { name: "Generate files & new lot" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
     await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure"));
     expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringContaining("Report submitted"));
@@ -435,9 +435,11 @@ describe("LotListingForm explicit save and upload workflow", () => {
 
   it("shows no new-lot action without both an imported contract and continuation callback", () => {
     const view = render(<LotListingForm onAcceptedAndContinue={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "Generate files & new lot" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Lot & Continue" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Lot & Close" })).not.toBeInTheDocument();
     view.rerender(<LotListingForm auctioneer={makeAuctioneerSetup()} />);
-    expect(screen.queryByRole("button", { name: "Generate files & new lot" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create Lot & Continue" })).not.toBeInTheDocument();
   });
 
   it("saves and resumes a fresh successor under its own work item and submission identity", async () => {

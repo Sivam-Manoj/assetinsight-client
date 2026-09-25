@@ -1957,6 +1957,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAcceptedMessage(accepted);
       toast.success(accepted);
       saveRevisionRef.current += 1;
+      const continuing = Boolean(continueWithNewLot && auctioneer && onAcceptedAndContinue);
+      if (continuing) {
+        // Acceptance, not old-draft cleanup or background analysis, authorizes
+        // the next-work-item request. The parent hides this accepted form now.
+        dispatchReportCreated();
+        onAcceptedAndContinue?.(acceptedAuctioneerReportId(response));
+      }
       const cleanupError = await clearDraftStorage()
         .then(() => null)
         .catch((draftError) => draftError);
@@ -1966,7 +1973,8 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       setAcceptedMessage(null);
       forceNewSubmissionRef.current = false;
       supersededSubmissionIdRef.current = null;
-      publishDraftStatus("saved", "Submission accepted");
+      // Late cleanup must not overwrite the successor form's draft status.
+      if (!continuing) publishDraftStatus("saved", "Submission accepted");
       if (cleanupError) {
         toast.warning(
           "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
@@ -1979,9 +1987,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         autoSaveBlockedRef.current = false;
         setDraftHydrated(true);
       }, 0);
-      if (continueWithNewLot && auctioneer && onAcceptedAndContinue) {
-        onAcceptedAndContinue(acceptedAuctioneerReportId(response));
-      } else {
+      if (!continuing) {
         onSuccess?.(accepted);
       }
     } catch (submitError: any) {
@@ -2616,9 +2622,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
               Cancel
             </button>
           </span>
-          <button type="submit" className={primaryButtonClass} disabled={submitting || draftSaving}>
-            {submitting ? "Uploading…" : "Create report"}
-          </button>
+          {!(auctioneer && onAcceptedAndContinue) ? (
+            <button type="submit" className={primaryButtonClass} disabled={submitting || draftSaving}>
+              {submitting ? "Uploading…" : "Create report"}
+            </button>
+          ) : null}
         </div>
         {auctioneer && onAcceptedAndContinue ? (
           <AuctioneerContinueAction

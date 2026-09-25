@@ -1580,6 +1580,13 @@ export default function LotListingForm({
         updateUploadProgress(1);
         const acceptedMessage =
           "Submission accepted — processing continues in My Reports.";
+        const continuing = Boolean(continueWithNewLot && auctioneer && onAcceptedAndContinue);
+        if (continuing) {
+          // Open the successor at upload acceptance; cleanup remains scoped to
+          // the old draft and does not delay or authorize another upload.
+          dispatchReportCreated();
+          onAcceptedAndContinue?.(acceptedAuctioneerReportId(responseData));
+        }
         const cleanupError = await clearAcceptedDraft();
         forceNewSubmissionRef.current = false;
         supersededSubmissionIdRef.current = null;
@@ -1590,9 +1597,7 @@ export default function LotListingForm({
             "Report submitted, but its local draft could not be removed. You can discard the old local copy later."
           );
         }
-        if (continueWithNewLot && auctioneer && onAcceptedAndContinue) {
-          onAcceptedAndContinue(acceptedAuctioneerReportId(responseData));
-        } else {
+        if (!continuing) {
           onSuccess?.(acceptedMessage);
         }
       } catch (submitError: any) {
@@ -2147,7 +2152,7 @@ export default function LotListingForm({
           </button>
         </div>
 
-        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_44px_minmax(0,1.25fr)] gap-2 sm:hidden">
+        <div className={formClassNames("grid w-full min-w-0 gap-2 sm:hidden", auctioneer && onAcceptedAndContinue ? "grid-cols-[minmax(0,1fr)_44px]" : "grid-cols-[minmax(0,1fr)_44px_minmax(0,1.25fr)]")}>
           <button
             type="button"
             onClick={() => void handleSaveDraft()}
@@ -2170,7 +2175,7 @@ export default function LotListingForm({
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
-          <button
+          {!(auctioneer && onAcceptedAndContinue) ? <button
             type="submit"
             disabled={submitting || draftSaving}
             className={formClassNames(primaryButtonClass, "min-w-0 px-2")}
@@ -2178,10 +2183,10 @@ export default function LotListingForm({
             <span className="truncate">
               {submitting ? "Uploading..." : "Create Listing"}
             </span>
-          </button>
+          </button> : null}
         </div>
 
-        <span className="hidden sm:inline">
+        {!(auctioneer && onAcceptedAndContinue) ? <span className="hidden sm:inline">
           <button
             type="submit"
             disabled={submitting || draftSaving}
@@ -2189,7 +2194,7 @@ export default function LotListingForm({
           >
             {submitting ? "Uploading..." : "Create Lot Listing"}
           </button>
-        </span>
+        </span> : null}
         {auctioneer && onAcceptedAndContinue ? (
           <AuctioneerContinueAction
             disabled={submitting || restoringDraft || draftSaving}
