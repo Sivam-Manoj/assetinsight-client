@@ -49,8 +49,8 @@ vi.mock("next/dynamic", async () => {
     default: () => {
       const componentIndex = dynamicIndex++;
       if (componentIndex !== 0) {
-        return function DeferredWorkspace() {
-          return null;
+        return function DeferredWorkspace({ open, groupingMethod }: { open: boolean; groupingMethod?: string }) {
+          return open ? React.createElement("output", { "data-testid": "asset-upload-method" }, groupingMethod) : null;
         };
       }
 
@@ -329,6 +329,15 @@ describe("AssetForm manual save and submission workflow", () => {
     } else {
       Reflect.deleteProperty(window.navigator, "geolocation");
     }
+  });
+
+  it.each([["Smart Upload", "black_divider"], ["Lot Number Upload", "lot_number"]])("opens %s with its own method", async (label, method) => {
+    render(<AssetForm />);
+    fillRequiredReportFields();
+    fireEvent.change(screen.getByRole("textbox", { name: /inspection location/i }), { target: { value: "Regina" } });
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(await screen.findByTestId("asset-upload-method")).toHaveTextContent(method);
+    expect(mocks.createAsset).not.toHaveBeenCalled();
   });
 
   it.each(["unknown", "scheduleA"] as const)(

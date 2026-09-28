@@ -50,6 +50,7 @@ export type SmartUploadServerFile = {
 };
 
 export type SmartUploadDraftSummary = {
+  groupingMethod?: "black_divider" | "lot_number";
   sessionId?: string;
   groupingStatus:
     | "uploading"
@@ -60,6 +61,7 @@ export type SmartUploadDraftSummary = {
   progressPercent: number;
   files?: SmartUploadServerFile[];
   groups: Array<{
+    lotNumber?: string;
     groupIndex: number;
     imageCount: number;
     fileIds: string[];

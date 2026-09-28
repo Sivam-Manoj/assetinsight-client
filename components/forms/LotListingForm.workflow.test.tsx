@@ -103,8 +103,8 @@ vi.mock("next/dynamic", async () => {
         };
       }
 
-      return function MockSmartUploadWorkspace() {
-        return null;
+      return function MockSmartUploadWorkspace({ open, groupingMethod }: { open: boolean; groupingMethod?: string }) {
+        return open ? React.createElement("output", { "data-testid": "listing-upload-method" }, groupingMethod) : null;
       };
     },
   };
@@ -300,6 +300,15 @@ describe("LotListingForm explicit save and upload workflow", () => {
       value: { getCurrentPosition: mocks.getCurrentPosition },
     });
     window.localStorage.clear();
+  });
+
+  it.each([["Smart Upload", "black_divider"], ["Lot Number Upload", "lot_number"]])("opens %s with its own method", async (label, method) => {
+    render(<LotListingForm />);
+    fireEvent.change(screen.getByRole("textbox", { name: /contract number/i }), { target: { value: "93257" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /current inspection location/i }), { target: { value: "Regina" } });
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(await screen.findByTestId("listing-upload-method")).toHaveTextContent(method);
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
   });
 
   it("shows all 85 saved lots and fields before downloading media, without allowing empty saves", async () => {

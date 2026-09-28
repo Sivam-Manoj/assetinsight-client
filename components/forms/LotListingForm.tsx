@@ -360,6 +360,7 @@ export default function LotListingForm({
   const [submissionManifestConflict, setSubmissionManifestConflict] =
     useState(false);
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
+  const [smartGroupingMethod, setSmartGroupingMethod] = useState<"black_divider" | "lot_number">("black_divider");
 
   const [hasDraft, setHasDraft] = useState(false);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
@@ -1383,7 +1384,7 @@ export default function LotListingForm({
     ]
   );
 
-  const openSmartUploadWorkspace = useCallback(() => {
+  const openSmartUploadWorkspace = useCallback((method: "black_divider" | "lot_number" = "black_divider") => {
     if (mixedLots.length > 0) {
       toast.info(
         "Smart Upload starts with an empty media form. Clear the manually created lots first."
@@ -1398,6 +1399,7 @@ export default function LotListingForm({
       return;
     }
     setError(null);
+    setSmartGroupingMethod(method);
     setSmartUploadOpen(true);
   }, [mixedLots.length, validateForm]);
 
@@ -2140,7 +2142,7 @@ export default function LotListingForm({
                 </div>
                 <button
                   type="button"
-                  onClick={openSmartUploadWorkspace}
+                  onClick={() => openSmartUploadWorkspace()}
                   disabled={submitting || mixedLots.length > 0}
                   className={formClassNames(
                     secondaryButtonClass,
@@ -2154,6 +2156,12 @@ export default function LotListingForm({
                 >
                   <ScanLine className="h-4 w-4" aria-hidden="true" />
                   Smart Upload
+                </button>
+                <button type="button" onClick={() => openSmartUploadWorkspace("lot_number")}
+                  disabled={submitting || mixedLots.length > 0}
+                  className={formClassNames(secondaryButtonClass, "shrink-0 justify-center")}>
+                  <ScanLine className="h-4 w-4" aria-hidden="true" />
+                  Lot Number Upload
                 </button>
               </div>
               <MixedSection
@@ -2362,6 +2370,7 @@ export default function LotListingForm({
       />
 
       <SmartUploadWorkspace
+        groupingMethod={smartGroupingMethod}
         open={smartUploadOpen}
         kind="lot-listing"
         userId={userId || ""}

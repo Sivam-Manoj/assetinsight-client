@@ -432,6 +432,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     string | null
   >(null);
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
+  const [smartGroupingMethod, setSmartGroupingMethod] = useState<"black_divider" | "lot_number">("black_divider");
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
@@ -1752,7 +1753,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     ]
   );
 
-  const openSmartUploadWorkspace = () => {
+  const openSmartUploadWorkspace = (method: "black_divider" | "lot_number" = "black_divider") => {
     if (mixedLots.length > 0) {
       toast.info(
         "Smart Upload starts with an empty media form. Clear the manually created lots first."
@@ -1768,6 +1769,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       return;
     }
     setError(null);
+    setSmartGroupingMethod(method);
     setSmartUploadOpen(true);
   };
 
@@ -2554,7 +2556,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   </div>
                   <button
                     type="button"
-                    onClick={openSmartUploadWorkspace}
+                    onClick={() => openSmartUploadWorkspace()}
                     disabled={submitting || mixedLots.length > 0}
                     className={formClassNames(
                       secondaryButtonClass,
@@ -2568,6 +2570,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
                   >
                     <ScanLine className="h-4 w-4" aria-hidden="true" />
                     Smart Upload
+                  </button>
+                  <button type="button" onClick={() => openSmartUploadWorkspace("lot_number")}
+                    disabled={submitting || mixedLots.length > 0}
+                    className={formClassNames(secondaryButtonClass, "shrink-0 justify-center")}>
+                    <ScanLine className="h-4 w-4" aria-hidden="true" />
+                    Lot Number Upload
                   </button>
                 </div>
                 <MixedSection
@@ -2733,6 +2741,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       />
 
       <SmartUploadWorkspace
+        groupingMethod={smartGroupingMethod}
         open={smartUploadOpen}
         kind="asset"
         userId={userId}
