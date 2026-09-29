@@ -633,6 +633,28 @@ for (const theme of ["light", "dark"] as const) {
 }
 
 for (const theme of ["light", "dark"] as const) {
+  test(`Incoming completed queue in ${theme} mode`, async ({ page }, testInfo) => {
+    await initializeTheme(page, theme);
+    await mockAuthenticatedApi(page, { incomingItems: [incomingItem,
+      { ...incomingItem, cycleKey: 'sent-cycle', contractNo: 'SENT-200', status: 'sent' },
+      { ...incomingItem, cycleKey: 'abandoned-cycle', contractNo: 'REVIEW-300', status: 'abandoned' },
+    ] });
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/incoming');
+    await expect(page.getByRole('tab', { name: 'Outstanding 2' })).toBeVisible();
+    await expect(page.getByText('REVIEW-300', { exact: true })).toBeVisible();
+    await expect(page.getByText('SENT-200', { exact: true })).toHaveCount(0);
+    const completed = page.getByRole('tab', { name: 'Completed 1' });
+    await completed.focus();
+    await completed.press('Enter');
+    await expect(completed).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('SENT-200', { exact: true })).toBeVisible();
+    await expect(page.getByText('REVIEW-300', { exact: true })).toHaveCount(0);
+    await expectNoSeriousAccessibilityViolations(page);
+    expect(errors).toEqual([]);
+    await page.screenshot({ path: `/tmp/assetinsight-incoming-${testInfo.project.name}-${theme}.png` });
+  });
   test(`authenticated dashboard and Incoming smoke in ${theme} mode`, async ({
     page,
   }, testInfo) => {
