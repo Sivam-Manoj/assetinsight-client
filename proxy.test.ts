@@ -20,3 +20,22 @@ describe("workspace entry redirects", () => {
     expect(location("/", "")).toBeNull();
   });
 });
+
+describe("public privacy notice", () => {
+  it.each(["", "cv_device_pending=1", "cv_access_token=test-only", "cv_refresh_token=test-only"])(
+    "allows the notice without granting workspace access (%s)",
+    (cookie) => {
+      expect(location("/privacy", cookie)).toBeNull();
+      expect(location("/privacy?source=google", cookie)).toBeNull();
+      expect(location("/terms/youtube", cookie)).toBeNull();
+    },
+  );
+
+  it.each(["/privacy-settings", "/privacy/export", "/terms/youtube/settings", "/terms", "/reports", "/previews", "/settings"])(
+    "does not make a neighbouring or protected route public: %s",
+    (path) => {
+      expect(location(path, "")).toBe(`https://app.test/login?next=${encodeURIComponent(path)}`);
+      expect(location(path, "cv_device_pending=1")).toBe(`https://app.test/device-access?next=${encodeURIComponent(path)}`);
+    },
+  );
+});
