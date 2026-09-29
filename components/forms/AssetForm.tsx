@@ -1905,6 +1905,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         mixed_lots: mixedLots.map((lot) => ({
           count: lot.files.length,
           extra_count: lot.extraFiles.length,
+          video_count: (lot.videoFiles || []).length,
           cover_index: Math.max(
             0,
             Math.min(lot.files.length - 1, lot.coverIndex || 0)

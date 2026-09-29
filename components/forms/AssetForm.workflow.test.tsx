@@ -94,6 +94,21 @@ vi.mock("next/dynamic", async () => {
             "Add test media"
           ),
           React.createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => onChange([0, 2, 0, 1].map((count, index) => ({
+                id: `video-lot-${index}`,
+                mode: "single_lot",
+                files: [new File([`photo-${index}`], `photo-${index}.jpg`, { type: "image/jpeg" })],
+                extraFiles: [],
+                videoFiles: Array.from({ length: count }, (_, videoIndex) => new File([`video-${index}-${videoIndex}`], `video-${index}-${videoIndex}.mp4`, { type: "video/mp4" })),
+                coverIndex: 0,
+              }))),
+            },
+            "Add sparse lot videos"
+          ),
+          React.createElement(
             "output",
             { "data-testid": "selected-asset-media" },
             selectedName
@@ -537,6 +552,20 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(watermark).toBeChecked();
     fireEvent.click(watermark);
     expect(watermark).not.toBeChecked();
+  });
+
+  it("submits sparse per-lot video counts with every selected clip in lot order", async () => {
+    mocks.createAsset.mockResolvedValueOnce({ reportId: "video-report", status: "processing" });
+    render(<AssetForm />);
+    await waitForResolvedAssetLocation();
+    fillRequiredReportFields();
+    fireEvent.click(screen.getByRole("button", { name: "Add sparse lot videos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+    const [details, photos, clips] = mocks.createAsset.mock.calls[0];
+    expect(details.mixed_lots.map((lot: any) => lot.video_count)).toEqual([0, 2, 0, 1]);
+    expect(photos.map((file: File) => file.name)).toEqual(["photo-0.jpg", "photo-1.jpg", "photo-2.jpg", "photo-3.jpg"]);
+    expect(clips.map((file: File) => file.name)).toEqual(["video-1-0.mp4", "video-1-1.mp4", "video-3-0.mp4"]);
   });
 
   it.each([undefined, false, true])("restores watermark choice %s without opting missing draft values in", async (watermarkImages) => {
