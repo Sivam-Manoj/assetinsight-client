@@ -437,7 +437,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [discarding, setDiscarding] = useState(false);
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
-  useReportActivity(userId, draftScopeId, "asset", contractNo, mixedLots, watermarkImages, draftHydrated);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [restoringAccountDraft, setRestoringAccountDraft] = useState(false);
+  const [restoredAccountKey, setRestoredAccountKey] = useState<string | null>(null);
+  const accountRestoreKey = resumeDraft ? `${userId}:${resumeDraft._id}:${resumeDraft.revision}` : null;
+  const restoreBlocked = Boolean(resumeDraft || restoreDraftOnMount) &&
+    (!draftHydrated || Boolean(resumeDraft && restoredAccountKey !== accountRestoreKey));
+  const restoreBlockedRef = useRef(restoreBlocked);
+  restoreBlockedRef.current = restoreBlocked;
+  useReportActivity(userId, draftScopeId, "asset", contractNo, mixedLots, watermarkImages, draftHydrated && !restoreBlocked);
 
   const currencyPromptedRef = useRef(false);
   const jobIdRef = useRef<string | null>(
@@ -690,6 +698,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const saveRevision = async (revision: number, signal?: AbortSignal) => {
+    if (restoreBlockedRef.current) return;
     if (autoSaveBlockedRef.current || !userId) return;
     const snapshot = makeSnapshot(revision);
     publishDraftStatus("saving", "Saving draft…");
@@ -766,6 +775,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
 
   const saveDraftNow = async () => {
     if (
+      restoreBlockedRef.current ||
       activeFormOperationRef.current ||
       submitting ||
       !userId ||
@@ -821,7 +831,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   useEffect(() => {
-    if (!draftHydrated || autoSaveBlockedRef.current || !userId) return;
+    if (!draftHydrated || restoreBlocked || autoSaveBlockedRef.current || !userId) return;
     if (lastFingerprintRef.current === null) {
       lastFingerprintRef.current = draftFingerprint;
       return;
@@ -831,7 +841,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     const revision = saveRevisionRef.current + 1;
     saveRevisionRef.current = revision;
     publishDraftStatus("dirty", "Unsaved changes");
-  }, [draftFingerprint, draftHydrated, userId]);
+  }, [draftFingerprint, draftHydrated, restoreBlocked, userId]);
 
   const restoreFormFields = (formData: Partial<AssetDraftFormData>) => {
     if (typeof formData.clientSubmissionId === "string" && formData.clientSubmissionId) {
@@ -1048,10 +1058,12 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return true;
   };
 
-  const restoreAccountDraft = async (): Promise<boolean> => {
-    if (!resumeDraft || !userId) return false;
-
-    const formData = resumeDraft.formData || {};
+  const restoreAccountDraft = async (record: ReportDraftRecord, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
+    if (record.user !== userId || record.type !== "asset" || record._id !== resumeDraft?._id || record.clientDraftId !== resumeDraft?.clientDraftId) {
+      throw new Error("Return to Drafts and open a draft belonging to the signed-in account.");
+    }
+    const formData = record.formData || {};
     const value = (...keys: string[]) => {
       for (const key of keys) {
         const candidate = formData[key];
@@ -1092,11 +1104,11 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         ? languageValue
         : "en";
 
-    saveRevisionRef.current = resumeDraft.revision || 0;
-    committedRevisionRef.current = resumeDraft.revision || 0;
+    saveRevisionRef.current = record.revision || 0;
+    committedRevisionRef.current = record.revision || 0;
     restoredLocationMigrationDirtyRef.current = false;
     restoreFormFields({
-      clientSubmissionId: resumeDraft.clientDraftId,
+      clientSubmissionId: record.clientDraftId,
       clientName: textValue("clientName", "client_name"),
       effectiveDate: textValue("effectiveDate", "effective_date"),
       appraisalPurpose: textValue(
@@ -1116,7 +1128,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
       latitude: numberValue("latitude"),
       longitude: numberValue("longitude"),
       contractNo:
-        textValue("contractNo", "contract_no") || resumeDraft.contractNo,
+        textValue("contractNo", "contract_no") || record.contractNo,
       language: normalizedLanguage,
       currency: textValue("currency"),
       includeValuationTable: booleanValue(
@@ -1145,12 +1157,13 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     });
 
     const restoredLots: MixedLot[] =
-      resumeDraft.storageMode === "smart_upload"
+      record.storageMode === "smart_upload"
         ? []
-        : await ReportDraftService.restoreLots<MixedLot>(resumeDraft);
+        : await ReportDraftService.restoreLots<MixedLot>(record, { signal });
+    signal.throwIfAborted();
     setMixedLots(restoredLots);
-    jobIdRef.current = resumeDraft.clientDraftId;
-    if (resumeDraft.storageMode === "smart_upload") {
+    jobIdRef.current = record.clientDraftId;
+    if (record.storageMode === "smart_upload") {
       setDraftGuidance(null);
       setSmartUploadOpen(true);
       publishDraftStatus(
@@ -1169,6 +1182,31 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   useEffect(() => {
+    if (resumeDraft) {
+      const controller = new AbortController();
+      setDraftHydrated(false);
+      setRestoredAccountKey(null);
+      setRestoringAccountDraft(Boolean(userId));
+      setDraftGuidance(null);
+      lastFingerprintRef.current = null;
+      if (!userId) return () => controller.abort();
+      void (async () => {
+        if (resumeDraft.user !== userId) throw new Error("Return to Drafts and open a draft belonging to the signed-in account.");
+        const record = restoreAttempt ? await ReportDraftService.get(resumeDraft._id, controller.signal) : resumeDraft;
+        await restoreAccountDraft(record, controller.signal);
+        controller.signal.throwIfAborted();
+        setRestoredAccountKey(accountRestoreKey);
+        setDraftHydrated(true);
+        toast.info("Your asset draft was restored.");
+      })().catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setDraftGuidance({ tone: "error", message: `${error instanceof Error ? error.message : "The draft could not be restored."} Your saved draft is unchanged. Retry loading before editing or submitting.` });
+        publishDraftStatus("error", "Draft restore failed");
+      }).finally(() => {
+        if (!controller.signal.aborted) setRestoringAccountDraft(false);
+      });
+      return () => controller.abort();
+    }
     if (
       !userId ||
       !draftStorageKey ||
@@ -1185,9 +1223,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     void (async () => {
       let restored = false;
       try {
-        restored = resumeDraft
-          ? await restoreAccountDraft()
-          : await restoreLocalDraft();
+        restored = await restoreLocalDraft();
         if (restored && !cancelled) toast.info("Your asset draft was restored.");
       } catch (restoreError) {
         if (!cancelled) {
@@ -1210,7 +1246,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     return () => {
       cancelled = true;
     };
-  }, [draftStorageKey, restoreDraftOnMount, resumeDraft, userId]);
+  }, [accountRestoreKey, draftStorageKey, restoreAttempt, restoreDraftOnMount, resumeDraft, userId]);
 
   useEffect(() => {
     if (!appraiser && user?.username) setAppraiser(user.username);
@@ -1468,6 +1504,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const discardDraft = async () => {
+    if (restoreBlockedRef.current) return;
     setDiscarding(true);
     autoSaveBlockedRef.current = true;
     if (saveInFlightRef.current) await saveInFlightRef.current;
@@ -1502,6 +1539,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const saveInputs = async () => {
+    if (restoreBlockedRef.current) return;
     setMoreAnchor(null);
     try {
       const baseName = clientName.trim() || "Unnamed";
@@ -1549,6 +1587,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   };
 
   const loadSavedInput = (savedInput: SavedInput) => {
+    if (restoreBlockedRef.current) return;
     try {
       const data = savedInput.formData as AssetFormData;
       if (!data) return;
@@ -1611,6 +1650,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
     requireMedia?: boolean;
     actionLabel?: string;
   } = {}) => {
+    if (restoreBlockedRef.current) return false;
     const nextErrors: Record<string, string> = {};
     if (!clientName.trim()) nextErrors.clientName = "Client name is required.";
     if (!effectiveDate) nextErrors.effectiveDate = "Effective date is required.";
@@ -2158,11 +2198,15 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             <FormAlert
               tone={draftGuidance.tone}
               title={draftGuidance.tone === "error" ? "Draft needs attention" : "Draft saved with limitations"}
-              onDismiss={() => setDraftGuidance(null)}
+              onDismiss={restoreBlocked ? undefined : () => setDraftGuidance(null)}
             >
               {draftGuidance.message}
+              {resumeDraft && restoreBlocked && !restoringAccountDraft ? (
+                <button type="button" className={secondaryButtonClass} onClick={() => setRestoreAttempt((value) => value + 1)}>Retry loading draft</button>
+              ) : null}
             </FormAlert>
           ) : null}
+          {restoreBlocked && !draftGuidance ? <FormAlert tone="info" title="Loading saved draft">{userId ? "Restoring saved fields and original media. Editing and submission will be available when all files are restored." : "Waiting for your account before loading saved media."}</FormAlert> : null}
 
           {draftSaveProgress ? (
             <DraftSaveProgressPanel progress={draftSaveProgress} />
@@ -2204,7 +2248,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             </FormAlert>
           ) : null}
 
-          <fieldset disabled={submitting} className="contents">
+          <fieldset disabled={submitting || restoreBlocked} className="contents" inert={restoreBlocked ? true : undefined}>
             <FormSection
               id="asset-report-details"
               sectionNumber={1}
@@ -2605,7 +2649,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             type="button"
             className={secondaryButtonClass}
             onClick={() => void saveDraftNow()}
-            disabled={submitting || draftSaving || !userId}
+            disabled={submitting || draftSaving || !userId || restoreBlocked}
           >
             <Save className="h-4 w-4" aria-hidden="true" />
             <span className="hidden min-[360px]:inline">
@@ -2620,7 +2664,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             aria-haspopup="menu"
             aria-expanded={Boolean(moreAnchor)}
             onClick={(event) => setMoreAnchor(event.currentTarget)}
-            disabled={submitting || draftSaving}
+            disabled={submitting || draftSaving || restoreBlocked}
           >
             <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -2632,14 +2676,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
             </button>
           </span>
           {!(auctioneer && onAcceptedAndContinue) ? (
-            <button type="submit" className={primaryButtonClass} disabled={submitting || draftSaving}>
+            <button type="submit" className={primaryButtonClass} disabled={submitting || draftSaving || restoreBlocked}>
               {submitting ? "Uploading…" : "Create report"}
             </button>
           ) : null}
         </div>
         {auctioneer && onAcceptedAndContinue ? (
           <AuctioneerContinueAction
-            disabled={submitting || draftSaving}
+            disabled={submitting || draftSaving || restoreBlocked}
             onClick={() => void onSubmit(undefined, true)}
           />
         ) : null}

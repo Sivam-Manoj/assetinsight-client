@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctioneerWorkItemSetup } from "@/services/auctioneer";
 import type { ReportDraftRecord } from "@/services/reportDrafts";
@@ -31,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   geolocation: vi.fn(),
   reverseGeocode: vi.fn(),
   restoreLots: vi.fn(),
+  getDraft: vi.fn(),
+  authUser: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   toastInfo: vi.fn(),
@@ -129,11 +132,7 @@ vi.mock("next/dynamic", async () => {
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
-    user: {
-      _id: "user-asset-workflow",
-      username: "Alex Appraiser",
-      companyName: "Asset Insight QA",
-    },
+    user: mocks.authUser(),
   }),
 }));
 
@@ -159,6 +158,7 @@ vi.mock("@/services/reportDrafts", () => ({
     upsertWithMedia: mocks.upsertWithMedia,
     deleteByClientId: mocks.deleteDraftByClientId,
     restoreLots: mocks.restoreLots,
+    get: mocks.getDraft,
   },
   createReportDraftClientId: () => "asset-workflow-draft",
   getDuplicateLotWarning: () => null,
@@ -309,6 +309,7 @@ function makeAssetResumeDraft(
 describe("AssetForm manual save and submission workflow", () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.authUser.mockReturnValue({ _id: "user-asset-workflow", username: "Alex Appraiser", companyName: "Asset Insight QA" });
     mocks.deleteDraftByClientId.mockResolvedValue(undefined);
     mocks.deleteScopedDraft.mockResolvedValue(undefined);
     mocks.deleteSmartUploadDraft.mockResolvedValue(undefined);
@@ -320,6 +321,7 @@ describe("AssetForm manual save and submission workflow", () => {
       source: "nominatim",
     });
     mocks.restoreLots.mockResolvedValue([]);
+    mocks.getDraft.mockResolvedValue(makeAssetResumeDraft());
     mocks.geolocation.mockImplementation(
       (success: PositionCallback, _error?: PositionErrorCallback, _options?: PositionOptions) => {
         success(position);
@@ -1168,6 +1170,66 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(
       onDraftStatusChange.mock.calls.some(([status]) => status === "saved")
     ).toBe(false);
+  });
+
+  it("keeps a failed restore locked and retries the latest saved snapshot without saving partial data", async () => {
+    mocks.restoreLots.mockRejectedValueOnce(new Error("Lot 2, photo 3: missing original"));
+    const draft = makeAssetResumeDraft(RESOLVED_ASSET_LOCATION);
+    const latest = { ...draft, revision: 5, contractNo: "LATEST-SAVED" };
+    mocks.getDraft.mockResolvedValue(latest);
+    render(<AssetForm resumeDraft={draft} />);
+    const retry = await screen.findByRole("button", { name: "Retry loading draft" });
+    expect(screen.getByRole("button", { name: /Save draft/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create report" })).toBeDisabled();
+    fireEvent.submit(screen.getByRole("button", { name: "Create report" }).closest("form")!);
+    expect(mocks.createAsset).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Save draft/i })).toBeEnabled());
+    expect(mocks.getDraft).toHaveBeenCalledWith(draft._id, expect.any(AbortSignal));
+    expect(mocks.restoreLots).toHaveBeenLastCalledWith(latest, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+  });
+
+  it("restarts account restoration in StrictMode and ignores late media after unmount", async () => {
+    const loading = deferred<MixedLot[]>();
+    mocks.restoreLots.mockReturnValue(loading.promise);
+    const view = render(<StrictMode><AssetForm resumeDraft={makeAssetResumeDraft(RESOLVED_ASSET_LOCATION)} /></StrictMode>);
+    expect(mocks.restoreLots).toHaveBeenCalledTimes(2);
+    expect(mocks.restoreLots.mock.calls[0][1].signal.aborted).toBe(true);
+    view.unmount();
+    expect(mocks.restoreLots.mock.calls[1][1].signal.aborted).toBe(true);
+    await act(async () => loading.resolve([]));
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
+  });
+
+  it("rejects another owner's draft before reading media", async () => {
+    render(<AssetForm resumeDraft={{ ...makeAssetResumeDraft(), user: "other-owner" }} />);
+    await screen.findByRole("button", { name: "Retry loading draft" });
+    expect(mocks.restoreLots).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Save draft/i })).toBeDisabled();
+  });
+
+  it("waits for authentication and cancels restoration when the signed-in account changes", async () => {
+    const download = deferred<MixedLot[]>();
+    mocks.authUser.mockReturnValue(null);
+    mocks.restoreLots.mockReturnValue(download.promise);
+    const draft = makeAssetResumeDraft(RESOLVED_ASSET_LOCATION);
+    const view = render(<AssetForm resumeDraft={draft} />);
+    expect(mocks.restoreLots).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Create report" })).toBeDisabled();
+    mocks.authUser.mockReturnValue({ _id: draft.user });
+    view.rerender(<AssetForm resumeDraft={draft} />);
+    await waitFor(() => expect(mocks.restoreLots).toHaveBeenCalledOnce());
+    const signal = mocks.restoreLots.mock.calls[0][1].signal;
+    mocks.authUser.mockReturnValue({ _id: "another-user" });
+    view.rerender(<AssetForm resumeDraft={draft} />);
+    expect(signal.aborted).toBe(true);
+    await act(async () => download.resolve([]));
+    expect(screen.getByRole("button", { name: /Save draft/i })).toBeDisabled();
+    expect(mocks.toastInfo).not.toHaveBeenCalled();
+    expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
   });
 
   it("keeps an immediately resolved legacy draft location marked dirty after hydration", async () => {

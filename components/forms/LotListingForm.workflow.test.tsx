@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   requestDurableDraftStorage: vi.fn(),
   reverseGeocode: vi.fn(),
   restoreLots: vi.fn(),
+  getDraft: vi.fn(),
   toastWarning: vi.fn(),
   upsertWithMedia: vi.fn(),
   uploadReportFilesDirectToR2: vi.fn(),
@@ -144,6 +145,7 @@ vi.mock("@/services/reportDrafts", () => ({
   ReportDraftService: {
     deleteByClientId: mocks.deleteByClientId,
     restoreLots: mocks.restoreLots,
+    get: mocks.getDraft,
     upsertWithMedia: mocks.upsertWithMedia,
   },
   createReportDraftClientId: () => "lot-listing-draft-1",
@@ -291,6 +293,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       source: "nominatim",
     });
     mocks.restoreLots.mockReset().mockResolvedValue([]);
+    mocks.getDraft.mockReset().mockResolvedValue(makeLotResumeDraft());
     mocks.toastWarning.mockReset();
     mocks.upsertWithMedia.mockReset();
     mocks.uploadReportFilesDirectToR2.mockReset();
@@ -340,12 +343,16 @@ describe("LotListingForm explicit save and upload workflow", () => {
     const draft = makeLotResumeDraft();
     render(<LotListingForm resumeDraft={draft} />);
     const retry = await screen.findByRole("button", { name: "Retry loading draft" });
+    const latest = { ...draft, revision: draft.revision + 1, contractNo: "LATEST-LOT" };
+    mocks.getDraft.mockResolvedValue(latest);
     expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue(draft.contractNo);
     expect(screen.getAllByRole("button", { name: "Save Draft" })[0]).toBeDisabled();
     expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeDisabled();
     fireEvent.click(retry);
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Save Draft" })[0]).toBeEnabled());
     expect(mocks.restoreLots).toHaveBeenCalledTimes(2);
+    expect(mocks.restoreLots).toHaveBeenLastCalledWith(latest, expect.any(Object));
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("LATEST-LOT");
     expect(mocks.upsertWithMedia).not.toHaveBeenCalled();
     expect(mocks.deleteByClientId).not.toHaveBeenCalled();
   });

@@ -1048,6 +1048,7 @@ export default function LotListingForm({
       setRestoringDraft(false);
       return () => controller.abort();
     }
+    const applyMetadata = (resumeDraft: ReportDraftRecord) => {
     const formData = resumeDraft.formData as Record<string, unknown>;
     // Show saved fields immediately. Empty File arrays here are placeholders,
     // never editable/savable state until every saved original has downloaded.
@@ -1081,13 +1082,21 @@ export default function LotListingForm({
       lots: resumeDraft.storageMode === "smart_upload" ? [] : metadataLots,
     };
     applyRestoredDraft(serverSnapshot, resumeDraft.revision || 0, 0);
+    };
+    applyMetadata(resumeDraft);
 
     reportDraftStatus("partial", "Loading saved media…");
     void (async () => {
-      if (resumeDraft.storageMode === "smart_upload") {
+      const record = restoreAttempt ? await ReportDraftService.get(resumeDraft._id, controller.signal) : resumeDraft;
+      if (controller.signal.aborted) return;
+      if (record.user !== userId || record.type !== "lotListing" || record._id !== resumeDraft._id || record.clientDraftId !== resumeDraft.clientDraftId) {
+        throw new Error("Return to Drafts and open a draft belonging to the signed-in account.");
+      }
+      if (record !== resumeDraft) applyMetadata(record);
+      if (record.storageMode === "smart_upload") {
         setSmartUploadOpen(true);
       } else {
-        const lots = await ReportDraftService.restoreLots<MixedLot>(resumeDraft, {
+        const lots = await ReportDraftService.restoreLots<MixedLot>(record, {
           signal: controller.signal,
           onProgress: (progress) => {
             if (!controller.signal.aborted) setRestoreProgress(progress);
@@ -1109,7 +1118,8 @@ export default function LotListingForm({
             : "The saved draft could not be restored.";
         setDraftIssue({ tone: "error", title: "Draft restore failed", message: `${message} Your saved draft is unchanged. Retry loading before editing or submitting.` });
         reportDraftStatus("error", "Draft restore failed");
-        toast.error(message);
+        // Keep the error beside Retry. A separate toast can obscure the mobile
+        // controls and remain visible after a successful restoration.
       })
       .finally(() => { if (!controller.signal.aborted) setRestoringDraft(false); });
     return () => controller.abort();
