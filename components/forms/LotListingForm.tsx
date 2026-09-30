@@ -106,7 +106,8 @@ const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
 
 type Props = {
   onSuccess?: (message?: string) => void;
-  onAcceptedAndContinue?: (reportId: string | undefined) => void;
+  onAcceptedAndContinue?: (reportId: string | undefined, details?: LotContinuationDetails) => void;
+  continuationDetails?: Partial<LotContinuationDetails>;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
@@ -129,6 +130,8 @@ type DraftSnapshot = {
   clientSubmissionId: string | null;
   lots: MixedLot[];
 };
+
+export type LotContinuationDetails = Omit<DraftSnapshot, "clientSubmissionId" | "auctioneerWorkItemId" | "lots">;
 
 type SerializedDraftImage = {
   lotId: string;
@@ -285,6 +288,7 @@ function draftFailureGuidance(error: unknown): DraftIssue {
 export default function LotListingForm({
   onSuccess,
   onAcceptedAndContinue,
+  continuationDetails,
   onCancel: _onCancel,
   onDraftStatusChange,
   auctioneer,
@@ -317,13 +321,11 @@ export default function LotListingForm({
   const [mixedLots, setMixedLots] = useState<MixedLot[]>(() =>
     buildAuctioneerSeedLots(auctioneer)
   );
-  const [contractNo, setContractNo] = useState(
-    () => auctioneer?.contract.contractNo || ""
-  );
-  const [salesDate, setSalesDate] = useState(importedSalesDate);
-  const [location, setLocation] = useState(importedLocation);
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
+  const [contractNo, setContractNo] = useState(continuationDetails?.contractNo ?? (auctioneer?.contract.contractNo || ""));
+  const [salesDate, setSalesDate] = useState(continuationDetails?.salesDate ?? (importedSalesDate));
+  const [location, setLocation] = useState(continuationDetails?.location ?? (importedLocation));
+  const [latitude, setLatitude] = useState<number | null>(continuationDetails?.latitude ?? null);
+  const [longitude, setLongitude] = useState<number | null>(continuationDetails?.longitude ?? null);
   const [locationStatus, setLocationStatus] = useState(
     auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
   );
@@ -333,10 +335,10 @@ export default function LotListingForm({
   const [locationAttributionUrl, setLocationAttributionUrl] = useState<
     string | null
   >(null);
-  const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
-  const [currency, setCurrency] = useState("CAD");
-  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
-  const [watermarkImages, setWatermarkImages] = useState(false);
+  const [language, setLanguage] = useState<"en" | "fr" | "es">(continuationDetails?.language ?? "en");
+  const [currency, setCurrency] = useState(continuationDetails?.currency ?? ("CAD"));
+  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(continuationDetails?.bankPhotosEnabled ?? (false));
+  const [watermarkImages, setWatermarkImages] = useState(continuationDetails?.watermarkImages ?? (false));
 
 
   const [openSections, setOpenSections] = useState({
@@ -1621,7 +1623,10 @@ export default function LotListingForm({
           // Open the successor at upload acceptance; cleanup remains scoped to
           // the old draft and does not delay or authorize another upload.
           dispatchReportCreated();
-          onAcceptedAndContinue?.(acceptedAuctioneerReportId(responseData));
+          onAcceptedAndContinue?.(acceptedAuctioneerReportId(responseData), {
+            contractNo, salesDate, location, latitude, longitude, language, currency,
+            bankPhotosEnabled, watermarkImages,
+          });
         }
         const cleanupError = await clearAcceptedDraft();
         forceNewSubmissionRef.current = false;

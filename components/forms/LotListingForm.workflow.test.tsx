@@ -395,6 +395,18 @@ describe("LotListingForm explicit save and upload workflow", () => {
     expect(mocks.restoreLots.mock.calls[1][1].signal.aborted).toBe(true);
   });
 
+  it("prefills edited continuation details while keeping fresh media", async () => {
+    render(<LotListingForm auctioneer={makeAuctioneerSetup("unknown")} continuationDetails={{ location: "Edited yard", salesDate: "2026-10-05", currency: "USD", bankPhotosEnabled: true, watermarkImages: true }} />);
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("IMPORTED-100");
+    expect(screen.getByDisplayValue("Edited yard")).toBeVisible();
+    expect(screen.getByDisplayValue("USD")).toBeVisible();
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
+    await waitFor(() => expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce());
+    expect(mocks.uploadReportFilesDirectToR2.mock.calls[0][0].details).toMatchObject({ sales_date: "2026-10-05", location: "Edited yard", currency: "USD" });
+  });
+
   it.each(["unknown", "scheduleA"] as const)(
     "continues an imported %s listing at acceptance without waiting for processing or old-draft cleanup",
     async (kind) => {
@@ -434,11 +446,11 @@ describe("LotListingForm explicit save and upload workflow", () => {
 
       await act(async () => upload.resolve({ reportId: "accepted-listing-report", status: "processing" }));
       await waitFor(() => expect(mocks.deleteByClientId).toHaveBeenCalledExactlyOnceWith(auctioneer.clientSubmissionId, "lot-listing"));
-      expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-listing-report");
+      expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-listing-report", expect.objectContaining({ contractNo: auctioneer.contract.contractNo }));
       expect(onSuccess).not.toHaveBeenCalled();
       await act(async () => cleanup.resolve());
 
-      await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-listing-report"));
+      await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-listing-report", expect.objectContaining({ contractNo: auctioneer.contract.contractNo })));
       expect(onSuccess).not.toHaveBeenCalled();
       expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce();
       expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("No media selected");
@@ -463,7 +475,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     const original = mocks.uploadReportFilesDirectToR2.mock.calls[0][0];
     fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
-    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry"));
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry", expect.objectContaining({ contractNo: "IMPORTED-100" })));
     expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledTimes(2);
     expect(mocks.uploadReportFilesDirectToR2.mock.calls[1][0].details.client_submission_id).toBe(original.details.client_submission_id);
     expect(mocks.uploadReportFilesDirectToR2.mock.calls[1][0].files).toEqual(original.files);
@@ -502,7 +514,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
       await act(async () => pending.resolve({ _id: "saved-draft", media: [], reportId: "accepted-single-flight" }));
       if (first === "continue") {
-        await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-single-flight"));
+        await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-single-flight", expect.objectContaining({ contractNo: "IMPORTED-100" })));
         expect(onSuccess).not.toHaveBeenCalled();
       } else if (first === "normal") {
         await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
@@ -523,7 +535,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add test media" }));
     fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
-    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure"));
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure", expect.objectContaining({ contractNo: "IMPORTED-100" })));
     expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringContaining("Report submitted"));
     expect(onSuccess).not.toHaveBeenCalled();
     expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce();

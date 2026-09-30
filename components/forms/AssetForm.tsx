@@ -102,7 +102,8 @@ const SmartUploadWorkspace = dynamic(
 
 type Props = {
   onSuccess?: (message?: string) => void;
-  onAcceptedAndContinue?: (reportId: string | undefined) => void;
+  onAcceptedAndContinue?: (reportId: string | undefined, details?: AssetContinuationDetails) => void;
+  continuationDetails?: Partial<AssetContinuationDetails>;
   onCancel?: () => void;
   onDraftStatusChange?: (status: DraftStatus, label?: string) => void;
   auctioneer?: AuctioneerFormIntegration;
@@ -178,6 +179,8 @@ type AssetDraftFormData = {
   factorsQuality: string;
   factorsAnalysis: string;
 };
+
+export type AssetContinuationDetails = Omit<AssetDraftFormData, "clientSubmissionId" | "auctioneerWorkItemId">;
 
 type LegacyAssetDraftEnvelope = {
   version: 2;
@@ -318,6 +321,7 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   {
     onSuccess,
     onAcceptedAndContinue,
+    continuationDetails,
     onCancel,
     onDraftStatusChange,
     auctioneer,
@@ -348,28 +352,18 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const importedLocation =
     auctioneer?.contract.location || "";
 
-  const [clientName, setClientName] = useState(
-    () => auctioneer?.contract.customerName || ""
-  );
-  const [effectiveDate, setEffectiveDate] = useState(importedEventDate);
-  const [appraisalPurpose, setAppraisalPurpose] = useState(
-    () => (auctioneer ? "Auction listing and condition report" : "")
-  );
-  const [ownerName, setOwnerName] = useState(
-    () => auctioneer?.contract.customerName || ""
-  );
-  const [preparedFor, setPreparedFor] = useState(
-    () => auctioneer?.contract.customerName || ""
-  );
-  const [appraiser, setAppraiser] = useState(user?.username || "");
-  const [appraisalCompany, setAppraisalCompany] = useState(
-    user?.companyName || ""
-  );
-  const [industry, setIndustry] = useState(() => auctioneerIndustry(auctioneer));
-  const [inspectionDate, setInspectionDate] = useState(isoDate(new Date()));
-  const [location, setLocation] = useState(importedLocation);
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
+  const [clientName, setClientName] = useState(continuationDetails?.clientName ?? (auctioneer?.contract.customerName || ""));
+  const [effectiveDate, setEffectiveDate] = useState(continuationDetails?.effectiveDate ?? (importedEventDate));
+  const [appraisalPurpose, setAppraisalPurpose] = useState(continuationDetails?.appraisalPurpose ?? ((auctioneer ? "Auction listing and condition report" : "")));
+  const [ownerName, setOwnerName] = useState(continuationDetails?.ownerName ?? (auctioneer?.contract.customerName || ""));
+  const [preparedFor, setPreparedFor] = useState(continuationDetails?.preparedFor ?? (auctioneer?.contract.customerName || ""));
+  const [appraiser, setAppraiser] = useState(continuationDetails?.appraiser ?? (user?.username || ""));
+  const [appraisalCompany, setAppraisalCompany] = useState(continuationDetails?.appraisalCompany ?? (user?.companyName || ""));
+  const [industry, setIndustry] = useState(continuationDetails?.industry ?? (auctioneerIndustry(auctioneer)));
+  const [inspectionDate, setInspectionDate] = useState(continuationDetails?.inspectionDate ?? (isoDate(new Date())));
+  const [location, setLocation] = useState(continuationDetails?.location ?? (importedLocation));
+  const [latitude, setLatitude] = useState<number | null>(continuationDetails?.latitude ?? null);
+  const [longitude, setLongitude] = useState<number | null>(continuationDetails?.longitude ?? null);
   const [locationStatus, setLocationStatus] = useState(
     auctioneer ? "Imported from Auctioneer" : "Detecting current location…"
   );
@@ -379,23 +373,21 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
   const [locationAttributionUrl, setLocationAttributionUrl] = useState<
     string | null
   >(null);
-  const [contractNo, setContractNo] = useState(
-    () => auctioneer?.contract.contractNo || ""
-  );
-  const [language, setLanguage] = useState<"en" | "fr" | "es">("en");
-  const [currency, setCurrency] = useState(() => (auctioneer ? "CAD" : ""));
+  const [contractNo, setContractNo] = useState(continuationDetails?.contractNo ?? (auctioneer?.contract.contractNo || ""));
+  const [language, setLanguage] = useState<"en" | "fr" | "es">(continuationDetails?.language ?? "en");
+  const [currency, setCurrency] = useState(continuationDetails?.currency ?? ((auctioneer ? "CAD" : "")));
   const [currencyTouched, setCurrencyTouched] = useState(Boolean(auctioneer));
   const [currencyLoading, setCurrencyLoading] = useState(false);
-  const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(true);
-  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(false);
-  const [watermarkImages, setWatermarkImages] = useState(false);
-  const [factorsAgeCondition, setFactorsAgeCondition] = useState("");
-  const [factorsQuality, setFactorsQuality] = useState("");
-  const [factorsAnalysis, setFactorsAnalysis] = useState("");
-  const [includeValuationTable, setIncludeValuationTable] = useState(false);
+  const [includeDamageAnalysis, setIncludeDamageAnalysis] = useState(continuationDetails?.includeDamageAnalysis ?? (true));
+  const [bankPhotosEnabled, setBankPhotosEnabled] = useState(continuationDetails?.bankPhotosEnabled ?? (false));
+  const [watermarkImages, setWatermarkImages] = useState(continuationDetails?.watermarkImages ?? (false));
+  const [factorsAgeCondition, setFactorsAgeCondition] = useState(continuationDetails?.factorsAgeCondition ?? (""));
+  const [factorsQuality, setFactorsQuality] = useState(continuationDetails?.factorsQuality ?? (""));
+  const [factorsAnalysis, setFactorsAnalysis] = useState(continuationDetails?.factorsAnalysis ?? (""));
+  const [includeValuationTable, setIncludeValuationTable] = useState(continuationDetails?.includeValuationTable ?? (false));
   const [selectedValuationMethods, setSelectedValuationMethods] = useState<
     ValuationMethod[]
-  >(["FML"]);
+  >(continuationDetails?.selectedValuationMethods ?? (["FML"]));
   const [mixedLots, setMixedLots] = useState<MixedLot[]>(() =>
     buildAuctioneerSeedLots(auctioneer)
   );
@@ -2005,7 +1997,14 @@ const AssetForm = forwardRef<AssetFormHandle, Props>(function AssetForm(
         // Acceptance, not old-draft cleanup or background analysis, authorizes
         // the next-work-item request. The parent hides this accepted form now.
         dispatchReportCreated();
-        onAcceptedAndContinue?.(acceptedAuctioneerReportId(response));
+        onAcceptedAndContinue?.(acceptedAuctioneerReportId(response), {
+          clientName, effectiveDate, appraisalPurpose, ownerName, appraiser,
+          appraisalCompany, industry, inspectionDate, location, latitude, longitude,
+          contractNo, language, currency, includeValuationTable,
+          selectedValuationMethods: [...selectedValuationMethods], includeDamageAnalysis,
+          bankPhotosEnabled, watermarkImages, preparedFor, factorsAgeCondition,
+          factorsQuality, factorsAnalysis,
+        });
       }
       const cleanupError = await clearDraftStorage()
         .then(() => null)

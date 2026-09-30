@@ -506,6 +506,50 @@ async function mockSmartUploadApi(page: Page, onComplete: () => void) {
   });
 }
 
+for (const kind of ['asset', 'lot-listing'] as const) {
+  test(`Continue opens prefilled fresh ${kind} while report is processing`, async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await mockAuthenticatedApi(page);
+    const contract = { id: 'continue-contract', contractNo: 'CONTINUE-100', customerName: 'Continuation client', eventDate: '2026-10-05', location: 'Original yard' };
+    const setup = { workItemId: 'parent-work', cycleKey: 'parent-cycle', clientSubmissionId: 'parent-submission', status: 'claimed', reportType: kind === 'asset' ? 'asset' : 'lotListing', kind: 'unknown', contract, lots: [] };
+    await page.addInitScript(({ kind, setup }) => {
+      sessionStorage.setItem('cv:report-form-handoff:v1', JSON.stringify({ version: 1, kind, auctioneer: setup }));
+    }, { kind, setup });
+    let submissions = 0;
+    await page.route('**/api/**/upload-session**', async route => {
+      const path = new URL(route.request().url()).pathname;
+      let data: unknown;
+      if (path.endsWith('/upload-session')) {
+        const files = route.request().postDataJSON().files;
+        data = { data: { sessionId: 'continue-session', jobId: 'continue-job', files: files.map((file: { fileId: string; type: string }) => ({ fileId: file.fileId, uploadUrl: `https://r2.e2e.test/${file.fileId}`, method: 'PUT', contentType: file.type })), nextCursor: null } };
+      } else if (path.endsWith('/complete')) {
+        submissions++;
+        data = { reportId: 'accepted-report', jobId: 'continue-job', status: 'processing' };
+      } else data = { data: { confirmed: true } };
+      await route.fulfill({ json: data });
+    });
+    await page.route('https://r2.e2e.test/**', route => route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'PUT, OPTIONS' }, body: '' }));
+    await page.route('**/api/auctioneer/work-items/parent-work/continue', route => route.fulfill({ json: { data: { ...setup, workItemId: 'child-work', cycleKey: 'child-cycle', clientSubmissionId: 'child-submission' } } }));
+    await page.goto(`/create/${kind}`);
+    await page.getByLabel(/inspection location/i).fill('Edited continuation yard');
+    await page.getByLabel(/^Currency/).fill('USD');
+    await page.getByRole('radiogroup').getByText('Bundle', { exact: true }).click();
+    await expect(page.getByRole('radio', { name: /Bundle/ })).toBeChecked();
+    await page.getByLabel('Add main photos', { exact: true }).setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfU0AAAAASUVORK5CYII=', 'base64') });
+    await page.getByRole('button', { name: 'Create Lot & Continue', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Fresh lot for contract CONTINUE-100' })).toBeVisible();
+    await expect(page.getByLabel(/inspection location/i)).toHaveValue('Edited continuation yard');
+    await expect(page.getByLabel(/^Currency/)).toHaveValue('USD');
+    await expect(page.getByText('0 main', { exact: true })).toBeVisible();
+    expect(submissions).toBe(1);
+    expect(pageErrors).toEqual([]);
+    await expectNoHorizontalOverflow(page);
+    await expectNoSeriousAccessibilityViolations(page);
+    await page.screenshot({ path: `/tmp/continue-${kind}-${page.viewportSize()?.width}.png` });
+  });
+}
+
 async function expectTheme(page: Page, theme: ThemeMode) {
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
   await expect

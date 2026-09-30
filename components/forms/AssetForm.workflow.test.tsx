@@ -357,6 +357,18 @@ describe("AssetForm manual save and submission workflow", () => {
     expect(mocks.createAsset).not.toHaveBeenCalled();
   });
 
+  it("prefills a fresh continuation with edited details without reusing the previous submission", async () => {
+    const auctioneer = makeAuctioneerSetup("unknown");
+    render(<AssetForm auctioneer={auctioneer} continuationDetails={{ clientName: "Edited client", location: "Edited yard", currency: "USD", appraisalPurpose: "Continued inspection", bankPhotosEnabled: true }} />);
+    expect(screen.getByLabelText(/Client name/i)).toHaveValue("Edited client");
+    expect(screen.getByLabelText(/Inspection location/i)).toHaveValue("Edited yard");
+    expect(screen.getByLabelText(/Currency/i)).toHaveValue("USD");
+    addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+    expect(mocks.createAsset.mock.calls[0][0]).toMatchObject({ client_submission_id: auctioneer.clientSubmissionId, client_name: "Edited client", location: "Edited yard", currency: "USD" });
+  });
+
   it.each(["unknown", "scheduleA"] as const)(
     "continues an imported %s report at acceptance without waiting for processing or old-draft cleanup",
     async (kind) => {
@@ -397,11 +409,11 @@ describe("AssetForm manual save and submission workflow", () => {
 
       await act(async () => upload.resolve({ reportId: "accepted-asset-report", status: "processing" }));
       await waitFor(() => expect(mocks.deleteDraftByClientId).toHaveBeenCalledExactlyOnceWith(auctioneer.clientSubmissionId, "asset"));
-      expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-asset-report");
+      expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-asset-report", expect.objectContaining({ contractNo: auctioneer.contract.contractNo }));
       expect(onSuccess).not.toHaveBeenCalled();
       await act(async () => cleanup.resolve());
 
-      await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-asset-report"));
+      await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-asset-report", expect.objectContaining({ contractNo: auctioneer.contract.contractNo })));
       expect(onSuccess).not.toHaveBeenCalled();
       expect(mocks.createAsset).toHaveBeenCalledOnce();
       expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("No media selected");
@@ -427,7 +439,7 @@ describe("AssetForm manual save and submission workflow", () => {
     const original = mocks.createAsset.mock.calls[0];
     fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
-    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry"));
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-after-retry", expect.objectContaining({ contractNo: "IMPORTED-100" })));
     expect(mocks.createAsset).toHaveBeenCalledTimes(2);
     expect(mocks.createAsset.mock.calls[1][0].client_submission_id).toBe(original[0].client_submission_id);
     expect(mocks.createAsset.mock.calls[1][1]).toEqual(original[1]);
@@ -465,7 +477,7 @@ describe("AssetForm manual save and submission workflow", () => {
       }
       await act(async () => pending.resolve({ _id: "saved-draft", media: [], reportId: "accepted-single-flight" }));
       if (first === "continue") {
-        await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-single-flight"));
+        await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-single-flight", expect.objectContaining({ contractNo: "IMPORTED-100" })));
         expect(onSuccess).not.toHaveBeenCalled();
       } else if (first === "normal") {
         await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
@@ -486,7 +498,7 @@ describe("AssetForm manual save and submission workflow", () => {
     addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
 
-    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure"));
+    await waitFor(() => expect(onAcceptedAndContinue).toHaveBeenCalledExactlyOnceWith("accepted-cleanup-failure", expect.objectContaining({ contractNo: "IMPORTED-100" })));
     expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringContaining("Report submitted"));
     expect(onSuccess).not.toHaveBeenCalled();
     expect(mocks.createAsset).toHaveBeenCalledOnce();
