@@ -507,6 +507,25 @@ async function mockSmartUploadApi(page: Page, onComplete: () => void) {
 }
 
 for (const kind of ['asset', 'lot-listing'] as const) {
+  test(`Schedule A split controls for ${kind}`, async ({ page }) => {
+    await mockAuthenticatedApi(page);
+    const setup = { workItemId: "split-work", cycleKey: "split-cycle", clientSubmissionId: "split-submission",
+      status: "claimed", reportType: kind === "asset" ? "asset" : "lotListing", kind: "scheduleA",
+      contract: { id: "split-contract", contractNo: "SPLIT-100", customerName: "Split client" },
+      lots: [{ sourceKey: "parent-line", lotId: "upstream-parent", lotNumber: "100", description: "Original line" }],
+    };
+    await page.addInitScript(({ kind, setup }) => {
+      sessionStorage.setItem("cv:report-form-handoff:v1", JSON.stringify({ version: 1, kind, auctioneer: setup }));
+    }, { kind, setup });
+    await page.goto(`/create/${kind}`);
+    await page.getByRole("button", { name: "Add lot to this line", exact: true }).click();
+    await expect(page.getByRole("radio", { name: /Bundle/ })).toBeChecked();
+    await expect(page.getByRole("radio", { name: /Bundle/ })).toBeDisabled();
+    await expect(page.getByLabel("Add main photos", { exact: true })).toBeAttached();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: `/tmp/split-${kind}-${page.viewportSize()?.width}.png` });
+  });
+
   test(`Continue opens prefilled fresh ${kind} while report is processing`, async ({ page }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', error => pageErrors.push(error.message));
