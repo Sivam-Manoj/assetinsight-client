@@ -475,6 +475,21 @@ export default function ReportsPage() {
   >("date-desc");
   const [typeFilter, setTypeFilter] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  /*
+     Delivered work leaves the working list. A report that reached Auctioneer
+     needs nothing further, and leaving it here means the rows that DO need a
+     Send or a Retry are scattered among rows that are simply done.
+  */
+  const [queueTab, setQueueTab] = useState<"outstanding" | "completed">("outstanding");
+  /*
+     Open report on Incoming links here with ?search=<contract number>. That
+     parameter already existed and is already read below, seeding the search
+     box — and the list already searches contract_no, so the narrowing needs no
+     new code at all. Only the TAB has to be chosen, which is what this ref is
+     for.
+  */
+  const deepLinkTabResolved = useRef(false);
+
   const [assetReports, setAssetReports] = useState<AssetReport[]>([]);
   const [realEstateReports, setRealEstateReports] = useState<RealEstateReport[]>([]);
   const [lotListingReports, setLotListingReports] = useState<LotListing[]>([]);
@@ -1169,8 +1184,44 @@ export default function ReportsPage() {
     return Array.from(values);
   }, [groups]);
 
+  /*
+     Counted from every group rather than from the filtered output, so the tab
+     counts do not move when someone types in the search box. A count that
+     changes as you search cannot be used to answer "how much is left to send".
+  */
+  const completedCount = useMemo(
+    () => groups.filter((group) => group.auctioneerDelivery?.state === "sent").length,
+    [groups]
+  );
+  const outstandingCount = groups.length - completedCount;
+  useEffect(() => {
+    /*
+       Choose the tab ONCE, after the data arrives. A sent report lives on
+       Completed while the page opens on Outstanding, so without this the deep
+       link lands on a tab that cannot hold what was asked for. Once only, so a
+       later refetch cannot yank the reader back after they have changed tabs
+       themselves.
+    */
+    if (deepLinkTabResolved.current) return;
+    const wanted = new URLSearchParams(window.location.search).get("search")?.trim() || "";
+    if (!wanted || groups.length === 0) return;
+    deepLinkTabResolved.current = true;
+    const match = groups.find(
+      (group) => (group.contract_no ?? "").toLowerCase() === wanted.toLowerCase()
+    );
+    if (match?.auctioneerDelivery?.state === "sent") setQueueTab("completed");
+  }, [groups]);
+
   const filteredGroups = useMemo(() => {
-    let output = [...groups];
+    /*
+       The tab narrows FIRST, so the search and type filters below apply within
+       the tab you are standing on rather than across both.
+    */
+    let output = groups.filter((group) =>
+      queueTab === "completed"
+        ? group.auctioneerDelivery?.state === "sent"
+        : group.auctioneerDelivery?.state !== "sent"
+    );
     const q = query.trim().toLowerCase();
     if (q) {
       output = output.filter((group) =>
@@ -1212,7 +1263,7 @@ export default function ReportsPage() {
     });
 
     return output;
-  }, [groups, query, sortBy, typeFilter]);
+  }, [groups, queueTab, query, sortBy, typeFilter]);
 
   const totalItems = filteredGroups.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -1223,7 +1274,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, pageSize, sortBy, typeFilter]);
+  }, [queueTab, query, pageSize, sortBy, typeFilter]);
 
   async function handleDownload(reportId: string) {
     try {
@@ -1656,6 +1707,49 @@ export default function ReportsPage() {
         </button>
       </header>
 
+      {/*
+        Counts live on the tabs rather than only in the header, so the number of
+        rows on screen is always explained by the tab you are standing on — the
+        same treatment the Incoming queue uses.
+      */}
+      <div
+        className="inline-flex gap-1 self-start rounded-lg bg-[var(--app-panel-alt)] p-1"
+        role="tablist"
+        aria-label="Queue"
+      >
+        {([
+          { id: "outstanding" as const, label: "Outstanding", count: outstandingCount },
+          { id: "completed" as const, label: "Completed", count: completedCount },
+        ]).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={queueTab === tab.id}
+            tabIndex={queueTab === tab.id ? 0 : -1}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "outstanding" : event.key === "End" ? "completed" : queueTab === "outstanding" ? "completed" : "outstanding";
+              setQueueTab(next);
+              const index = next === "outstanding" ? 0 : 1;
+              (event.currentTarget.parentElement?.querySelectorAll("button")[index] as HTMLButtonElement | undefined)?.focus();
+            }}
+            onClick={() => setQueueTab(tab.id)}
+            className={`inline-flex min-h-8 items-center gap-2 rounded-md px-3 text-sm font-semibold transition-colors ${
+              queueTab === tab.id
+                ? "bg-[var(--app-panel)] text-[var(--app-text)] shadow-[var(--app-shadow-control)]"
+                : "text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+            }`}
+          >
+            {tab.label}
+            <span className="rounded-full bg-[var(--app-panel-soft)] px-1.5 text-xs font-semibold tabular-nums text-[var(--app-text-muted)]">
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       <button
         type="button"
         aria-expanded={filtersOpen}
@@ -1768,12 +1862,21 @@ export default function ReportsPage() {
             <FileText className="size-5" />
           </span>
           <h2 className="mt-3 font-semibold text-[var(--app-text)]">
-            No reports found
+            {queueTab === "completed" ? "Nothing completed yet" : "No reports found"}
           </h2>
+          {/*
+            An empty tab says why it is empty. "No reports match the current
+            search and filters" on a tab with no filters applied reads as a
+            fault rather than as an empty state.
+          */}
           <p className="mx-auto mt-1 max-w-md text-sm text-[var(--app-text-muted)]">
             {groups.length === 0
               ? "Create a report from the dashboard to populate this page."
-              : "No reports match the current search and filters."}
+              : queueTab === "completed"
+                ? "Reports appear here once they have been sent to Auctioneer."
+                : outstandingCount === 0
+                  ? "Every report has been sent. See the Completed tab."
+                  : "No reports match the current search and filters."}
           </p>
         </section>
       ) : (
@@ -1805,7 +1908,7 @@ export default function ReportsPage() {
                         <p className="mt-1 break-words text-sm leading-5 text-[var(--app-text-muted)]">
                           {subtitle}
                         </p>
-                        <p className="mt-1 text-xs text-[var(--app-text-subtle)] sm:hidden">
+                          <p className="mt-1 text-xs text-[var(--app-text-muted)] sm:hidden">
                           {reportTypeColumnLabel(group.type)} ·{" "}
                           {new Date(group.createdAt).toLocaleDateString()}
                         </p>
@@ -1820,26 +1923,26 @@ export default function ReportsPage() {
                   </div>
 
                   <div className="mt-3.5 flex flex-col gap-3 border-t border-[var(--app-border)] pt-3 sm:flex-row sm:items-end sm:justify-between">
-                    <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <div className="flex min-w-0 gap-2.5">
                         <Boxes className="mt-0.5 size-[18px] shrink-0 text-[var(--app-text-muted)]" strokeWidth={1.8} />
-                        <div>
+                        <dl>
                           <dt className="text-xs font-medium text-[var(--app-text-muted)]">Lots</dt>
                           <dd className="mt-1 text-sm font-semibold text-[var(--app-text)]">
                             {group.lotCount || "—"} {group.lotCount === 1 ? "lot" : group.lotCount ? "lots" : ""}
                           </dd>
-                        </div>
+                        </dl>
                       </div>
                       <div className="flex min-w-0 gap-2.5">
                         <ChartNoAxesColumnIncreasing className="mt-0.5 size-[18px] shrink-0 text-[var(--app-text-muted)]" strokeWidth={1.8} />
-                        <div>
+                        <dl>
                           <dt className="text-xs font-medium text-[var(--app-text-muted)]">Market value</dt>
                           <dd className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
                             {group.fairMarketValue || "—"}
                           </dd>
-                        </div>
+                        </dl>
                       </div>
-                    </dl>
+                    </div>
                     <div className="grid w-full gap-2 sm:max-w-xl sm:grid-cols-2">
                       <div>{renderFileControls(group)}</div>
                       <div>{renderReportActions(group)}</div>

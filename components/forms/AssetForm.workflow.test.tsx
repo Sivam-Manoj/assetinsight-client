@@ -60,11 +60,11 @@ vi.mock("next/dynamic", async () => {
       return function TestMixedSection({
         value,
         onChange,
-        lockLotStructure,
+        sourceMappedLots,
       }: {
         value: MixedLot[];
         onChange: (value: MixedLot[]) => void;
-        lockLotStructure?: boolean;
+        sourceMappedLots?: boolean;
       }) {
         const selectedName = value[0]?.files[0]?.name || "No media selected";
         return React.createElement(
@@ -120,7 +120,7 @@ vi.mock("next/dynamic", async () => {
             "output",
             { "data-testid": "asset-source-locks" },
             JSON.stringify({
-              lockLotStructure: Boolean(lockLotStructure),
+              sourceMappedLots: Boolean(sourceMappedLots),
               sources: value.map((lot) => lot.source),
             })
           )
@@ -384,7 +384,7 @@ describe("AssetForm manual save and submission workflow", () => {
       addTestMedia();
 
       const sources = JSON.parse(screen.getByTestId("asset-source-locks").textContent || "{}");
-      expect(sources.lockLotStructure).toBe(kind === "scheduleA");
+      expect(sources.sourceMappedLots).toBe(kind === "scheduleA");
       if (kind === "scheduleA") {
         expect(sources.sources.map((source: { locked: boolean }) => source.locked)).toEqual([true, true]);
       }

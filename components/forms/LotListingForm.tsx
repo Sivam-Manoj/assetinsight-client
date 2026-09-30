@@ -1526,6 +1526,7 @@ export default function LotListingForm({
           mode: lot.mode,
           ...(lot.source && {
             source_key: lot.source.key,
+            ...(lot.source.parentKey ? { source_parent_key: lot.source.parentKey } : {}),
             source_lot_id: lot.source.lotId,
             source_submission_id: lot.source.submissionId,
           }),
@@ -2185,7 +2186,7 @@ export default function LotListingForm({
                 downloadPrefix={contractNo || "lot-listing"}
                 allowVideo
                 analysisImageLimit={50}
-                lockLotStructure={auctioneer?.kind === "scheduleA"}
+                sourceMappedLots={auctioneer?.kind === "scheduleA"}
               />
             </div>
           </FormSection>

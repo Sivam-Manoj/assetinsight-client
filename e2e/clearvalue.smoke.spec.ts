@@ -640,6 +640,20 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
 }
 
 for (const theme of ["light", "dark"] as const) {
+  test(`Reports completed deep link in ${theme} mode`, async ({ page }) => {
+    await initializeTheme(page, theme);
+    await mockAuthenticatedApi(page);
+    await page.route("**/api/auctioneer/deliveries**", route => route.fulfill({ json: { data: [{
+      workItemId: "sent-work", reportId: "e2e-asset-report", reportModel: "AssetReport",
+      reportType: "asset", contractNo: "CV-E2E-REPORT", state: "sent", canSend: false,
+    }] } }));
+    await page.goto("/reports?search=CV-E2E-REPORT");
+    const tab = page.getByRole("tab", { name: "Completed 1" });
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("img", { name: /Preview image for Asset.*CV-E2E-REPORT/i }).first()).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoSeriousAccessibilityViolations(page);
+  });
   test(`public landing and sign-in are keyboard accessible in ${theme} mode`, async ({
     page,
   }) => {

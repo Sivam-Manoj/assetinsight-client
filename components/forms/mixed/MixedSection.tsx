@@ -85,7 +85,14 @@ type Props = {
   onImageCapture?: () => void; // Callback when image is captured/added (for auto-save)
   allowVideo?: boolean;
   analysisImageLimit?: number;
-  lockLotStructure?: boolean;
+  /**
+   * The lots in this form map to upstream Schedule A lines.
+   *
+   * It does NOT mean the lot list is fixed. An added lot inherits its parent's
+   * identity and records parentKey; a lot Auctioneer sent is refused deletion
+   * through its own source.locked, not through this.
+   */
+  sourceMappedLots?: boolean;
 };
 
 type RemovedMedia = {
@@ -107,7 +114,7 @@ export default function MixedSection({
   onImageCapture,
   allowVideo = true,
   analysisImageLimit,
-  lockLotStructure = false,
+  sourceMappedLots = false,
 }: Props) {
   const [lots, setLots] = useState<MixedLot[]>(value || []);
   const lotsRef = useRef<MixedLot[]>(value || []);
@@ -345,15 +352,42 @@ export default function MixedSection({
   }, []);
 
   function createLot() {
-    if (lockLotStructure) return;
     const id = `lot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    /*
+       On a source-mapped form the new lot is a SPLIT of the lot being worked
+       on, not a free-standing one: Auctioneer named that line and has to be
+       able to place whatever comes back against it. The parent's identity is
+       carried across and parentKey records where it came from, while the new
+       lot takes its own key so nothing downstream collides.
+
+       A split of a split still points at the ORIGINAL line — parentKey first,
+       then key — so the chain never grows past one level and Auctioneer always
+       receives a reference to something it actually sent.
+
+       locked is deliberately false: the lot Auctioneer sent stays undeletable,
+       one the appraiser created is theirs to discard.
+    */
+    const parent = sourceMappedLots ? lotsRef.current[activeIdx]?.source : undefined;
+    const parentKey = parent?.parentKey || parent?.key;
+    if (sourceMappedLots && !parentKey) return;
+    const source: MixedLot["source"] | undefined = parentKey
+      ? {
+          key: `${parentKey}:split:${id}`,
+          parentKey,
+          lotId: parent?.lotId,
+          submissionId: parent?.submissionId,
+          label: parent?.label ? `${parent.label} — added lot` : "Added lot",
+          locked: false,
+        }
+      : undefined;
     const next: MixedLot[] = [
       ...lotsRef.current,
-      { id, files: [], extraFiles: [], videoFiles: [], coverIndex: 0 },
+      { id, source, ...(sourceMappedLots ? { mode: "single_lot" as const } : {}), files: [], extraFiles: [], videoFiles: [], coverIndex: 0 },
     ];
     commitLots(next);
     setActiveIdx(next.length - 1);
   }
+
 
   function removeLot(lotId: string) {
     const idx = lotsRef.current.findIndex((lot) => lot.id === lotId);
@@ -361,7 +395,9 @@ export default function MixedSection({
       setRemoveLotPendingId(null);
       return;
     }
-    if (lockLotStructure || lotsRef.current[idx]?.source?.locked) return;
+    // Per lot, not per form: a lot Auctioneer sent may never be deleted, but
+    // one the appraiser split out of it may.
+    if (lotsRef.current[idx]?.source?.locked) return;
     const next = lotsRef.current.filter((_, i) => i !== idx);
     commitLots(next);
     setActiveIdx((current) => {
@@ -1717,20 +1753,26 @@ export default function MixedSection({
           {allowVideo ? <span>{totals.videos} video</span> : null}
           {totals.bytes > 0 ? <span>{formatFileSize(totals.bytes)}</span> : null}
         </div>
-        {!lockLotStructure ? (
-          <button
-            type="button"
-            onClick={createLot}
-            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--app-text)] px-4 py-2.5 text-sm font-semibold text-[var(--app-panel)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 @min-[560px]:w-auto"
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            New lot
-          </button>
-        ) : (
-          <span className="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2 text-xs font-semibold text-[var(--app-text-muted)]">
-            Source lot mapping locked
-          </span>
-        )}
+        {/*
+          Offered on both kinds now. The label differs because the act differs:
+          on an Unknown contract this is a new lot outright, on a Schedule A one
+          it is another lot beneath the line being worked on. It used to read
+          "Source lot mapping locked", which described the mapping accurately
+          and told the reader nothing about what they could do instead.
+        */}
+        <button
+          type="button"
+          onClick={createLot}
+          title={
+            sourceMappedLots
+              ? "Add another lot beneath this Schedule A line. It is sent back against the same line."
+              : "Add another lot to this contract."
+          }
+          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--app-text)] px-4 py-2.5 text-sm font-semibold text-[var(--app-panel)] transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] focus-visible:ring-offset-2 @min-[560px]:w-auto"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          {sourceMappedLots ? "Add lot to this line" : "New lot"}
+        </button>
       </div>
 
       <input
@@ -1908,7 +1950,7 @@ export default function MixedSection({
                     {MODE_OPTIONS.map((option) => {
                       const checked = activeLot.mode === option.value;
                       const disabled = Boolean(
-                        activeLot.source?.locked ||
+                        sourceMappedLots ||
                           (activeLot.mode &&
                             !checked &&
                             activeLot.files.length > 0)
@@ -2106,7 +2148,7 @@ export default function MixedSection({
           Download lot ZIP
         </MenuItem>
         <MenuItem
-          disabled={lockLotStructure || Boolean(activeLot?.source?.locked)}
+          disabled={Boolean(activeLot?.source?.locked)}
           onClick={() => {
             setMoreAnchor(null);
             if (activeLot) setRemoveLotPendingId(activeLot.id);

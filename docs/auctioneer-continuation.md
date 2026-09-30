@@ -19,3 +19,18 @@ the web client. No Auctioneer API changes or historical report changes are neede
 Regression coverage includes both form workflows, successor identity/remount and
 retry tests, and production-build browser flows on desktop and mobile viewports.
 Browser provider calls are isolated fixtures, not real customer submissions.
+# Pristine integration update (2026-09-30)
+
+Reports now separates Outstanding from Completed (Auctioneer delivery state
+`sent`). Incoming Open report links carry the contract search and select the
+Completed tab when the matching report has been delivered.
+
+Schedule A forms offer Add lot to this line. This creates an independently
+editable/removable bundled lot with stable identity and original-line lineage;
+it does not reuse the parent's displayed number. Original lines stay locked.
+The backend validates and persists the mapping before processing.
+
+Create Lot & Continue remains submit-and-open: after upload acceptance, open
+a fresh same-contract form with the retained details, without waiting for file
+generation. It is not a synonym for adding a local lot. Existing submission,
+approval/release and continuation authority checks are unchanged.
