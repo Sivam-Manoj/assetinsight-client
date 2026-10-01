@@ -710,6 +710,56 @@ for (const theme of ["light", "dark"] as const) {
 }
 
 for (const theme of ["light", "dark"] as const) {
+  test(`Incoming contact roles in ${theme} mode`, async ({ page }, testInfo) => {
+    if (testInfo.project.name === "mobile") {
+      await page.setViewportSize({ width: 320, height: 844 });
+    }
+    const consignorName = "Northern Prairie Equipment Holdings Ltd";
+    const salespersonName = "Morgan Sinclair";
+    await initializeTheme(page, theme);
+    await mockAuthenticatedApi(page, { incomingItems: [
+      { ...incomingItem, consignorName, salespersonName },
+      { ...incomingItem, cycleKey: "missing-contacts", contractNo: "NO-CONTACTS" },
+    ] });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type())) errors.push(message.text());
+    });
+    await page.goto("/incoming");
+    await expect(page).toHaveURL(/\/incoming$/);
+    await expect(page).toHaveTitle(/Asset Insight/);
+    await expect(page.getByRole("heading", { level: 1, name: "Incoming" })).toBeVisible();
+    const row = page.getByRole("row").filter({ has: page.getByRole("button", { name: "Review CV-E2E-100" }) });
+    await expect(row.locator('[data-label="Consignor"]')).toHaveText(consignorName);
+    await expect(row.locator('[data-label="Salesperson"]')).toHaveText(salespersonName);
+    await expect(row.locator('[data-label="Customer"]')).toHaveText(incomingItem.customerName);
+    const missing = page.getByRole("row").filter({ has: page.getByRole("button", { name: "Review NO-CONTACTS" }) });
+    await expect(missing.locator('[data-label="Consignor"]')).toHaveText("Not supplied");
+    await expect(missing.locator('[data-label="Salesperson"]')).toHaveText("Not supplied");
+    await expectNoHorizontalOverflow(page);
+    const tableWidths = await page.locator(".app-table-wrap").evaluate((element) => ({
+      available: element.clientWidth,
+      content: element.scrollWidth,
+    }));
+    expect(tableWidths.content, "Contact columns should fit the queue at supported widths")
+      .toBeLessThanOrEqual(tableWidths.available + 1);
+    await page.screenshot({ path: `/tmp/incoming-contacts-${testInfo.project.name}-${theme}-table.png` });
+
+    const review = row.getByRole("button", { name: "Review CV-E2E-100" });
+    await review.focus();
+    await expect(review).toBeFocused();
+    await review.press("Enter");
+    const details = page.getByRole("complementary", { name: "Selected contract" });
+    await expect(details).toHaveAttribute("data-open", "true");
+    await expect(details.getByText(consignorName, { exact: true })).toBeVisible();
+    await expect(details.getByText(salespersonName, { exact: true })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoSeriousAccessibilityViolations(page);
+    await expect(page.locator("nextjs-portal [data-nextjs-dialog-overlay]")).toHaveCount(0);
+    expect(errors).toEqual([]);
+    await page.screenshot({ path: `/tmp/incoming-contacts-${testInfo.project.name}-${theme}-details.png` });
+  });
   test(`Incoming completed queue in ${theme} mode`, async ({ page }, testInfo) => {
     await initializeTheme(page, theme);
     await mockAuthenticatedApi(page, { incomingItems: [incomingItem,

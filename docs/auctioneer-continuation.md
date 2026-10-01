@@ -1,5 +1,23 @@
 # Create Lot & Continue
 
+## Incoming contract contacts (2026-10-01)
+
+The Incoming queue and selected-contract details show separate **Customer**,
+**Consignor** and **Salesperson** values. The owner-scoped Incoming API supplies
+optional `consignorName` and `salespersonName` strings; claim, saved setup and
+Continue retain them under `contract`. Missing values display **Not supplied**.
+Neither customer nor assigned appraiser is used to infer the other roles.
+
+Deploy the additive backend adapter before the web update. It accepts explicit
+Auctioneer contract/task contact metadata and retains the names in work-item
+snapshots; existing snapshots are read without backfills or database changes.
+No new endpoint, environment variable, dependency or extra browser request is
+needed. Form fields, report layouts and delivery permissions are unchanged.
+See the backend integration guide for upstream names and compatibility aliases;
+live provider field availability is not established by the isolated fixtures.
+
+## Submission and continuation
+
 For imported Asset and Lot Listing forms, Continue submits the current capture
 through the normal upload workflow. Once the server accepts the upload, the page
 requests a successor work item and opens a fresh form without waiting for report
