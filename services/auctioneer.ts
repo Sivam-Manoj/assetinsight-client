@@ -25,6 +25,8 @@ export type AuctioneerIncomingItem = {
   customerName: string;
   consignorName?: string;
   salespersonName?: string;
+  /** What the office wrote on the contract, e.g. "Farm equipment". */
+  description?: string;
   eventId?: string;
   eventTitle: string;
   eventDate?: string;
@@ -70,6 +72,7 @@ export type AuctioneerWorkItemSetup = {
     customerName: string;
     consignorName?: string;
     salespersonName?: string;
+    description?: string;
     eventId?: string;
     eventTitle: string;
     eventDate?: string;
@@ -138,6 +141,12 @@ function textValue(...values: unknown[]) {
 // Contact roles are explicit API metadata, never inferred from the customer,
 // claimant or appraiser. Older servers may omit them entirely.
 function contactName(...values: unknown[]): string | undefined {
+  return values.find((value): value is string =>
+    typeof value === "string" && Boolean(value.trim())
+  )?.trim();
+}
+
+function contractDescription(...values: unknown[]): string | undefined {
   return values.find((value): value is string =>
     typeof value === "string" && Boolean(value.trim())
   )?.trim();
@@ -225,6 +234,7 @@ function normalizeIncomingItem(value: unknown): AuctioneerIncomingItem {
       item.salespersonName, item.salesperson_name,
       contract.salespersonName, contract.salesperson_name
     ),
+    description: contractDescription(item.description, contract.description),
     eventId:
       textValue(item.eventId, item.event_id, contract.eventId, event.id, event._id) ||
       undefined,
@@ -396,6 +406,7 @@ function normalizeSetup(value: unknown): AuctioneerWorkItemSetup {
         raw.salespersonName, raw.salesperson_name,
         contract.salespersonName, contract.salesperson_name
       ),
+      description: contractDescription(raw.description, contract.description),
       eventId:
         textValue(raw.eventId, contract.eventId, event.id, event._id) || undefined,
       eventTitle: textValue(

@@ -346,9 +346,10 @@ describe("Incoming", () => {
     expect(mocks.getIncoming).toHaveBeenCalledWith();
   });
 
-  it("shows customer, consignor and salesperson separately in the queue and selected contract", async () => {
+  it("shows description, customer, consignor and salesperson separately in the queue and selected contract", async () => {
     mocks.getIncoming.mockResolvedValue([{
       ...claimedItem,
+      description: "Farm equipment",
       consignorName: "Northfield Consignor",
       salespersonName: "Sam Sales",
     }]);
@@ -356,6 +357,7 @@ describe("Incoming", () => {
 
     const table = await screen.findByRole("table");
     const roles = [
+      ["Description", "Farm equipment"],
       ["Customer", "Northfield Plant Ltd"],
       ["Consignor", "Northfield Consignor"],
       ["Salesperson", "Sam Sales"],
@@ -372,18 +374,37 @@ describe("Incoming", () => {
     }
   });
 
-  it("shows unavailable contact roles without borrowing the customer or claimant name", async () => {
+  it("preserves a long description as plain text in the queue and selected contract", async () => {
+    const description = `Equipment <img src=x onerror=alert(1)> ${"A".repeat(420)}`;
+    mocks.getIncoming.mockResolvedValue([{ ...claimedItem, description }]);
+    renderIncoming();
+
+    const table = await screen.findByRole("table");
+    const cell = table.querySelector('td[data-label="Description"]');
+    expect(cell?.textContent).toBe(description);
+    expect(cell).toHaveAttribute("title", description);
+    expect(cell?.querySelector("img")).toBeNull();
+
+    const panel = await selectContract("CV-200");
+    const label = within(panel).getAllByRole("term").find((term) => term.textContent === "Description");
+    expect(label?.nextElementSibling?.textContent).toBe(description);
+    expect(label?.nextElementSibling?.querySelector("img")).toBeNull();
+    expect(mocks.getIncoming).toHaveBeenCalledTimes(1);
+    expect(mocks.getSetup).not.toHaveBeenCalled();
+  });
+
+  it("shows unavailable description and contact roles without borrowing other values", async () => {
     mocks.getIncoming.mockResolvedValue([claimedItem]);
     renderIncoming();
 
     const table = await screen.findByRole("table");
-    for (const role of ["Consignor", "Salesperson"]) {
+    for (const role of ["Description", "Consignor", "Salesperson"]) {
       expect(table.querySelector(`td[data-label="${role}"]`)).toHaveTextContent(/^Not supplied$/);
     }
     expect(within(table).getByRole("cell", { name: "Northfield Plant Ltd" })).toHaveAttribute("data-label", "Customer");
 
     const panel = await selectContract("CV-200");
-    for (const role of ["Consignor", "Salesperson"]) {
+    for (const role of ["Description", "Consignor", "Salesperson"]) {
       const label = within(panel).getAllByRole("term").find((term) => term.textContent === role);
       expect(label?.nextElementSibling).toHaveTextContent(/^Not supplied$/);
     }
