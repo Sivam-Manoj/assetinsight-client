@@ -339,3 +339,113 @@ describe("AuctioneerService incoming", () => {
     expect(API.get).not.toHaveBeenCalled();
   });
 });
+
+/*
+   Assigned users close their OWN part of a contract; Auctioneer completes it
+   once every assigned person has closed theirs (owner, 2026-10-02).
+*/
+describe("AuctioneerService contract close", () => {
+  beforeEach(() => {
+    vi.mocked(API.get).mockReset();
+    vi.mocked(API.post).mockReset();
+  });
+
+  it("keeps the delivery's contract, close scope and close outcome", async () => {
+    vi.mocked(API.get).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          {
+            workItemId: "work-1",
+            contractId: "contract-1",
+            contractNo: "C-1",
+            state: "sent",
+            canCompleteContract: true,
+            contractCompletionScope: "user",
+            completeContract: true,
+            contractClosedAt: "2026-10-02T12:00:00.000Z",
+            contractTaskCompleted: false,
+          },
+          { workItemId: "work-2", state: "ready", contractCompletionScope: "everyone", contractTaskCompleted: "yes" },
+        ],
+      },
+    });
+
+    const [closed, unknown] = await AuctioneerService.getDeliveries();
+
+    expect(closed).toMatchObject({
+      contractId: "contract-1",
+      contractCompletionScope: "user",
+      completeContract: true,
+      contractClosedAt: "2026-10-02T12:00:00.000Z",
+      contractTaskCompleted: false,
+    });
+    // Unknown scopes and malformed flags read as unknown, never as a close.
+    expect(unknown.contractCompletionScope).toBeUndefined();
+    expect(unknown.contractTaskCompleted).toBeUndefined();
+    expect(unknown.contractClosedAt).toBeUndefined();
+    expect(unknown.contractId).toBeUndefined();
+  });
+
+  it("closes the signed-in user's part without sending who they are", async () => {
+    vi.mocked(API.post).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          contractId: "contract/1",
+          contractNo: "C-1",
+          closedAt: "2026-10-02T12:00:00.000Z",
+          taskCompleted: true,
+          alreadyCompleted: false,
+          userStatus: "completed",
+        },
+      },
+    });
+
+    await expect(AuctioneerService.closeContractPart("contract/1")).resolves.toEqual({
+      contractId: "contract/1",
+      contractNo: "C-1",
+      closedAt: "2026-10-02T12:00:00.000Z",
+      taskCompleted: true,
+      alreadyCompleted: false,
+      userStatus: "completed",
+    });
+    expect(API.post).toHaveBeenCalledExactlyOnceWith(
+      "/auctioneer/contracts/contract%2F1/close-my-part",
+      {},
+      { _retry: true, timeout: 30_000 }
+    );
+  });
+
+  it("rejects a missing outcome and propagates a refusal unchanged", async () => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: {} } });
+    await expect(AuctioneerService.closeContractPart("contract-1")).rejects.toThrow("Contract completion was not confirmed");
+
+    const refusal = { response: { status: 404, data: { code: "auctioneer_contract_assignment_not_found" } } };
+    vi.mocked(API.post).mockRejectedValueOnce(refusal);
+    await expect(AuctioneerService.closeContractPart("contract-2")).rejects.toBe(refusal);
+  });
+
+  it.each([
+    { contractId: "another-contract" }, { closedAt: "invalid" }, { closedAt: undefined },
+    { taskCompleted: "true" }, { alreadyCompleted: undefined },
+    { userStatus: "active" }, { userStatus: null },
+  ])("rejects incomplete or unrelated close receipts: %j", async (overrides) => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: {
+      contractId: "contract-1", closedAt: "2026-10-03T12:00:00.000Z",
+      taskCompleted: false, alreadyCompleted: false, userStatus: "completed", ...overrides,
+    } } });
+    await expect(AuctioneerService.closeContractPart("contract-1")).rejects.toThrow("Contract completion was not confirmed");
+    expect(API.post).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { taskCompleted: false, userStatus: "revoked" },
+    { taskCompleted: true, userStatus: null },
+  ])("accepts confirmed revoked or whole-contract outcomes: %j", async (outcome) => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: {
+      contractId: "contract-1", closedAt: "2026-10-03T12:00:00.000Z", alreadyCompleted: false, ...outcome,
+    } } });
+    await expect(AuctioneerService.closeContractPart("contract-1")).resolves.toMatchObject(outcome);
+  });
+});

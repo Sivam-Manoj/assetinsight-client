@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetReport } from "@/services/assets";
 import type { LotListing } from "@/services/lotListing";
 import { toast } from "@/components/ui/toast";
+import { advanceAuthSession } from "@/lib/auth-storage";
 import ReportsPage from "./page";
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   getSalvageReports: vi.fn(),
   getLotListings: vi.fn(),
   getDeliveries: vi.fn(),
+  closeContractPart: vi.fn(),
   deleteReport: vi.fn(),
   downloadReport: vi.fn(),
   downloadCr: vi.fn(),
@@ -97,6 +99,7 @@ vi.mock("@/services/lotListing", () => ({
 vi.mock("@/services/auctioneer", () => ({
   default: {
     getDeliveries: mocks.getDeliveries,
+    closeContractPart: mocks.closeContractPart,
   },
 }));
 
@@ -204,6 +207,9 @@ class ImmediatelyIntersectingObserver {
 
 describe("My Reports thumbnails", () => {
   beforeEach(() => {
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.info).mockClear();
     mocks.getMyReports.mockReset().mockResolvedValue([]);
     mocks.getAssetReports
       .mockReset()
@@ -215,6 +221,7 @@ describe("My Reports thumbnails", () => {
     mocks.getSalvageReports.mockReset().mockResolvedValue({ data: [] });
     mocks.getLotListings.mockReset().mockResolvedValue({ data: [] });
     mocks.getDeliveries.mockReset().mockResolvedValue([]);
+    mocks.closeContractPart.mockReset();
     mocks.downloadReport.mockReset();
     mocks.downloadCr.mockReset();
     mocks.downloadCrDocx.mockReset();
@@ -947,5 +954,218 @@ describe("My Reports thumbnails", () => {
     });
     expect(within(table).getByText(/CV-NO-IMAGE/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Search reports/i)).toHaveValue("");
+  });
+
+  /*
+     ── CLOSE MY PART OF THIS CONTRACT (owner, 2026-10-02) ───────────────────
+     A person may have nothing left to send. Delivered Auctioneer work stays on
+     this page (Incoming drops sent rows), so this is where an assigned user
+     tells Auctioneer they have finished; the contract completes once every
+     assigned person has closed theirs.
+  */
+  describe("Close my part of this contract", () => {
+    const sentAssigned = {
+      workItemId: "wi-sent-assigned",
+      reportId: reportWithThumbnail._id,
+      reportModel: "AssetReport" as const,
+      reportType: "asset" as const,
+      contractId: "contract-thumb",
+      contractNo: reportWithThumbnail.contract_no,
+      state: "sent" as const,
+      canSend: false,
+      canCompleteContract: true,
+      contractCompletionScope: "user" as const,
+    };
+
+    async function completedTable() {
+      render(<ReportsPage />);
+      const tabs = await screen.findByRole("tablist", { name: "Queue" });
+      fireEvent.click(within(tabs).getByRole("tab", { name: /Completed/i }));
+      const table = screen.getByRole("table", { name: "Generated reports" });
+      await waitFor(() => expect(within(table).getByText(/CV-THUMB-100/i)).toBeInTheDocument());
+      return table;
+    }
+
+    it("closes the user's part after confirmation and says where the contract stands", async () => {
+      const confirm = vi.fn(() => true);
+      vi.stubGlobal("confirm", confirm);
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      mocks.closeContractPart.mockResolvedValue({
+        contractId: "contract-thumb",
+        closedAt: "2026-10-02T12:00:00.000Z",
+        taskCompleted: false,
+        alreadyCompleted: false,
+        userStatus: "completed",
+      });
+      const table = await completedTable();
+
+      fireEvent.click(
+        within(table).getByRole("button", { name: /Close my part of this contract: CV-THUMB-100/ })
+      );
+
+      await waitFor(() => expect(mocks.closeContractPart).toHaveBeenCalledWith("contract-thumb"));
+      expect(mocks.closeContractPart).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Close your part of contract CV-THUMB-100?"));
+      await waitFor(() =>
+        expect(within(table).queryByRole("button", { name: /Close my part of this contract/ })).not.toBeInTheDocument()
+      );
+      expect(within(table).getByText("Sent · your part closed")).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalledWith(
+        "Your part of contract CV-THUMB-100 is closed. It completes when every assigned person has closed theirs."
+      );
+    });
+
+    it("says so when the user's close completed the whole contract", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      mocks.closeContractPart.mockResolvedValue({
+        contractId: "contract-thumb", closedAt: "2026-10-03T12:00:00.000Z", taskCompleted: true, alreadyCompleted: false, userStatus: "completed",
+      });
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(within(table).getByText("Sent · contract complete")).toBeInTheDocument());
+    });
+
+    it("does nothing when the confirmation is declined", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => false));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      expect(mocks.closeContractPart).not.toHaveBeenCalled();
+      expect(within(table).getByRole("button", { name: /Close my part of this contract/ })).toBeEnabled();
+    });
+
+    it.each(["saved summary", "close receipt"])("distinguishes revoked assignment from a successful part close: %s", async (source) => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([{ ...sentAssigned, ...(source === "saved summary" ? {
+        contractClosedAt: "2026-10-03T12:00:00.000Z", contractCloseUserStatus: "revoked", contractTaskCompleted: false,
+      } : {}) }]);
+      mocks.closeContractPart.mockResolvedValue({ contractId: "contract-thumb", closedAt: "2026-10-03T12:00:00.000Z", taskCompleted: false, userStatus: "revoked" });
+      const table = await completedTable();
+      if (source === "close receipt") fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(within(table).getByText("Sent · assignment removed")).toBeInTheDocument());
+      expect(within(table).queryByText("Sent · your part closed")).not.toBeInTheDocument();
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it("locks repeated clicks and ignores a result after the account session changes", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      let resolveClose!: (value: unknown) => void;
+      mocks.closeContractPart.mockReturnValue(new Promise((resolve) => { resolveClose = resolve; }));
+      const table = await completedTable();
+      const button = within(table).getByRole("button", { name: /Close my part of this contract/ });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(mocks.closeContractPart).toHaveBeenCalledTimes(1);
+      advanceAuthSession();
+      resolveClose({ contractId: "contract-thumb", closedAt: "2026-10-03T12:00:00.000Z", taskCompleted: true, userStatus: "completed" });
+      await waitFor(() => expect(button).toBeEnabled());
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(within(table).queryByText("Sent · contract complete")).not.toBeInTheDocument();
+    });
+
+    it("does not close a stale row after the session changed before the click", async () => {
+      const confirm = vi.fn(() => true);
+      vi.stubGlobal("confirm", confirm);
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      const table = await completedTable();
+      advanceAuthSession();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      expect(mocks.closeContractPart).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalledWith("Your account session changed. Refresh Reports before closing your part of a contract.");
+    });
+
+    it("does not let a pre-close refresh undo the confirmed receipt", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      const table = await completedTable();
+      let resolveRefresh!: (value: unknown) => void;
+      mocks.getDeliveries.mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve; }));
+      fireEvent(window, new Event("focus"));
+      await waitFor(() => expect(mocks.getDeliveries).toHaveBeenCalledTimes(2));
+      mocks.closeContractPart.mockResolvedValue({ contractId: "contract-thumb", closedAt: "2026-10-03T12:00:00.000Z", taskCompleted: false, userStatus: "completed" });
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(within(table).getByText("Sent · your part closed")).toBeInTheDocument());
+      resolveRefresh([sentAssigned]);
+      await waitFor(() => expect(screen.getByRole("button", { name: /Refresh/i })).toBeEnabled());
+      expect(within(table).queryByRole("button", { name: /Close my part of this contract/ })).not.toBeInTheDocument();
+    });
+
+    it("keeps malformed server errors out of the rendered toast", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      mocks.closeContractPart.mockRejectedValue({ response: { data: { message: { secret: "not displayable" } } } });
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Your contract completion could not be confirmed. Refresh Reports to check its status before trying again."));
+      expect(within(table).getByRole("button", { name: /Close my part of this contract/ })).toBeEnabled();
+    });
+
+    it("keeps the action and shows the server's reason when the close is refused", async () => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([sentAssigned]);
+      mocks.closeContractPart.mockRejectedValue({
+        response: { status: 409, data: { message: "One of your deliveries for this contract has not finished.", code: "auctioneer_contract_delivery_unfinished" } },
+      });
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith("One of your deliveries for this contract has not finished.")
+      );
+      expect(within(table).getByRole("button", { name: /Close my part of this contract/ })).toBeEnabled();
+      expect(within(table).queryByText("Sent · your part closed")).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["older unassigned work", { contractCompletionScope: "contract" as const }],
+      ["a part already closed", { contractClosedAt: "2026-10-01T09:00:00.000Z", contractTaskCompleted: false }],
+      ["a server that names no scope", { contractCompletionScope: undefined }],
+      ["a delivery without its contract", { contractId: undefined }],
+    ])("is not offered for %s", async (_case, overrides) => {
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([{ ...sentAssigned, ...overrides }]);
+      const table = await completedTable();
+      expect(within(table).queryByRole("button", { name: /Close my part of this contract/ })).not.toBeInTheDocument();
+    });
+
+    it("treats a part closed by one delivery as closed on every report of the contract", async () => {
+      // Two reports on one contract; only the second delivery carried the close.
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail, reportWithoutThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([
+        sentAssigned,
+        {
+          ...sentAssigned,
+          workItemId: "wi-sent-assigned-2",
+          reportId: reportWithoutThumbnail._id,
+          contractClosedAt: "2026-10-02T09:00:00.000Z",
+          contractTaskCompleted: false,
+        },
+      ]);
+      const table = await completedTable();
+      await waitFor(() => expect(within(table).getByText(/CV-NO-IMAGE/i)).toBeInTheDocument());
+
+      expect(within(table).queryByRole("button", { name: /Close my part of this contract/ })).not.toBeInTheDocument();
+      expect(within(table).getAllByText("Sent · your part closed")).toHaveLength(2);
+    });
+
+    it("is not offered before the delivery has reached Auctioneer", async () => {
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([{ ...sentAssigned, state: "ready", canSend: true }]);
+      render(<ReportsPage />);
+      const table = await screen.findByRole("table", { name: "Generated reports" });
+      await waitFor(() => expect(within(table).getByText(/CV-THUMB-100/i)).toBeInTheDocument());
+      expect(within(table).queryByRole("button", { name: /Close my part of this contract/ })).not.toBeInTheDocument();
+    });
   });
 });

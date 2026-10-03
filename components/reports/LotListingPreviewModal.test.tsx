@@ -91,6 +91,24 @@ function makeListingPreview() {
 }
 
 describe("LotListingPreviewModal inspection location", () => {
+  it("submits without FMV or appraisal selections and does not display their required blocks", async () => {
+    const response = makeListingPreview();
+    response.data.preview_data.lots[0].estimated_value = "";
+    response.data.preview_data.lots[0].condition_report_selections = { condition: "", completeness: "", legal: "" };
+    mocks.submitForApproval.mockResolvedValue({ status: "processing", files_generating: true });
+    render(<LotListingPreviewModal isOpen reportId="optional-lot-values" onClose={vi.fn()}
+      loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} />);
+    await screen.findByDisplayValue("LOT-LOCATION-1");
+    expect(screen.queryByText("Required selections")).toBeNull();
+    expect(screen.queryByText(/Set Running Condition for all lots/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Generate Approved Files" }));
+    await waitFor(() => expect(mocks.submitForApproval).toHaveBeenCalledTimes(1));
+    expect(mocks.submitForApproval.mock.calls[0][1].preview_data.lots[0]).toMatchObject({
+      lot_id: "lot-1", description: "Test description", estimated_value: "",
+      condition_report_selections: { condition: "", completeness: "", legal: "" },
+    });
+  });
+
   it("resubmits an edited failed preview instead of calling the preview-only submit endpoint", async () => {
     const response = makeListingPreview();
     response.data.status = "error";

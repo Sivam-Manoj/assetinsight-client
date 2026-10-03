@@ -60,8 +60,6 @@ interface LotListingPreviewModalProps {
   draftPreviewId?: string;
 }
 
-type ConditionSelectionKey = "condition" | "completeness" | "legal";
-
 type LotGalleryEntry = {
   url: string;
   globalIndex: number | null;
@@ -73,117 +71,11 @@ type LotGalleryState = {
   currentIdx: number;
 };
 
-const conditionSelectionGroups: Array<{
-  key: ConditionSelectionKey;
-  label: string;
-  options: string[];
-}> = [
-  {
-    key: "condition",
-    label: "Running Condition",
-    options: [
-      "Starts and Runs",
-      "Does not Start or Run",
-      "Starts and Runs with Boost",
-      "Unverified Running Condition",
-      "N/A",
-    ],
-  },
-  {
-    key: "completeness",
-    label: "Completeness",
-    options: ["Has Keys", "Missing Parts", "Incomplete Unit", "N/A"],
-  },
-  {
-    key: "legal",
-    label: "Legal",
-    options: ["Salvage", "No Title", "N/A"],
-  },
-];
-
-const runningConditionGroup = conditionSelectionGroups.find(
-  (group) => group.key === "condition"
-)!;
-
-const normalizeConditionSelection = (value: any) => {
-  const normalized = String(value || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase()
-    .replace(/^na$/, "n/a")
-    .replace(/^not applicable$/, "n/a");
-  if (
-    normalized === "unknown working condition" ||
-    normalized === "untested" ||
-    normalized === "unverified working condition"
-  ) {
-    return "unverified running condition";
-  }
-  if (normalized === "non-operational" || normalized === "non operational") {
-    return "does not start or run";
-  }
-  return normalized;
-};
-
 const normalizeSpecKey = (value: unknown) =>
   String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
-
-const specsToRecord = (value: any): Record<string, string> =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? { ...value }
-    : Array.isArray(value)
-      ? Object.fromEntries(
-          value
-            .map((entry: any) => [String(entry?.field || "").trim(), String(entry?.value ?? "")])
-            .filter((entry: string[]) => entry[0])
-        )
-      : {};
-
-const applyRunningConditionSelectionToSpecs = (lot: any, value: string) => {
-  const specs = specsToRecord(lot.condition_report_specs);
-  const fieldKey = normalizeSpecKey("Running Condition");
-  const existingKey = Object.keys(specs).find((field) => normalizeSpecKey(field) === fieldKey);
-  if (normalizeConditionSelection(value) === "n/a") {
-    if (existingKey) delete specs[existingKey];
-  } else {
-    specs[existingKey || "Running Condition"] = value;
-  }
-  const deletedSpecs = Array.isArray(lot.condition_report_specs_deleted)
-    ? lot.condition_report_specs_deleted
-        .map((field: any) => String(field || "").trim())
-        .filter(Boolean)
-        .filter((field: string) => normalizeSpecKey(field) !== fieldKey)
-    : [];
-  return {
-    ...lot,
-    condition_report_specs: specs,
-    condition_report_specs_deleted: deletedSpecs,
-  };
-};
-
-const getSharedRunningConditionSelection = (lots: any[] | undefined | null) => {
-  if (!Array.isArray(lots) || lots.length === 0) return "";
-  const first = normalizeConditionSelection(
-    lots[0]?.condition_report_selections?.condition
-  );
-  if (
-    !first ||
-    !runningConditionGroup.options.some(
-      (option) => normalizeConditionSelection(option) === first
-    )
-  ) {
-    return "";
-  }
-  const allSame = lots.every(
-    (lot) =>
-      normalizeConditionSelection(lot?.condition_report_selections?.condition) ===
-      first
-  );
-  return allSame ? first : "";
-};
 
 const getLotDisplayNumber = (lot: any, index: number) => {
   const candidates = [lot?.lot_number, lot?.lot_id, lot?.lot, lot?.id];
@@ -192,37 +84,6 @@ const getLotDisplayNumber = (lot: any, index: number) => {
     if (text) return text;
   }
   return String(index + 1);
-};
-
-const getMissingConditionSelectionMessage = (lots: any[] | undefined | null) => {
-  if (!Array.isArray(lots) || lots.length === 0) return null;
-
-  const missingKeys = new Set<ConditionSelectionKey>();
-  const invalidLots: string[] = [];
-
-  lots.forEach((lot, index) => {
-    const selections = lot?.condition_report_selections || {};
-    const lotMissing = conditionSelectionGroups.filter((group) => {
-      const selected = normalizeConditionSelection(selections[group.key]);
-      return !group.options.some(
-        (option) => normalizeConditionSelection(option) === selected
-      );
-    });
-
-    if (lotMissing.length > 0) {
-      invalidLots.push(getLotDisplayNumber(lot, index));
-      lotMissing.forEach((group) => missingKeys.add(group.key));
-    }
-  });
-
-  if (invalidLots.length === 0) return null;
-
-  const missingLabels = conditionSelectionGroups
-    .filter((group) => missingKeys.has(group.key))
-    .map((group) => group.label)
-    .join(", ");
-
-  return `Please select ${missingLabels} for Lot ${invalidLots.join(", ")}`;
 };
 
 const parseEstimatedValue = (value: unknown) => {
@@ -475,12 +336,6 @@ export default function LotListingPreviewModal({
       toast.error(
         "Enter or resolve a readable inspection location before submitting."
       );
-      return;
-    }
-
-    const conditionSelectionMessage = getMissingConditionSelectionMessage(previewData?.lots);
-    if (conditionSelectionMessage) {
-      toast.error(conditionSelectionMessage);
       return;
     }
 
@@ -816,48 +671,6 @@ export default function LotListingPreviewModal({
     [categorySpecs]
   );
 
-  const updateLotConditionSelection = (
-    index: number,
-    key: ConditionSelectionKey,
-    value: string
-  ) => {
-    setPreviewData((prev: any) => {
-      const newLots = [...(prev.lots || [])];
-      const lot = { ...(newLots[index] || {}) };
-      lot.condition_report_selections = {
-        ...(lot.condition_report_selections || {}),
-        [key]: value,
-      };
-      newLots[index] =
-        key === "condition" ? applyRunningConditionSelectionToSpecs(lot, value) : lot;
-      return { ...prev, lots: newLots };
-    });
-    setHasChanges(true);
-  };
-
-  const applyRunningConditionToAllLots = (value: string) => {
-    setPreviewData((prev: any) => {
-      const lots = Array.isArray(prev?.lots) ? prev.lots : [];
-      const newLots = lots.map((rawLot: any) => {
-        const lot = {
-          ...(rawLot || {}),
-          condition_report_selections: {
-            ...(rawLot?.condition_report_selections || {}),
-            condition: value,
-          },
-        };
-        return applyRunningConditionSelectionToSpecs(lot, value);
-      });
-      return {
-        ...prev,
-        lots: newLots,
-        total_value: calculateTotalValue(newLots),
-      };
-    });
-    setHasChanges(true);
-    toast.success(`Running Condition applied to all lots: ${value}`);
-  };
-
   const deleteLot = (index: number) => {
     setPreviewData((prev: any) => {
       const lots = Array.isArray(prev?.lots) ? [...prev.lots] : [];
@@ -922,121 +735,6 @@ export default function LotListingPreviewModal({
     } catch (error: any) {
       toast.error(error?.response?.data?.message || error?.message || "Unable to download CR DOCX.");
     }
-  };
-
-  const renderConditionSelections = (lot: any, idx: number) => {
-    const selections = lot?.condition_report_selections || {};
-
-    return (
-      <div className="rounded-lg border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] p-3 sm:col-span-2">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--app-text-strong)]">
-            Required selections
-          </p>
-          <span className="rounded-full bg-[var(--app-panel)] px-2 py-0.5 text-[11px] font-medium text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]">
-            N/A allowed
-          </span>
-        </div>
-        <div className="space-y-3">
-          {conditionSelectionGroups.map((group) => {
-            const selectedValue = String(selections[group.key] || "");
-            const hasSelection = group.options.some(
-              (option) =>
-                normalizeConditionSelection(option) ===
-                normalizeConditionSelection(selectedValue)
-            );
-
-            return (
-              <div
-                key={group.key}
-                role="radiogroup"
-                aria-label={`${group.label} for lot ${idx + 1}`}
-              >
-                <div className="mb-1 text-[11px] font-semibold text-[var(--app-text-muted)]">
-                  {group.label}
-                </div>
-                <div
-                  className={`flex flex-wrap gap-1.5 rounded-md ${
-                    hasSelection ? "" : "ring-1 ring-amber-300"
-                  }`}
-                >
-                  {group.options.map((option) => {
-                    const checked =
-                      normalizeConditionSelection(selectedValue) ===
-                      normalizeConditionSelection(option);
-                    return (
-                      <label
-                        key={option}
-                        className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                          checked
-                            ? "border-[var(--app-warning)] bg-[var(--app-panel)] text-[var(--app-text-strong)] shadow-sm"
-                            : "border-[var(--app-border)] bg-[var(--app-panel)] text-[var(--app-text-muted)] hover:border-[var(--app-warning)]"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name={`lot-listing-${idx}-${group.key}`}
-                          checked={checked}
-                          onChange={() =>
-                            updateLotConditionSelection(idx, group.key, option)
-                          }
-                          className="h-3.5 w-3.5 accent-amber-600"
-                        />
-                        <span>{option}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderBulkRunningConditionControl = () => {
-    const lots = Array.isArray(previewData?.lots) ? previewData.lots : [];
-    if (lots.length < 2) return null;
-    const sharedSelection = getSharedRunningConditionSelection(lots);
-
-    return (
-      <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-soft)] p-4 shadow-sm">
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h4 className="text-sm font-bold text-[var(--app-text-strong)]">
-              Set Running Condition for all lots
-            </h4>
-            <p className="text-xs text-[var(--app-warning)]">
-              Optional shortcut for large listings. Individual lots can still be changed after this.
-            </p>
-          </div>
-          <span className="self-start rounded-full bg-[var(--app-panel)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]">
-            {lots.length} lots
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {runningConditionGroup.options.map((option) => {
-            const selected =
-              sharedSelection === normalizeConditionSelection(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => applyRunningConditionToAllLots(option)}
-                className={`app-button !min-h-8 !px-3 !py-1.5 !text-xs ${
-                  selected
-                    ? "app-button--primary"
-                    : "app-button--secondary"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
   };
 
   const mutationMessage =
@@ -1315,7 +1013,6 @@ export default function LotListingPreviewModal({
               </div>
             </div>
 
-            {renderBulkRunningConditionControl()}
           </div>
 
           {/* Lot-Specific Photo Gallery Modal */}
@@ -1575,7 +1272,6 @@ export default function LotListingPreviewModal({
                             placeholder="Excel item condition"
                           />
                         </div>
-                        {renderConditionSelections(lot, idx)}
                         <div className="sm:col-span-2">
                           <AuctioneerSpecsEditor
                             lot={lot}

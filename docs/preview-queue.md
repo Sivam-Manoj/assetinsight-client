@@ -28,3 +28,21 @@ network health or a particular user's historical phone failure.
 
 No push or deployment is included. Local QA builds use loopback configuration;
 rebuild with production configuration when release is separately authorized.
+
+## Lot Listing optional appraisal fields — 2026-10-03 (local)
+
+Lot Listing previews no longer render the Required selections block or the bulk
+Running Condition control. Generate/Regenerate does not require Running Condition,
+Completeness, Legal or N/A choices. FMV is optional in the paired backend change,
+including admin resubmission and the final file-generation worker. Existing saved
+selections/values remain in the payload; report layouts and Asset appraisal
+controls are unchanged. Install API/worker support before this web release and
+the new native binary. Historical failed reports need explicit regeneration, not
+deletion or re-uploading their original media.
+
+Regression coverage includes blank FMV/selections, retained edited descriptions,
+old failed-preview regeneration, and unchanged Asset selection controls. The
+production-build browser smoke used CUA Chrome with a loopback-only synthetic API
+at desktop/light and 320px/dark, including keyboard regeneration and no horizontal
+overflow or console errors. No real customer report, email or Auctioneer write was
+used. Production deployment and physical-device validation remain separate.
