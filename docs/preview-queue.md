@@ -1,5 +1,37 @@
 # Preview queue reliability — 2026-10-03
 
+## Combined preview save and generation — 2026-10-05 (local)
+
+Asset and Lot Listing editors have one primary action: **Save & Generate** for
+initial/declined previews, **Save & Regenerate** for submitted/approved/failed
+reports with a saved preview. The assigned Asset approver action explicitly says
+**Save, Regenerate & Approve**; its existing endpoint and approval authority are
+unchanged. Hidden draft previews still use the atomic promotion-and-submit path.
+
+The button sends the complete current preview in the existing submit/resubmit
+request. There is no preceding metadata-only PUT or subsequent client-side CR
+refresh. The API validates and saves that snapshot with its durable file-job
+handoff. Every artifact is generated from the snapshot, not the older saved
+preview. Asset approval/release and Lot Listing automatic release stay unchanged;
+this does not send reports to Auctioneer or publish YouTube videos.
+
+The existing immediate mutation lock excludes double clicks and concurrent photo
+uploads. An accepted request shows generation in progress; validation/network
+failure keeps edits in the editor for deliberate retry. Late responses cannot
+close or replace a different report. Description, serial, cover and per-lot photo
+order regressions now exercise the combined action.
+
+Verified using isolated backend generation/submission tests, web component tests,
+typecheck/lint/build and production-build Chromium flows at 1366px light and 320px
+dark. Browser plugin not available; repository Playwright used loopback fixtures
+with external requests blocked. No customer report generation, production changes,
+push or deployment. Native uses the same combined workflow in a new app binary.
+
+Final local gates: 1,240 web tests in 113 files, 161 focused backend tests,
+workflow policy checks, web typecheck/lint/build, and 12 Chromium interaction
+flows passed. Fixture tests verify edited snapshots and generated file content;
+they do not certify production storage or customer report regeneration.
+
 The queue now reads each report type once using the backend's optional
 `view=previews` compact response. Editor reads remain full owner-bound records;
 cloud draft hydration still receives its original metadata. Install backend

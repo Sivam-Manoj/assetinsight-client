@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2, Save } from "lucide-react";
+import { Send, AlertCircle, Image, ChevronLeft, ChevronRight, X, RefreshCw, Download, Printer, Upload, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import {
   getLotListingPreview,
   getLotListingSubmittedPreview,
-  updateLotListingPreview,
   uploadLotListingPreviewLotImages,
   submitLotListingForApproval,
   resubmitLotListing,
@@ -105,13 +104,11 @@ export default function LotListingPreviewModal({
   isResubmitMode = false,
   isAssignedApprovalMode = false,
   loadPreviewDataOverride,
-  updatePreviewDataOverride,
   resubmitReportOverride,
   uploadPreviewLotImagesOverride,
   draftPreviewId,
 }: LotListingPreviewModalProps) {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [declineReason, setDeclineReason] = useState<string>("");
@@ -231,95 +228,6 @@ export default function LotListingPreviewModal({
     }
   };
 
-  const handleSaveChanges = async () => {
-    if (isMutationLocked()) return;
-    if (!isLocationReady) {
-      toast.error(
-        "Enter or resolve a readable inspection location before saving."
-      );
-      return;
-    }
-    if (locationBusy) {
-      toast.info("Wait for the inspection location to finish resolving.");
-      return;
-    }
-    if (filesGenerating || filesRegenerating) {
-      toast.info("This lot listing is already generating files.");
-      return;
-    }
-
-    const mutation = beginMutation("save");
-    if (!mutation) return;
-    const mutationContext = previewContextRef.current;
-
-    try {
-      setSaving(true);
-      const previewForRequest = applyDamageAnalysisLotPolicy(previewData);
-      setPreviewData(previewForRequest);
-      const saved = updatePreviewDataOverride
-        ? await updatePreviewDataOverride(reportId, previewForRequest)
-        : await updateLotListingPreview(reportId, { preview_data: previewForRequest });
-      if (previewContextRef.current !== mutationContext) return;
-      if ((saved as any)?.data) {
-        const savedListing = (saved as any).data;
-        const serverPreview = updatePreviewDataOverride
-          ? savedListing
-          : savedListing?.preview_data;
-        const hasNewerEdits = hasEditsSince(mutation);
-        const savedPreview = hasNewerEdits
-          ? mergeSubmittedPreviewData(
-              serverPreview,
-              previewDataRef.current || previewForRequest
-            )
-          : serverPreview || previewForRequest;
-        applyLotListingState(
-          updatePreviewDataOverride
-            ? { preview_data: savedPreview }
-            : { ...savedListing, preview_data: savedPreview }
-        );
-      }
-      const savedImageUrls = Array.isArray((saved as any)?.imageUrls)
-        ? (saved as any).imageUrls
-        : Array.isArray((saved as any)?.data?.imageUrls)
-          ? (saved as any).data.imageUrls
-          : null;
-      if (savedImageUrls) setImageUrls(savedImageUrls);
-      if ((saved as any)?.files_regeneration_queued) {
-        const hasNewerEdits = hasEditsSince(mutation);
-        if (!hasNewerEdits) {
-          setHasChanges(false);
-          applyLotListingState((saved as any).data, {
-            assumeFilesGenerating: true,
-            assumeFilesRegenerating: true,
-          });
-        } else {
-          setFilesGenerating(true);
-          setFilesRegenerating(true);
-        }
-        toast.success("Changes saved. Files are being regenerated with the updated report data.");
-        if (onSuccess) onSuccess();
-        onClose();
-        return;
-      }
-      // Do not invoke a second, client-side file refresh after Save. Draft and
-      // preview saves remain metadata-only; finalized reports may return the
-      // single regeneration already claimed by the server.
-      if (!hasEditsSince(mutation)) setHasChanges(false);
-      toast.success(
-        effectiveResubmitMode
-          ? "Changes saved. Resubmit when you are ready to regenerate final files."
-          : "Changes saved. Submit when you are ready to generate final files."
-      );
-    } catch (error: any) {
-      if (previewContextRef.current === mutationContext) {
-        toast.error(error.response?.data?.message || "Failed to save changes");
-      }
-    } finally {
-      setSaving(false);
-      finishMutation(mutation);
-    }
-  };
-
   const handleSubmitForApproval = async () => {
     if (isMutationLocked()) return;
     if (!previewData) {
@@ -360,6 +268,7 @@ export default function LotListingPreviewModal({
           submit: true,
         });
         if (previewContextRef.current !== mutationContext) return;
+        setFilesGenerating(true);
         submittedReport = {
           ...promoted,
           _id: promoted.reportId,
@@ -567,7 +476,7 @@ export default function LotListingPreviewModal({
   ) => {
     if (
       !window.confirm(
-        "Remove this photo from the lot? It will be permanently deleted from storage after you Save or Submit. Closing without saving leaves storage unchanged."
+        "Remove this photo from the lot? It will be permanently deleted from storage after you save and generate files. Closing without saving leaves storage unchanged."
       )
     ) {
       return;
@@ -742,11 +651,9 @@ export default function LotListingPreviewModal({
       ? "Uploading images and updating this preview…"
       : activeMutation === "submit"
         ? effectiveResubmitMode
-          ? "Regenerating the listing from this exact preview…"
-          : "Submitting the listing and generating final files…"
-        : activeMutation === "save"
-          ? "Saving preview changes…"
-          : "";
+          ? "Saving changes and queuing regenerated listing files…"
+          : "Saving changes and queuing listing files…"
+        : "";
 
   const requestClose = () => {
     if (isMutationLocked()) return;
@@ -764,7 +671,7 @@ export default function LotListingPreviewModal({
       open={isOpen}
       onClose={requestClose}
       title="Lot Listing Preview"
-      description="Review the complete listing, save your progress, and return when you are ready to generate files."
+      description="Review your edits, then save and generate all listing files in one action. Files release automatically after generation succeeds."
       fullscreen
       dismissOnBackdrop={false}
       closeDisabled={activeMutation !== null}
@@ -1333,21 +1240,6 @@ export default function LotListingPreviewModal({
             <div className="flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={handleSaveChanges}
-                disabled={
-                  !hasChanges ||
-                  activeMutation !== null ||
-                  locationBusy ||
-                  filesGenerating ||
-                  filesRegenerating
-                }
-                className="app-button app-button--secondary"
-              >
-                {saving ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-              <button
-                type="button"
                 onClick={handleSubmitForApproval}
                 disabled={
                   activeMutation !== null ||
@@ -1358,20 +1250,20 @@ export default function LotListingPreviewModal({
                 }
                 className="app-button app-button--primary"
               >
-                {submitting || saving ? (
+                {submitting ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : effectiveResubmitMode ? (
                   <RefreshCw className="h-4 w-4" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {draftPreviewId
-                  ? effectiveResubmitMode
-                    ? "Save & Resubmit"
-                    : "Save & Submit"
-                  : effectiveResubmitMode
-                    ? "Regenerate Approved Files"
-                    : "Generate Approved Files"}
+                {submitting
+                  ? "Saving & queuing files..."
+                  : filesGenerating || filesRegenerating
+                    ? "Generating files..."
+                    : effectiveResubmitMode
+                      ? "Save & Regenerate"
+                      : "Save & Generate"}
               </button>
             </div>
           </div>
