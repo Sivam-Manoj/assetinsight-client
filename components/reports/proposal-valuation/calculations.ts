@@ -326,6 +326,26 @@ export function proposalValuationColumnTotals(
       0
     ),
   }));
+  const monetaryTotals = {
+    totalExpectedGross: 0,
+    allocatedValue: 0,
+    cleaning: 0,
+    lienSearch: 0,
+    videoCost: 0,
+    lottingFee: 0,
+    advertising: 0,
+  };
+  // Reuse row formulas so current edits win over stale saved derived amounts.
+  // Gross uses the high estimate, not the average-based File Summary "Get".
+  for (const row of recalculateProposalValuationSheet(sheet).rows) {
+    monetaryTotals.totalExpectedGross += finite(row.total_expected_gross);
+    monetaryTotals.allocatedValue += finite(row.allocated_value);
+    monetaryTotals.cleaning += finite(row.cleaning);
+    monetaryTotals.lienSearch += finite(row.lien_search);
+    monetaryTotals.videoCost += finite(row.video_cost);
+    monetaryTotals.lottingFee += finite(row.lotting_fee);
+    monetaryTotals.advertising += finite(row.advertising);
+  }
   return {
     lotCount: sheet.rows.length,
     evaluators: evaluatorTotals,
@@ -333,6 +353,7 @@ export function proposalValuationColumnTotals(
     low: summary.total_low_est_value,
     high: summary.total_high_est_value,
     buyerPremium: summary.total_capped_bp,
+    ...monetaryTotals,
   };
 }
 

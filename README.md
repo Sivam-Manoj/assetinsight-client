@@ -22,6 +22,26 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Learn More
 
+### Proposal Valuation monetary column totals (2026-10-09, local)
+
+The Lots footer and mobile totals card now include Total Expected Gross,
+Allocated Value, Cleaning, Lien Search, Video Cost, Lotting Fee and Advertising.
+The previous footer left those cells empty even though the rows
+and Excel export calculated them. Totals cover the entire sheet, including rows
+hidden by search or pagination, and update from the current edits. Existing row
+formulas and buyer-premium caps remain unchanged; gross uses the high estimate,
+not the average-based File Summary Get. Blanks contribute zero, percentages and
+the formatted Asset Insight reference are not summed, and cents are preserved
+until display. No backend schema change or customer-data repair is required.
+
+Local verification: 1,265 web tests across 114 files, typecheck, lint and
+production build pass. Isolated Chromium desktop/light and 320px/dark checks
+cover whole-sheet totals across pages/search (including no matches), zero/blank/
+decimal edits, footer/body alignment and synthetic save/reopen. The matching
+admin flow and existing backend formula/XLSX tests also pass. No production
+access, customer changes, push or deployment; the QA build targets loopback and
+must not be deployed without a production rebuild.
+
 ### Proposal Valuation report owner (2026-10-09, local)
 
 The server-provided report owner now has a fixed **Report owner** participant

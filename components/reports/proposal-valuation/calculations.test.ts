@@ -134,6 +134,13 @@ describe("whole-report PV column totals", () => {
     expect(totals.low).toBe(40000);
     expect(totals.high).toBe(43200.5);
     expect(totals.buyerPremium).toBe(2000 + 200.5 * 0.15);
+    expect(totals.totalExpectedGross).toBe(45000 + 200.5 * 1.15);
+    expect(totals.allocatedValue).toBe(totals.totalExpectedGross);
+    expect(totals.cleaning).toBe(432.005);
+    expect(totals.lottingFee).toBe(432.005);
+    expect(totals.advertising).toBe(432.005);
+    expect(totals.lienSearch).toBe(100);
+    expect(totals.videoCost).toBe(200);
     expect(totals.lotCount).toBe(2);
     expect(sheet).toEqual(before);
   });
@@ -144,7 +151,7 @@ describe("whole-report PV column totals", () => {
     sheet.rows[0].buyer_premium_percent = 99;
     const totals = proposalValuationColumnTotals(sheet);
     expect(totals.evaluators.map(({ total }) => total)).toEqual([0, 0, 0, 0]);
-    expect(totals).toMatchObject({ average: 0, low: 0, high: 0, buyerPremium: 0 });
+    expect(totals).toMatchObject({ average: 0, low: 0, high: 0, buyerPremium: 0, totalExpectedGross: 0, allocatedValue: 0, cleaning: 0, lottingFee: 0, advertising: 0 });
     expect(totals).not.toHaveProperty("buyerPremiumPercent");
     sheet.rows[0].evaluator_values = {};
     expect(proposalValuationColumnTotals(sheet)).toEqual(totals);
@@ -161,6 +168,26 @@ describe("whole-report PV column totals", () => {
     sheet.rows = [];
     expect(proposalValuationColumnTotals(sheet)).toMatchObject({
       lotCount: 0, evaluators: [{ total: 0 }, { total: 0 }], average: 0, low: 0, high: 0, buyerPremium: 0,
+      totalExpectedGross: 0, allocatedValue: 0, cleaning: 0, lienSearch: 0, videoCost: 0, lottingFee: 0, advertising: 0,
+    });
+  });
+
+  it("uses live evaluator formulas, not stale saved gross values or the average-based file summary", () => {
+    const sheet = structuredClone(parityFixture);
+    sheet.rows[0].evaluator_values = { riley: 45, jay: 90 };
+    sheet.rows[0].lien_search = null;
+    sheet.rows[0].video_cost = Number.NaN;
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({
+      average: 67.5, high: 90, buyerPremium: 13.5,
+      totalExpectedGross: 103.5, allocatedValue: 103.5,
+      cleaning: 0.9, lienSearch: 0, videoCost: 0, lottingFee: 0.9, advertising: 0.9,
+    });
+    sheet.rows[0].evaluator_values = {};
+    sheet.rows[0].lien_search = 12.25;
+    sheet.rows[0].video_cost = 7.5;
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({
+      totalExpectedGross: 0, allocatedValue: 0, cleaning: 0,
+      lienSearch: 12.25, videoCost: 7.5, lottingFee: 0, advertising: 0,
     });
   });
 });
