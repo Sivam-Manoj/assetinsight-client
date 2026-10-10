@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveProposalValuationSummary, proposalValuationColumnTotals } from "./calculations";
+import { deriveProposalValuationSummary, proposalValuationColumnTotals, recalculateProposalValuationSheet } from "./calculations";
 import type { ProposalValuationSheet } from "./types";
 
 const parityFixture: ProposalValuationSheet = {
@@ -124,6 +124,31 @@ describe("Proposal Valuation admin parity", () => {
 });
 
 describe("whole-report PV column totals", () => {
+  it.each([
+    { values: { riley: 4000, jay: 4500 }, average: 4250, premium: 637.5, gross: 4887.5 },
+    { values: { riley: 50, jay: 100 }, average: 75, premium: 11.25, gross: 86.25 },
+    { values: { riley: 25, jay: 100 }, average: 62.5, premium: 9.375, gross: 71.875 },
+    { values: { riley: 0, jay: 20000 }, average: 10000, premium: 1500, gross: 11500 },
+    { values: { riley: 20000, jay: 40000 }, average: 30000, premium: 2000, gross: 32000 },
+    { values: { riley: 0, jay: null }, average: 0, premium: 0, gross: 0 },
+  ])("uses the unrounded average for premium and gross: $average", ({ values, average, premium, gross }) => {
+    const sheet = structuredClone(parityFixture);
+    sheet.rows[0].evaluator_values = { ...values, removed: 999999, chad: null, femi: Number.NaN };
+    const before = structuredClone(sheet);
+    const row = recalculateProposalValuationSheet(sheet).rows[0];
+    expect(row).toMatchObject({ buyer_premium_amount: premium, total_expected_gross: gross, allocated_value: gross });
+    expect(row.cleaning).toBe(Math.max(...Object.values(values).filter((value): value is number => value !== null)) * 0.01);
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({ average, buyerPremium: premium, totalExpectedGross: gross, allocatedValue: gross });
+    expect(sheet).toEqual(before);
+  });
+
+  it("retains blank derived row values when no active evaluator has entered a value", () => {
+    const sheet = structuredClone(parityFixture);
+    sheet.rows[0].evaluator_values = { removed: 1000, riley: null, jay: Number.NaN, chad: Infinity };
+    expect(recalculateProposalValuationSheet(sheet).rows[0]).toMatchObject({ buyer_premium_amount: null, total_expected_gross: null, allocated_value: null });
+    expect(proposalValuationColumnTotals(sheet)).toMatchObject({ average: 0, buyerPremium: 0, totalExpectedGross: 0, allocatedValue: 0 });
+  });
+
   it("sums evaluator values and existing row formulas without rounding or mutating the sheet", () => {
     const sheet = structuredClone(parityFixture);
     sheet.rows.push({ ...structuredClone(sheet.rows[0]), lot_id: "second", evaluator_values: { riley: 0, jay: 100.75, chad: null, femi: 200.5 } });
@@ -133,8 +158,9 @@ describe("whole-report PV column totals", () => {
     expect(totals.average).toBe(41500 + (0 + 100.75 + 200.5) / 3);
     expect(totals.low).toBe(40000);
     expect(totals.high).toBe(43200.5);
-    expect(totals.buyerPremium).toBe(2000 + 200.5 * 0.15);
-    expect(totals.totalExpectedGross).toBe(45000 + 200.5 * 1.15);
+    const secondAverage = (0 + 100.75 + 200.5) / 3;
+    expect(totals.buyerPremium).toBe(2000 + secondAverage * 0.15);
+    expect(totals.totalExpectedGross).toBe(43500 + secondAverage + secondAverage * 0.15);
     expect(totals.allocatedValue).toBe(totals.totalExpectedGross);
     expect(totals.cleaning).toBe(432.005);
     expect(totals.lottingFee).toBe(432.005);
@@ -172,14 +198,14 @@ describe("whole-report PV column totals", () => {
     });
   });
 
-  it("uses live evaluator formulas, not stale saved gross values or the average-based file summary", () => {
+  it("uses live evaluator averages, not stale saved gross values or high estimates", () => {
     const sheet = structuredClone(parityFixture);
     sheet.rows[0].evaluator_values = { riley: 45, jay: 90 };
     sheet.rows[0].lien_search = null;
     sheet.rows[0].video_cost = Number.NaN;
     expect(proposalValuationColumnTotals(sheet)).toMatchObject({
-      average: 67.5, high: 90, buyerPremium: 13.5,
-      totalExpectedGross: 103.5, allocatedValue: 103.5,
+      average: 67.5, high: 90, buyerPremium: 10.125,
+      totalExpectedGross: 77.625, allocatedValue: 77.625,
       cleaning: 0.9, lienSearch: 0, videoCost: 0, lottingFee: 0.9, advertising: 0.9,
     });
     sheet.rows[0].evaluator_values = {};
