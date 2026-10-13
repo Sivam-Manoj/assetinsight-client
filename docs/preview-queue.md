@@ -1,5 +1,20 @@
 # Preview queue reliability — 2026-10-03
 
+## Large Asset preview navigation — 2026-10-13 (local)
+
+Asset previews keep the full edited report in memory while rendering 20 lots
+at a time. Both the top and bottom of the lot list now show the visible range,
+explicit page number and Previous/Next controls. Bottom navigation moves focus
+and scroll to the start of the new page; it does not reload, submit or discard
+edits. Page group counts are labelled as being on this page. The save footer
+explicitly says that all report lots across every page are used for file generation.
+The already-bounded page keeps its rows laid out, avoiding content-visibility
+placeholder shifts that can move the bottom navigation under a pointer click.
+
+The owner, assigned-approver and draft-preview entry points share this editor.
+Lot Listing already renders its full lot list and is not newly paginated. No API,
+snapshot, media ordering, generation or approval behavior changes are involved.
+
 ## Save and read-only photo viewer — 2026-10-13 (local)
 
 **Save** (accessible name "Save preview"; "Save & Approve" for an assigned

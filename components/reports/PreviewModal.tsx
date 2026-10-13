@@ -421,6 +421,8 @@ export default function PreviewModal({
   const [previewFiles, setPreviewFiles] = useState<any>(null);
   const [categorySpecs, setCategorySpecs] = useState<AssetCategorySpec[]>([]);
   const [lotPage, setLotPage] = useState(1);
+  const lotPageStartRef = useRef<HTMLDivElement>(null);
+  const focusLotPageStartRef = useRef(false);
   const [selectedLotIndexes, setSelectedLotIndexes] = useState<Set<number>>(
     () => new Set()
   );
@@ -1139,6 +1141,12 @@ export default function PreviewModal({
     firstVisibleLotIndex + LOTS_PER_PAGE,
     lotsArray.length
   );
+  useLayoutEffect(() => {
+    if (!isOpen || !focusLotPageStartRef.current) return;
+    focusLotPageStartRef.current = false;
+    lotPageStartRef.current?.focus({ preventScroll: true });
+    lotPageStartRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [activeLotPage, isOpen]);
   const visibleLotIndexes = React.useMemo(
     () =>
       Array.from(
@@ -1409,36 +1417,45 @@ export default function PreviewModal({
     );
   };
 
-  const renderLotPagination = () => {
+  const changeLotPage = (page: number, position: "top" | "bottom") => {
+    if (position === "bottom") {
+      // Move the reader to the newly rendered page, not the old page's end.
+      // Only focus/scroll change here; the full edited snapshot stays in state.
+      focusStateRef.current = { fieldId: null, selectionStart: null, selectionEnd: null };
+      focusLotPageStartRef.current = true;
+    }
+    setLotPage(Math.max(1, Math.min(lotPageCount, page)));
+  };
+
+  const renderLotPagination = (position: "top" | "bottom") => {
     if (lotPageCount <= 1) return null;
     return (
       <nav
         className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-alt)] px-3 py-2"
-        aria-label="Asset lots pagination"
+        aria-label={position === "top" ? "Asset lots pagination" : "Asset lots pagination bottom"}
       >
-        <span className="text-xs font-medium text-[var(--app-text-muted)]">
-          Showing {firstVisibleLotIndex + 1}–{lastVisibleLotIndex} of {lotsArray.length} lots
-        </span>
-        <div className="flex items-center gap-2">
+        <div className="min-w-0 text-xs font-medium text-[var(--app-text-muted)]" aria-live={position === "top" ? "polite" : undefined} aria-atomic="true">
+          <p>Showing {firstVisibleLotIndex + 1}–{lastVisibleLotIndex} of {lotsArray.length} lots</p>
+          <p className="mt-1">All {lotsArray.length} lots remain in this report.</p>
+        </div>
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto">
           <button
             type="button"
             className="app-button app-button--secondary !min-h-8 !px-2.5 !py-1.5 !text-xs"
-            onClick={() => setLotPage((current) => Math.max(1, current - 1))}
+            onClick={() => changeLotPage(activeLotPage - 1, position)}
             disabled={activeLotPage === 1}
             aria-label="Previous lots page"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             Previous
           </button>
-          <span className="min-w-16 text-center text-xs font-semibold text-[var(--app-text)]">
-            {activeLotPage} / {lotPageCount}
+          <span className="text-center text-xs font-semibold text-[var(--app-text)]">
+            Page {activeLotPage} of {lotPageCount}
           </span>
           <button
             type="button"
             className="app-button app-button--secondary !min-h-8 !px-2.5 !py-1.5 !text-xs"
-            onClick={() =>
-              setLotPage((current) => Math.min(lotPageCount, current + 1))
-            }
+            onClick={() => changeLotPage(activeLotPage + 1, position)}
             disabled={activeLotPage === lotPageCount}
             aria-label="Next lots page"
           >
@@ -2064,15 +2081,19 @@ export default function PreviewModal({
               </button>
             </div>
             {renderBulkConditionSelection()}
-            {renderLotPagination()}
+            <div ref={lotPageStartRef} role="group" tabIndex={-1} aria-label={`Lot page ${activeLotPage} of ${lotPageCount}`} className="scroll-mt-4 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]">
+              {renderLotPagination("top")}
+            </div>
             {groupedLots.length ? (
               <>
+                {/* Pagination already bounds this list. Content-visibility placeholders
+                    shift the bottom pager during scrolling and can misdirect clicks. */}
                 {/* Mobile: card list grouped by sub-mode */}
                 {!isDesktopLayout ? <div className="space-y-5">
                   {groupedLots.map((group) => (
                     <div key={group.gid}>
                       <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
-                        Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
+                        Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length}{lotPageCount > 1 ? " on this page" : ""})
                       </div>
                       <div className="space-y-3">
                         {group.items.map(({ lot, idx }) => {
@@ -2085,7 +2106,7 @@ export default function PreviewModal({
                           return (
                           <div
                             key={idx}
-                            className={`app-render-row rounded-[1.25rem] border bg-[var(--app-panel-soft)] p-3 shadow-sm transition-colors ${
+                            className={`rounded-[1.25rem] border bg-[var(--app-panel-soft)] p-3 shadow-sm transition-colors ${
                               validSelectedLotIndexes.has(idx)
                                 ? "border-[var(--app-accent)]"
                                 : "border-[var(--app-border)]"
@@ -2303,9 +2324,9 @@ export default function PreviewModal({
                 {/* Desktop: table per group */}
                 {isDesktopLayout ? <div className="space-y-6">
                   {groupedLots.map((group) => (
-                    <div key={group.gid} className="app-render-row overflow-x-auto rounded-lg">
+                    <div key={group.gid} className="overflow-x-auto rounded-lg">
                       <div className="mb-2 text-sm font-semibold text-[var(--app-text)]">
-                        Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length})
+                        Group {group.gid || 1} — {labelForSubMode(group.subMode)} ({group.items.length}{lotPageCount > 1 ? " on this page" : ""})
                       </div>
                       <table className="w-full min-w-[1280px] table-fixed text-sm border border-[var(--app-border)] rounded-lg overflow-hidden">
                         <thead className="bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
@@ -2550,6 +2571,7 @@ export default function PreviewModal({
                 <p className="text-sm text-[var(--app-text-muted)] mt-1">Software analysis didn't extract any lot information</p>
               </div>
             )}
+            {renderLotPagination("bottom")}
           </div>
 
           {/* Valuation */}
@@ -2812,7 +2834,12 @@ export default function PreviewModal({
           })()}
 
           {/* Actions */}
-          <div className="sticky bottom-0 z-10 mt-4 flex flex-col gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-3 pb-1 sm:flex-row sm:items-center sm:justify-between">
+          <div className="sticky bottom-0 z-10 mt-4 flex flex-col gap-2.5 border-t border-[var(--app-border)] bg-[var(--app-panel)] px-1 pt-3 pb-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            {lotPageCount > 1 && (
+              <p className="order-first w-full text-xs text-[var(--app-text-muted)]">
+                Saving generates files for all {lotsArray.length} lots across all {lotPageCount} pages, not only this page.
+              </p>
+            )}
             <button
               onClick={requestClose}
               disabled={activeMutation !== null}
