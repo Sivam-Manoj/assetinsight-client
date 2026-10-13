@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PreviewModal from "./PreviewModal";
 import LotListingPreviewModal from "./LotListingPreviewModal";
@@ -23,6 +23,43 @@ describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) =
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   });
 
+  it("keeps one atomic Save and a read-only photo viewer even while saving", async () => {
+    const photos = ["https://images.test/front.jpg", "https://images.test/rear.jpg"];
+    const preview = {
+      contract_no: "READ-ONLY-VIEWER", client_name: "Fixture client", currency: "CAD",
+      location: "Fixture yard", grouping_mode: "single_lot", lots: [{
+        lot_id: "stable-lot", lot_number: "222", title: "Trailer", description: "Reviewed notes",
+        estimated_value: "1000", image_urls: photos, image_indexes: [0, 1],
+      }],
+    };
+    const load = vi.fn().mockResolvedValue({ data: { status: "approved", imageUrls: photos, preview_data: preview } });
+    let resolve!: (value: unknown) => void;
+    const save = vi.fn().mockReturnValue(new Promise(done => { resolve = done; }));
+    const Component = type === "asset" ? PreviewModal : LotListingPreviewModal;
+    render(<Component isOpen reportId="read-only-viewer" onClose={vi.fn()} loadPreviewDataOverride={load} resubmitReportOverride={save} />);
+    const saveButton = await screen.findByRole("button", { name: "Save preview" });
+    expect(saveButton).toHaveTextContent(/^Save$/);
+    expect(saveButton).toHaveAttribute("title", expect.stringContaining("Photos are not re-read by the AI"));
+    expect(screen.queryByRole("button", { name: /Re-Generate/i })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Save preview" })).toHaveLength(1);
+    // Real photo editing stays in the underlying form, not the portalled viewer.
+    expect(screen.getAllByRole("button", { name: "Remove photo 1" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("img", { name: "Photo 1" })[0]);
+    const viewer = await screen.findByRole("dialog", { name: /Lot #?222 photos/ });
+    expect(within(viewer).queryByRole("button", { name: /Remove|Delete/i })).toBeNull();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Next photo (Right arrow)" }));
+    expect(within(viewer).getByText("Photo 2 of 2")).toBeInTheDocument();
+    fireEvent.click(saveButton);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(saveButton).toBeDisabled();
+    expect(within(viewer).queryByRole("button", { name: /Remove|Delete/i })).toBeNull();
+    fireEvent.click(saveButton);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][1].lots[0]).toMatchObject(preview.lots[0]);
+    await act(async () => resolve({ data: { preview_data: preview }, message: "Files queued" }));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores a late generation receipt after switching reports", async () => {
     let resolve!: (value: any) => void;
     const generate = vi.fn().mockReturnValue(new Promise(done => { resolve = done; }));
@@ -36,7 +73,7 @@ describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) =
     const props = { isOpen: true, onClose, onSuccess, loadPreviewDataOverride: load, resubmitReportOverride: generate };
     const view = render(<Component {...props} reportId="first-report" />);
     await screen.findByDisplayValue("first-report");
-    fireEvent.click(screen.getByRole("button", { name: "Save & Regenerate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save preview" }));
     expect(generate).toHaveBeenCalledOnce();
     view.rerender(<Component {...props} reportId="second-report" />);
     await screen.findByDisplayValue("second-report");
@@ -44,7 +81,7 @@ describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) =
     expect(onClose).not.toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue("second-report")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save & Regenerate" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save preview" })).toBeEnabled();
   });
 
   it("saves a serial correction without changing separate lot photo order or cover choices", async () => {
@@ -80,7 +117,7 @@ describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) =
     const serial = (await screen.findAllByDisplayValue("OLD-SERIAL"))[0];
     fireEvent.change(serial, { target: { value: "1FTWW3DR9AEA01459" } });
     if (type === "asset") fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    fireEvent.click(screen.getByRole("button", { name: /save & regenerate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^save preview$/i }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     const saved = save.mock.calls[0][1];
     expect(saved.lots).toHaveLength(2);
@@ -123,7 +160,7 @@ describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) =
     const props = { isOpen: true, reportId: "deletion-integrity", onClose: vi.fn(), loadPreviewDataOverride: load, resubmitReportOverride: save };
     const view = render(<Component {...props} />);
     fireEvent.click((await screen.findAllByRole("button", { name: "Remove photo 1" }))[0]);
-    fireEvent.click(screen.getByRole("button", { name: /save & regenerate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^save preview$/i }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     const saved = save.mock.calls[0][1];
     expect(saved.lots[0].image_urls).toEqual([remaining]);

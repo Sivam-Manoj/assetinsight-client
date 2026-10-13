@@ -1,5 +1,22 @@
 # Preview queue reliability — 2026-10-03
 
+## Save and read-only photo viewer — 2026-10-13 (local)
+
+**Save** (accessible name "Save preview"; "Save & Approve" for an assigned
+Asset approver) retains the existing atomic submit/resubmit path: one request
+with the complete edited snapshot rebuilds the report files. It does not ask
+the AI to re-read a lot's photographs. Existing whole-report file generation,
+retry, draft promotion, approval and release rules remain unchanged.
+
+The upstream per-lot AI Re-Generate feature is intentionally not included:
+there are no controls, request functions, polling hooks or state for it.
+
+Asset, Lot Listing and Real Estate photos open in a floating viewer with
+keyboard navigation, move, resize, minimize and maximize controls. The viewer
+is read-only and has no Remove/Delete action or callback. Explicit photo-edit
+controls in the underlying preview remain governed by its mutation lock and
+the normal saved-snapshot workflow.
+
 ## Reviewed specification authority — 2026-10-08 (local)
 
 Asset/Lot spec edits, explicit blanks and deletions now replace earlier CR/Excel
