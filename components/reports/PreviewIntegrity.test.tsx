@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PreviewModal from "./PreviewModal";
 import LotListingPreviewModal from "./LotListingPreviewModal";
 
@@ -21,6 +21,54 @@ vi.mock("@/components/ui/toast", () => ({ toast: { error: vi.fn(), info: vi.fn()
 describe.each(["asset", "lotListing"] as const)("%s preview integrity", (type) => {
   beforeEach(() => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([true, false])("edits only the visible Title and preserves hidden prose, structured details and photos after save/reopen (desktop: %s)", async desktop => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: desktop, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    })));
+    const photos = ["https://images.test/first.jpg", "https://images.test/second.jpg"];
+    const originalLots = [1, 2].map(index => ({
+      lot_id: `title-authority-${index}`, lot_number: String(index), title: `Saved title ${index}`,
+      description: `Hidden original description ${index}`, details: `Hidden legacy prose ${index}`,
+      estimated_value: "1000", image_urls: [photos[index - 1]], image_indexes: [index - 1],
+      extra_image_urls: [], cover_image_url: photos[index - 1],
+      condition_report_specs: { "Operator Note": `Reviewed note ${index}` },
+      condition_report_specs_reviewed: true,
+      condition_report_selections: { condition: "N/A", completeness: "N/A", legal: "N/A" },
+    }));
+    let preview = { contract_no: "TITLE-AUTHORITY", client_name: "Fixture client", currency: "CAD",
+      location: "Fixture yard", grouping_mode: "single_lot", lots: structuredClone(originalLots) };
+    const load = vi.fn().mockImplementation(async () => ({ data: { status: "approved", imageUrls: photos, preview_data: preview } }));
+    const save = vi.fn().mockImplementation(async (_id, submitted) => {
+      preview = structuredClone(submitted);
+      return { data: { status: "processing", files_generating: true } };
+    });
+    const Component = type === "asset" ? PreviewModal : LotListingPreviewModal;
+    const props = { isOpen: true, reportId: "title-authority", onClose: vi.fn(), loadPreviewDataOverride: load, resubmitReportOverride: save };
+    const view = render(<Component {...props} />);
+    const title = await screen.findByDisplayValue("Saved title 1");
+    for (const lot of originalLots) {
+      expect(screen.queryByDisplayValue(lot.description)).toBeNull();
+      expect(screen.queryByDisplayValue(lot.details)).toBeNull();
+      expect(screen.getByRole("button", { name: lot.condition_report_specs["Operator Note"] })).toBeInTheDocument();
+    }
+    expect(screen.queryByPlaceholderText("Description")).toBeNull();
+    expect(screen.queryByPlaceholderText("Specs / notes / attributes")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: /^Description$|^Specs$/ })).toBeNull();
+    fireEvent.change(title, { target: { value: "Reviewed output title" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save preview" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(preview.lots).toEqual([{ ...originalLots[0], title: "Reviewed output title" }, originalLots[1]]);
+    view.unmount();
+    render(<Component {...props} />);
+    await screen.findByDisplayValue("Reviewed output title");
+    expect(screen.queryByDisplayValue(originalLots[0].description)).toBeNull();
+    expect(screen.queryByDisplayValue(originalLots[0].details)).toBeNull();
+    expect(screen.getByRole("button", { name: "Reviewed note 1" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Saved title 2")).toBeInTheDocument();
   });
 
   it("keeps one atomic Save and a read-only photo viewer even while saving", async () => {

@@ -1,5 +1,17 @@
 # Preview queue reliability — 2026-10-03
 
+## Title-led generated descriptions — 2026-10-14 (local)
+
+Asset and Lot Listing previews now expose Title as the text used under
+Description in generated Excel and condition report files. Separate lot
+Description controls and the Asset freeform Specs/notes controls are hidden;
+structured condition-report fields, including their Notes fields, remain editable.
+Hidden `description` and `details` values remain in the full saved snapshot,
+unchanged: the browser never deletes them or copies Title into them. Existing
+pagination, media order, approval gates and the atomic Save request are retained.
+Deploy matching title-led backend exporters before this UI. Existing files do
+not change until an explicit Save regenerates them.
+
 ## Large Asset preview navigation — 2026-10-13 (local)
 
 Asset previews keep the full edited report in memory while rendering 20 lots

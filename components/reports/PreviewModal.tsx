@@ -109,8 +109,6 @@ type ExpandableLotTextField =
   | "lot_number"
   | "title"
   | "categories"
-  | "description"
-  | "details"
   | "estimated_value";
 
 type ExpandedLotTextEditor = {
@@ -966,14 +964,6 @@ export default function PreviewModal({
       label: "Category",
       placeholder: "Auctioneer Import category",
     },
-    description: {
-      label: "Description",
-      placeholder: "Short description",
-    },
-    details: {
-      label: "Specs",
-      placeholder: "Specs / notes / attributes",
-    },
     estimated_value: {
       label: "Estimated Value",
       placeholder: "e.g., $25,000",
@@ -1002,34 +992,6 @@ export default function PreviewModal({
       Edit
     </button>
   );
-
-  const renderExpandableLotTextarea = (
-    lot: any,
-    idx: number,
-    field: ExpandableLotTextField,
-    variant: "mobile" | "desktop"
-  ) => {
-    const meta = lotTextFieldMeta[field];
-    const isDesktop = variant === "desktop";
-
-    return (
-      <textarea
-        {...getFocusTrackingProps(`lot-${idx}-${field}-${variant}`)}
-        value={lot[field] || ""}
-        readOnly
-        onFocus={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
-        onClick={() => setExpandedLotTextEditor({ lotIndex: idx, field, variant })}
-        className={`w-full cursor-text border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2 text-sm leading-5 text-[var(--app-text)] transition-all placeholder:text-[var(--app-text-muted)] hover:border-[var(--app-accent)] focus:border-transparent focus:ring-2 focus:ring-[var(--app-accent)] ${
-          isDesktop
-            ? "min-h-[104px] min-w-0 rounded-md resize-none"
-            : "min-h-[120px] rounded-lg resize-y"
-        }`}
-        placeholder={meta.placeholder}
-        rows={isDesktop ? 4 : 5}
-        aria-label={`${meta.label} for lot ${getLotDisplayNumber(lot, idx)}`}
-      />
-    );
-  };
 
   const deleteLot = (index: number) => {
     setSelectedLotIndexes(new Set());
@@ -2080,6 +2042,7 @@ export default function PreviewModal({
                 Add Lot
               </button>
             </div>
+            <p className="text-sm text-[var(--app-text-muted)]">The Title is used as the Description in generated Excel and condition report files.</p>
             {renderBulkConditionSelection()}
             <div ref={lotPageStartRef} role="group" tabIndex={-1} aria-label={`Lot page ${activeLotPage} of ${lotPageCount}`} className="scroll-mt-4 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]">
               {renderLotPagination("top")}
@@ -2263,14 +2226,6 @@ export default function PreviewModal({
                                 />
                               </div>
                               {renderConditionSelections(lot, idx, "mobile")}
-                              <div>
-                                <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
-                                {renderExpandableLotTextarea(lot, idx, "description", "mobile")}
-                              </div>
-                              <div>
-                                <label className="block text-xs text-[var(--app-text-muted)] mb-1">Specs</label>
-                                {renderExpandableLotTextarea(lot, idx, "details", "mobile")}
-                              </div>
                               <AuctioneerSpecsEditor
                                 lot={lot}
                                 lotIndex={idx}
@@ -2332,14 +2287,12 @@ export default function PreviewModal({
                         <thead className="bg-[var(--app-panel-alt)] text-[var(--app-text-muted)]">
                           <tr>
                             <th className="w-[7%] px-2 py-2 text-left">Lot #</th>
-                            <th className="w-[13%] px-2 py-2 text-left">Photos</th>
-                            <th className="w-[12%] px-2 py-2 text-left">Title</th>
-                            <th className="w-[13%] px-2 py-2 text-left">Category</th>
-                            <th className="w-[15%] px-2 py-2 text-left">Description</th>
-                            <th className="w-[14%] px-2 py-2 text-left">Specs</th>
-                            <th className="w-[11%] px-2 py-2 text-left">Selections / valuations</th>
-                            <th className="w-[11%] px-2 py-2 text-left">Value</th>
-                            <th className="w-[4%] px-2 py-2 text-left">Actions</th>
+                            <th className="w-[16%] px-2 py-2 text-left">Photos</th>
+                            <th className="w-[21%] px-2 py-2 text-left">Title</th>
+                            <th className="w-[16%] px-2 py-2 text-left">Category</th>
+                            <th className="w-[16%] px-2 py-2 text-left">Selections / valuations</th>
+                            <th className="w-[18%] px-2 py-2 text-left">Value</th>
+                            <th className="w-[6%] px-2 py-2 text-left">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2492,12 +2445,6 @@ export default function PreviewModal({
                                 <div className="mt-1">{renderFieldEditorButton(idx, "categories", "desktop")}</div>
                               </td>
                               <td className="px-2 py-2 align-top">
-                                {renderExpandableLotTextarea(lot, idx, "description", "desktop")}
-                              </td>
-                              <td className="px-2 py-2 align-top">
-                                {renderExpandableLotTextarea(lot, idx, "details", "desktop")}
-                              </td>
-                              <td className="px-2 py-2 align-top">
                                 {renderConditionSelections(lot, idx, "desktop")}
                                 <div className="mt-2">
                                 <SelectedValuationMethods lines={valuationLines} lotLabel={lotLabel} />
@@ -2536,7 +2483,7 @@ export default function PreviewModal({
                               </td>
                             </tr>
                             <tr className={i % 2 === 0 ? "bg-[var(--app-panel)]" : "bg-[var(--app-panel-alt)]"}>
-                              <td colSpan={9} className="px-3 pb-4">
+                              <td colSpan={7} className="px-3 pb-4">
                                 <AuctioneerSpecsEditor
                                   lot={lot}
                                   lotIndex={idx}

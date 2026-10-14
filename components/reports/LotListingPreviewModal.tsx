@@ -849,6 +849,7 @@ export default function LotListingPreviewModal({
           {/* Lots Section */}
           <div className="mt-6 space-y-4 max-w-5xl mx-auto">
             <h3 className="text-base sm:text-lg font-bold text-[var(--app-text)]">Lots ({lotsArray.length})</h3>
+            <p className="text-sm text-[var(--app-text-muted)]">The Title is used as the Description in generated Excel and condition report files.</p>
             {lotsArray.length > 0 ? (
               <div className="space-y-4">
                 {lotsArray.map((lot, idx) => {
@@ -983,16 +984,6 @@ export default function LotListingPreviewModal({
                             onChange={(e) => updateLot(idx, "estimated_value", e.target.value)}
                             className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                             placeholder="0.00"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs text-[var(--app-text-muted)] mb-1">Description</label>
-                          <textarea
-                            value={lot.description || ""}
-                            onChange={(e) => updateLot(idx, "description", e.target.value)}
-                            className="w-full px-3 py-2 border border-[var(--app-border)] rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-y min-h-[80px]"
-                            placeholder="Description"
-                            rows={3}
                           />
                         </div>
                         <div>
