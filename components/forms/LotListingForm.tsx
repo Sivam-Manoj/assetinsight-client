@@ -36,11 +36,11 @@ import {
 } from "@/lib/browserLocation";
 import { BrowserLocationService } from "@/services/browserLocation";
 import { useAuthContext } from "@/context/AuthContext";
-import {
-  isUploadSessionUnsupportedError,
-  uploadReportFilesDirectToR2,
-  type DirectUploadFile,
-} from "@/services/directUpload";
+import { createLotListing } from "@/services/lotListing";
+import { backgroundUploads } from "@/services/backgroundUploadManager";
+import { describeOrderedFiles, orderedSubmissionFiles } from "@/services/uploadJobFiles";
+import { captureAuthSession, assertAuthSessionCurrent, isAuthSessionCurrent } from "@/lib/auth-storage";
+import { isUploadReviewScope, type UploadReviewIdentity } from "@/services/uploadReviewNavigation";
 import {
   ReportDraftService,
   createReportDraftClientId,
@@ -106,6 +106,33 @@ const SmartUploadWorkspace = dynamic(
 type ValuationMethod = "FML" | "TKV" | "OLV" | "FLV";
 const LOT_LISTING_VALUATION_METHODS: ValuationMethod[] = ["FML"];
 
+/** Marks an acceptance that belongs to an earlier submission, not this one. */
+const PREVIOUS_RECEIPT_CODE = "PREVIOUS_REPORT_RECEIPT";
+
+/**
+ * Whether a failed background upload needs a decision only this form can offer.
+ * Each of these has a prompt here — the active-report conflict dialog, the
+ * changed-manifest supersede choice, separate-draft recovery, and the earlier
+ * receipt warning — so the draft is sent back for an inline Submit rather than
+ * retried from the upload bar, where the answer cannot be given. The same test
+ * as AssetForm's, so the two report types recover alike.
+ */
+function lotListingSubmissionNeedsForm(error: unknown): boolean {
+  const failure = error as {
+    code?: string;
+    response?: { status?: number; data?: { code?: string } };
+  };
+  if (failure?.code === PREVIOUS_RECEIPT_CODE) return true;
+  const code = failure?.response?.data?.code;
+  if (
+    failure?.response?.status === 409 &&
+    (code === "ACTIVE_REPORT_EXISTS" || code === "SUBMISSION_MANIFEST_CHANGED")
+  ) {
+    return true;
+  }
+  return canSaveSeparateReportDraft(error);
+}
+
 type Props = {
   onSuccess?: (message?: string) => void;
   onAcceptedAndContinue?: (reportId: string | undefined, details?: LotContinuationDetails) => void;
@@ -118,7 +145,7 @@ type Props = {
   resumeLocalDraftScopeId?: string;
 };
 
-type DraftSnapshot = {
+type DraftSnapshot = UploadReviewIdentity & {
   auctioneerWorkItemId?: string;
   contractNo: string;
   salesDate: string;
@@ -351,6 +378,7 @@ export default function LotListingForm({
   const [submitting, setSubmitting] = useState(false);
   const [submissionFinalizing, setSubmissionFinalizing] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [preparingBackgroundUpload, setPreparingBackgroundUpload] = useState(false);
   const [uploadStats, setUploadStats] = useState<{
     totalFiles: number;
     totalSize: number;
@@ -395,6 +423,7 @@ export default function LotListingForm({
   );
   const supersededSubmissionIdRef = useRef<string | null>(null);
   const forceNewSubmissionRef = useRef(false);
+  const submissionActivityIdRef = useRef<string | undefined>(undefined);
   const submitLockRef = useRef(false);
   const activeFormOperationRef = useRef<"draft-save" | "submit" | null>(null);
   const reportEventSentRef = useRef(false);
@@ -459,6 +488,9 @@ export default function LotListingForm({
   );
 
   snapshotRef.current = {
+    submissionActivityId: submissionActivityIdRef.current,
+    forceNewSubmission: forceNewSubmissionRef.current,
+    supersededSubmissionId: supersededSubmissionIdRef.current || undefined,
     contractNo,
     salesDate,
     location,
@@ -791,6 +823,9 @@ export default function LotListingForm({
 
   const applyRestoredDraft = useCallback(
     (data: DraftSnapshot, revision: number, missingMediaCount: number) => {
+      submissionActivityIdRef.current = data.submissionActivityId;
+      forceNewSubmissionRef.current = data.forceNewSubmission === true;
+      supersededSubmissionIdRef.current = data.supersededSubmissionId || null;
       const explicitCoordinates = isValidBrowserCoordinates(
         data.latitude,
         data.longitude
@@ -1177,6 +1212,7 @@ export default function LotListingForm({
   }, [deleteDraftStorage]);
 
   const resetFormState = useCallback(() => {
+    submissionActivityIdRef.current = undefined;
     locationRequestGenerationRef.current += 1;
     locationLookupAbortRef.current?.abort();
     locationLookupAbortRef.current = null;
@@ -1451,6 +1487,7 @@ export default function LotListingForm({
       autosaveBlockedRef.current = true;
       const controller = new AbortController();
       submitAbortRef.current = controller;
+      const submitSession = captureAuthSession();
       setCancellingOperation(false);
       setSubmissionFinalizing(false);
 
@@ -1502,7 +1539,7 @@ export default function LotListingForm({
         bank_photos_enabled: bankPhotosEnabled,
         watermark_images: watermarkImages,
         progress_id: jobId,
-        activity_id: draftScopeId,
+        activity_id: submissionActivityIdRef.current || draftScopeId,
         client_submission_id: jobId,
         force_new: forceNewSubmissionRef.current,
         ...(supersededSubmissionIdRef.current
@@ -1533,6 +1570,102 @@ export default function LotListingForm({
         ...(focusBoxes.length > 0 ? { focus_boxes: focusBoxes } : {}),
       };
 
+      /*
+         Hand the upload to the background line and close the form, unless this
+         submission needs to stay here. Auctioneer work does: its continuation
+         can only be requested against an accepted reportId, and the decision
+         prompts (active report, changed manifest) live in this component. A
+         draft whose last background attempt hit one of those is marked
+         foreground, so its next Submit runs inline where it can be answered.
+      */
+      try {
+      if (saveFlightRef.current) await saveFlightRef.current;
+      assertAuthSessionCurrent(submitSession);
+      controller.signal.throwIfAborted();
+      const mustStayInForm =
+        Boolean(auctioneer) ||
+        isUploadReviewScope(draftScopeId) ||
+        backgroundUploads.isForegroundRequired("lot-listing", draftScopeId);
+      if (!mustStayInForm && userId) {
+        setPreparingBackgroundUpload(true);
+        const orderedFiles = orderedSubmissionFiles("lot-listing", lotsForSubmission);
+        const draftSnapshot = await buildDraftEnvelope({
+          ...snapshotRef.current!, clientSubmissionId: jobId, lots: lotsForSubmission,
+        }, requestedRevisionRef.current);
+        assertAuthSessionCurrent(submitSession);
+        controller.signal.throwIfAborted();
+        await backgroundUploads.enqueue({
+          ownerId: userId,
+          kind: "lot-listing",
+          scopeId: draftScopeId,
+          endpoint: "/lot-listing",
+          title: contractNo.trim() || "Lot listing",
+          totalFiles: orderedFiles.length,
+          clientSubmissionId: jobId,
+          details,
+          files: describeOrderedFiles(orderedFiles),
+          media: orderedFiles,
+          draftSnapshot,
+          signal: controller.signal,
+          needsFormDecision: lotListingSubmissionNeedsForm,
+          upload: async (onProgress, signal) => {
+            const response = await createLotListing(details, lotsForSubmission, {
+              onUploadProgress: onProgress,
+              signal,
+            });
+            assertReportUploadAccepted(response);
+            // Exact immutable retries are reconciled by the manager.
+            return response;
+          },
+        });
+        assertAuthSessionCurrent(submitSession);
+        controller.signal.throwIfAborted();
+        /*
+           The next listing needs its own draft scope: the handed-off upload
+           still owns the saved media behind the old one.
+        */
+        draftClientIdRef.current = createReportDraftClientId("lot-listing");
+        jobIdRef.current = null;
+        dispatchReportCreated();
+        resetFormState();
+        forceNewSubmissionRef.current = false;
+        supersededSubmissionIdRef.current = null;
+        /*
+           Release this form's submit locks. The busy state set at the top of
+           onSubmit belongs to an inline upload; the upload is the line's now,
+           and left set it kept the cleared form inert and refused every later
+           Submit and Save Draft until the form was reopened. The new scope
+           starts with nothing to save. Draft saving stays blocked until the
+           reset has rendered, so clearing the form never reads as an edit.
+        */
+        setSubmitting(false);
+        setPreparingBackgroundUpload(false);
+        submitLockRef.current = false;
+        if (activeFormOperationRef.current === "submit") {
+          activeFormOperationRef.current = null;
+        }
+        if (submitAbortRef.current === controller) submitAbortRef.current = null;
+        setCancellingOperation(false);
+        setSubmissionFinalizing(false);
+        requestedRevisionRef.current = 0;
+        committedRevisionRef.current = 0;
+        setHasDraft(false);
+        setShowDraftBanner(false);
+        setDraftIssue(null);
+        window.setTimeout(() => {
+          if (!isAuthSessionCurrent(submitSession)) return;
+          autosaveBlockedRef.current = false;
+        }, 0);
+        reportDraftStatus("saved", "Upload continues in the background");
+        const handedOff =
+          "Report saved on this browser. Upload continues while this tab stays open; use the upload bar to pause or resume.";
+        toast.success(handedOff);
+        onSuccess?.(handedOff);
+        return;
+      }
+      // This attempt is answering the conflict that sent it back here.
+      backgroundUploads.clearForegroundRequirement("lot-listing", draftScopeId);
+
       const updateUploadProgress = (fraction: number) => {
         const clamped = Math.max(0, Math.min(1, fraction));
         setUploadPercent((current) =>
@@ -1548,71 +1681,17 @@ export default function LotListingForm({
         );
       };
 
-      try {
-        let responseData: Record<string, unknown>;
-        try {
-          const directFiles: DirectUploadFile[] = [];
-          lotsForSubmission.forEach((lot, lotIndex) => {
-            lot.files.forEach((file, imageIndex) => {
-              directFiles.push({
-                file,
-                fieldname: "images",
-                lotIndex,
-                imageIndex,
-                role: "main",
-              });
-            });
-            lot.extraFiles.forEach((file, imageIndex) => {
-              directFiles.push({
-                file,
-                fieldname: "images",
-                lotIndex,
-                imageIndex,
-                role: "extra",
-              });
-            });
-            (lot.videoFiles || []).forEach((file, videoIndex) => {
-              directFiles.push({
-                file,
-                fieldname: "videos",
-                lotIndex,
-                imageIndex: videoIndex,
-                role: "video",
-              });
-            });
-          });
-
-          responseData = await uploadReportFilesDirectToR2({
-            endpoint: "/lot-listing",
-            details,
-            files: directFiles,
-            onUploadProgress: updateUploadProgress,
-            signal: controller.signal,
-          });
-        } catch (directError: any) {
-          if (!isUploadSessionUnsupportedError(directError)) throw directError;
-
-          const formData = new FormData();
-          filesToSend.forEach((file) => formData.append("images", file));
-          videoFilesToSend.forEach((file) => formData.append("videos", file));
-          formData.append("details", JSON.stringify(details));
-          const response = await API.post("/lot-listing", formData, {
-            headers: { "Content-Type": "multipart/form-data" },
-            signal: controller.signal,
-            onUploadProgress: (progressEvent: {
-              loaded: number;
-              total?: number;
-            }) => {
-              updateUploadProgress(
-                progressEvent.total
-                  ? progressEvent.loaded / progressEvent.total
-                  : 0
-              );
-            },
-          });
-          responseData = response.data;
-        }
+        /*
+           One transport, shared with the background line and with a resumed
+           upload: the per-lot ordering is part of the manifest identity, so it
+           must not be rebuilt differently anywhere else.
+        */
+        const responseData = await createLotListing(details, lotsForSubmission, {
+          onUploadProgress: updateUploadProgress,
+          signal: controller.signal,
+        });
         assertReportUploadAccepted(responseData);
+        assertAuthSessionCurrent(submitSession);
         if (isPreviousReportReceipt(responseData)) {
           throw new Error("An earlier submission was already accepted. Your current edits have not been submitted again. Open My Reports in another tab to check the existing report before continuing.");
         }
@@ -1646,6 +1725,7 @@ export default function LotListingForm({
           onSuccess?.(acceptedMessage);
         }
       } catch (submitError: any) {
+        setPreparingBackgroundUpload(false);
         const isConflict =
           submitError?.response?.status === 409 &&
           submitError?.response?.data?.code === "ACTIVE_REPORT_EXISTS";
@@ -1661,6 +1741,8 @@ export default function LotListingForm({
         if (submitAbortRef.current === controller) submitAbortRef.current = null;
         setCancellingOperation(false);
         setSubmissionFinalizing(false);
+
+        if (!isAuthSessionCurrent(submitSession)) return;
 
         if (controller.signal.aborted) {
           const message =
@@ -1713,6 +1795,9 @@ export default function LotListingForm({
     },
     [
       auctioneer,
+      buildDraftEnvelope,
+      draftScopeId,
+      userId,
       bankPhotosEnabled,
       clearAcceptedDraft,
       contractNo,
@@ -1831,7 +1916,7 @@ export default function LotListingForm({
         <FormTransferProgressScreen
           mode="report-upload"
           percent={uploadPercent}
-          message={`Uploading ${uploadStats.totalFiles} file${
+          message={preparingBackgroundUpload ? "Saving the report and original media on this browser before closing the form. Keep this page open." : `Uploading ${uploadStats.totalFiles} file${
             uploadStats.totalFiles === 1 ? "" : "s"
           }`}
           totalFiles={uploadStats.totalFiles}

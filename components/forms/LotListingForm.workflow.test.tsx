@@ -12,6 +12,8 @@ import type { ReportDraftRecord } from "@/services/reportDrafts";
 import LotListingForm from "./LotListingForm";
 import { StrictMode } from "react";
 import type { MixedLot } from "./mixed/types";
+import type { BackgroundUploadRequest } from "@/services/backgroundUploadManager";
+import { advanceAuthSession } from "@/lib/auth-storage";
 
 const mocks = vi.hoisted(() => ({
   userId: "user-1" as string | null,
@@ -30,6 +32,18 @@ const mocks = vi.hoisted(() => ({
   toastWarning: vi.fn(),
   upsertWithMedia: vi.fn(),
   uploadReportFilesDirectToR2: vi.fn(),
+  enqueue: vi.fn(),
+  isForegroundRequired: vi.fn(),
+  createDraftId: vi.fn(),
+  toastSuccess: vi.fn(),
+}));
+
+vi.mock("@/services/backgroundUploadManager", () => ({
+  backgroundUploads: {
+    enqueue: mocks.enqueue,
+    isForegroundRequired: mocks.isForegroundRequired,
+    clearForegroundRequirement: vi.fn(),
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -121,7 +135,7 @@ vi.mock("@/components/ui/toast", () => ({
   toast: {
     error: vi.fn(),
     info: vi.fn(),
-    success: vi.fn(),
+    success: mocks.toastSuccess,
     warning: mocks.toastWarning,
   },
 }));
@@ -148,7 +162,7 @@ vi.mock("@/services/reportDrafts", () => ({
     get: mocks.getDraft,
     upsertWithMedia: mocks.upsertWithMedia,
   },
-  createReportDraftClientId: () => "lot-listing-draft-1",
+  createReportDraftClientId: mocks.createDraftId,
   getDuplicateLotWarning: () => null,
   getReportDraftDeviceId: () => "device-1",
 }));
@@ -273,6 +287,10 @@ function makeLotResumeDraft(): ReportDraftRecord {
 describe("LotListingForm explicit save and upload workflow", () => {
   beforeEach(() => {
     mocks.userId = "user-1";
+    mocks.enqueue.mockReset();
+    mocks.isForegroundRequired.mockReset().mockReturnValue(false);
+    mocks.createDraftId.mockReset().mockReturnValue("lot-listing-draft-1");
+    mocks.toastSuccess.mockReset();
     vi.useRealTimers();
     mocks.apiPost.mockReset();
     mocks.deleteByClientId.mockReset().mockResolvedValue(undefined);
@@ -305,10 +323,91 @@ describe("LotListingForm explicit save and upload workflow", () => {
     window.localStorage.clear();
   });
 
+  it("closes only after durable handoff and protects the next listing from late upload cleanup", async () => {
+    const persistence = deferred<string>();
+    const upload = deferred<Record<string, unknown>>();
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockReturnValueOnce(persistence.promise);
+    mocks.uploadReportFilesDirectToR2.mockReturnValueOnce(upload.promise);
+    let sequence = 0;
+    mocks.createDraftId.mockImplementation(() => `independent-listing-${++sequence}`);
+    const view = render(<LotListingForm onSuccess={onSuccess} />);
+    await waitForResolvedLotLocation(); addValidListing();
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledOnce());
+    const request = mocks.enqueue.mock.calls[0][0] as BackgroundUploadRequest;
+    expect(request).toMatchObject({ ownerId: "user-1", kind: "lot-listing", totalFiles: 1, scopeId: "independent-listing-1" });
+    expect(request.files[0]).toMatchObject({ name: "lot-photo.jpg", size: request.media[0].size, lastModified: 123 });
+    expect(request.draftSnapshot).toMatchObject({ data: { contractNo: "LOT-TEST-1", clientSubmissionId: request.clientSubmissionId, lots: [{ files: [request.media[0]] }] } });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+    await act(async () => persistence.resolve("background-job"));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+    expect(onSuccess).toHaveBeenCalledWith(expect.stringContaining("while this tab stays open"));
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("");
+    expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("No media selected");
+    expect(request.signal?.aborted).toBe(false);
+    addValidListing();
+    fireEvent.change(screen.getByRole("textbox", { name: /contract number/i }), { target: { value: "NEXT-REPORT" } });
+    const lateResult = request.upload(vi.fn(), new AbortController().signal);
+    await act(async () => upload.resolve({ reportId: "accepted-old", jobId: "job-old", status: "processing" }));
+    await lateResult;
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("NEXT-REPORT");
+    expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("lot-photo.jpg");
+    expect(mocks.deleteByClientId).not.toHaveBeenCalled();
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    const nextPersistence = deferred<string>();
+    mocks.enqueue.mockReturnValueOnce(nextPersistence.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledTimes(2));
+    const next = mocks.enqueue.mock.calls[1][0] as BackgroundUploadRequest;
+    expect(next.scopeId).not.toBe(request.scopeId);
+    expect(next.clientSubmissionId).not.toBe(request.clientSubmissionId);
+    expect(next.details.contract_no).toBe("NEXT-REPORT");
+    await act(async () => nextPersistence.reject(new Error("Storage unavailable. Retry this same report.")));
+    view.unmount();
+    expect(request.signal?.aborted).toBe(false);
+  });
+
+  it("keeps an ordinary listing and media when durable handoff fails", async () => {
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockRejectedValueOnce(new Error("Browser storage is full. Free space and retry this same report."));
+    render(<LotListingForm onSuccess={onSuccess} />);
+    await waitForResolvedLotLocation(); addValidListing();
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
+    await screen.findByText(/Browser storage is full/);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.uploadReportFilesDirectToR2).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: /contract number/i })).toHaveValue("LOT-TEST-1");
+    expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("lot-photo.jpg");
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    expect(mocks.deleteByClientId).not.toHaveBeenCalled();
+  });
+
+  it.each(["cancel", "session", "unmount"] as const)("ignores a late listing handoff after %s", async (interruption) => {
+    const persistence = deferred<string>();
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockReturnValueOnce(persistence.promise);
+    const view = render(<LotListingForm onSuccess={onSuccess} />);
+    await waitForResolvedLotLocation(); addValidListing();
+    fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledOnce());
+    const request = mocks.enqueue.mock.calls[0][0] as BackgroundUploadRequest;
+    if (interruption === "cancel") fireEvent.click(screen.getByRole("button", { name: "Stop upload" }));
+    else if (interruption === "session") advanceAuthSession();
+    else view.unmount();
+    await act(async () => persistence.resolve("late-job"));
+    if (interruption !== "session") expect(request.signal?.aborted).toBe(true);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    expect(mocks.deleteByClientId).not.toHaveBeenCalled();
+  });
+
   it.each([{}, { reportId: "placeholder", jobId: "j", phase: "upload", status: "uploading" }, { reportId: "old-report", jobId: "old-job", status: "processed", reusedAcceptance: true }])("keeps current data for an unproven or historical receipt %j", async (receipt) => {
     const onSuccess = vi.fn();
     mocks.uploadReportFilesDirectToR2.mockResolvedValue(receipt);
-    render(<LotListingForm onSuccess={onSuccess} />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" onSuccess={onSuccess} />);
     await waitForResolvedLotLocation(); addValidListing();
     fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
     await screen.findByText(/did not confirm report acceptance|earlier submission was already accepted/);
@@ -318,7 +417,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
 
   it.each([true, false])("offers separate saved recovery only for authoritative eligibility %s", async (canCreateSeparate) => {
     mocks.uploadReportFilesDirectToR2.mockRejectedValue({ response: { status: 409, data: { code: "UPLOAD_SESSION_REPORT_UNAVAILABLE", data: { sessionId: "old-session", accepted: true, reportAvailable: false, canCreateSeparate } } } });
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation(); addValidListing();
     fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
     await screen.findByText(/old submission cannot be reused/);
@@ -341,7 +440,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
   it("opens existing-report status separately without closing the current listing", async () => {
     const onSuccess = vi.fn();
     mocks.uploadReportFilesDirectToR2.mockRejectedValue({ response: { status: 409, data: { code: "ACTIVE_REPORT_EXISTS" } } });
-    render(<LotListingForm onSuccess={onSuccess} />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" onSuccess={onSuccess} />);
     await waitForResolvedLotLocation(); addValidListing();
     fireEvent.click(screen.getByRole("button", { name: "Create Lot Listing" }));
     const dialog = await screen.findByRole("dialog", { name: "Report already processing" });
@@ -473,6 +572,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
       fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
       await waitFor(() => expect(mocks.uploadReportFilesDirectToR2).toHaveBeenCalledOnce());
+      expect(mocks.enqueue).not.toHaveBeenCalled();
       expect(onAcceptedAndContinue).not.toHaveBeenCalled();
       expect(mocks.deleteByClientId).not.toHaveBeenCalled();
       const details = mocks.uploadReportFilesDirectToR2.mock.calls[0][0].details;
@@ -847,7 +947,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
     );
 
-    const { container } = render(<LotListingForm />);
+    const { container } = render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
     const contractInput = screen.getByRole("textbox", {
@@ -923,7 +1023,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         );
         return retryUpload.promise;
       });
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
 
@@ -987,7 +1087,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         jobId: "replacement-lot-job",
         status: "processing",
       });
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
 
@@ -1027,7 +1127,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       reportId: "accepted-report", jobId: "accepted-job", status: "processing",
     });
     mocks.deleteByClientId.mockReturnValueOnce(cleanup.promise);
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
 
@@ -1085,7 +1185,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       }
     );
 
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
     fireEvent.click(
@@ -1123,7 +1223,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
       response: { status: 404 },
     });
 
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
     fireEvent.click(
@@ -1233,7 +1333,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         else error?.({} as GeolocationPositionError);
       }
     );
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     const location = await waitForResolvedLotLocation();
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
@@ -1256,7 +1356,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
   });
 
   it("preserves the readable name, exact coordinates, and attribution when the provider fails", async () => {
-    render(<LotListingForm />);
+    render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     const location = await waitForResolvedLotLocation();
     mocks.reverseGeocode.mockRejectedValueOnce(
       new Error("Reverse geocoding unavailable")
@@ -1361,7 +1461,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         });
       }
     );
-    const draftView = render(<LotListingForm />);
+    const draftView = render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     fireEvent.click(
       screen.getAllByRole("button", { name: "Save Draft" })[0]
     );
@@ -1380,7 +1480,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
         });
       }
     );
-    const submissionView = render(<LotListingForm />);
+    const submissionView = render(<LotListingForm resumeLocalDraftScopeId="upload-review:lot-listing-inline" />);
     await waitForResolvedLotLocation();
     addValidListing();
     fireEvent.click(

@@ -1,5 +1,10 @@
 import API from "@/lib/api";
+import { assertAuthSessionCurrent, captureAuthSession, isAuthSessionCurrent } from "@/lib/auth-storage";
+import type { AxiosProgressEvent } from "axios";
 import type { ReportWorkflowStage } from "./assets";
+import { isUploadSessionUnsupportedError, uploadReportFilesDirectToR2 } from "./directUpload";
+import { assertReportUploadAccepted } from "./reportTransferErrors";
+import { lotListingDirectUploadFiles, submissionFilesFromLots, type SubmissionLotMedia } from "./uploadJobFiles";
 
 export interface LotListingLot {
   lot_id: string;
@@ -317,7 +322,55 @@ export async function getSubmittedLotListings(): Promise<{ data: LotListing[] }>
   return { data: submitted };
 }
 
+/** Keep the original lot/media order when submitting or resuming the same job. */
+export async function createLotListing(
+  details: Record<string, unknown>,
+  lots: readonly SubmissionLotMedia[],
+  options?: { onUploadProgress?: (fraction: number) => void; signal?: AbortSignal }
+): Promise<Record<string, unknown>> {
+  const authSession = captureAuthSession();
+  try {
+    return await uploadReportFilesDirectToR2({
+      endpoint: "/lot-listing",
+      details,
+      files: lotListingDirectUploadFiles(lots),
+      onUploadProgress: options?.onUploadProgress,
+      signal: options?.signal,
+      authSession,
+    }) as Record<string, unknown>;
+  } catch (error) {
+    assertAuthSessionCurrent(authSession);
+    if (options?.signal?.aborted) throw options.signal.reason || error;
+    // Only initial capability failure authorizes the older transport. Business
+    // errors and uncertain session outcomes retain the original identity.
+    if (!isUploadSessionUnsupportedError(error)) throw error;
+  }
+
+  const { images, videos } = submissionFilesFromLots(lots);
+  const formData = new FormData();
+  images.forEach((file) => formData.append("images", file));
+  videos.forEach((file) => formData.append("videos", file));
+  formData.append("details", JSON.stringify(details));
+  assertAuthSessionCurrent(authSession);
+  const { data } = await API.post<Record<string, unknown>>("/lot-listing", formData, {
+    signal: options?.signal,
+    onUploadProgress: (event: AxiosProgressEvent) => {
+      if (!options?.onUploadProgress || options.signal?.aborted || !isAuthSessionCurrent(authSession)) return;
+      const fraction = typeof event.progress === "number" ? event.progress :
+        typeof event.total === "number" && event.total > 0 ? event.loaded / event.total : 0;
+      // Multipart transport progress is not an acceptance receipt.
+      options.onUploadProgress(Number.isFinite(fraction) ? Math.max(0, Math.min(0.95, fraction)) : 0);
+    },
+  });
+  assertAuthSessionCurrent(authSession);
+  if (options?.signal?.aborted) throw options.signal.reason || new DOMException("The operation was aborted.", "AbortError");
+  assertReportUploadAccepted(data);
+  options?.onUploadProgress?.(1);
+  return data;
+}
+
 export const LotListingService = {
+  createLotListing,
   getLotListings,
   getLotListingById,
   getLotListingProgress,

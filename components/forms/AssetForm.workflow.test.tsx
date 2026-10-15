@@ -5,6 +5,8 @@ import type { AuctioneerWorkItemSetup } from "@/services/auctioneer";
 import type { ReportDraftRecord } from "@/services/reportDrafts";
 import AssetForm from "./AssetForm";
 import type { MixedLot } from "./mixed/types";
+import type { BackgroundUploadRequest } from "@/services/backgroundUploadManager";
+import { advanceAuthSession } from "@/lib/auth-storage";
 
 type DraftProgress = {
   phase: "preparing" | "uploading" | "verifying" | "complete";
@@ -38,6 +40,17 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   toastWarning: vi.fn(),
+  enqueue: vi.fn(),
+  isForegroundRequired: vi.fn(),
+  createDraftId: vi.fn(),
+}));
+
+vi.mock("@/services/backgroundUploadManager", () => ({
+  backgroundUploads: {
+    enqueue: mocks.enqueue,
+    isForegroundRequired: mocks.isForegroundRequired,
+    clearForegroundRequirement: vi.fn(),
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -160,7 +173,7 @@ vi.mock("@/services/reportDrafts", () => ({
     restoreLots: mocks.restoreLots,
     get: mocks.getDraft,
   },
-  createReportDraftClientId: () => "asset-workflow-draft",
+  createReportDraftClientId: mocks.createDraftId,
   getDuplicateLotWarning: () => null,
   getReportDraftDeviceId: () => "asset-workflow-device",
 }));
@@ -309,6 +322,8 @@ function makeAssetResumeDraft(
 describe("AssetForm manual save and submission workflow", () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.isForegroundRequired.mockReturnValue(false);
+    mocks.createDraftId.mockReturnValue("asset-workflow-draft");
     mocks.authUser.mockReturnValue({ _id: "user-asset-workflow", username: "Alex Appraiser", companyName: "Asset Insight QA" });
     mocks.deleteDraftByClientId.mockResolvedValue(undefined);
     mocks.deleteScopedDraft.mockResolvedValue(undefined);
@@ -348,6 +363,88 @@ describe("AssetForm manual save and submission workflow", () => {
     }
   });
 
+  it("closes only after durable handoff and protects the next report from late upload cleanup", async () => {
+    const persistence = deferred<string>();
+    const upload = deferred<Record<string, unknown>>();
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockReturnValueOnce(persistence.promise);
+    mocks.createAsset.mockReturnValueOnce(upload.promise);
+    let sequence = 0;
+    mocks.createDraftId.mockImplementation(() => `independent-asset-${++sequence}`);
+    const view = render(<AssetForm onSuccess={onSuccess} />);
+    await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledOnce());
+    const request = mocks.enqueue.mock.calls[0][0] as BackgroundUploadRequest;
+    expect(request).toMatchObject({ ownerId: "user-asset-workflow", kind: "asset", totalFiles: 1, scopeId: "independent-asset-1" });
+    expect(request.files[0]).toMatchObject({ name: "asset-photo.jpg", size: request.media[0].size, lastModified: 1 });
+    expect(request.draftSnapshot).toMatchObject({ formData: { clientName: "Workflow Client", clientSubmissionId: request.clientSubmissionId }, lots: [{ files: [request.media[0]] }] });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.createAsset).not.toHaveBeenCalled();
+    await act(async () => persistence.resolve("background-job"));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+    expect(onSuccess).toHaveBeenCalledWith(expect.stringContaining("while this tab stays open"));
+    expect(screen.getByLabelText(/Client name/i)).toHaveValue("");
+    expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("No media selected");
+    expect(request.signal?.aborted).toBe(false);
+    fillRequiredReportFields(); addTestMedia();
+    fireEvent.change(screen.getByLabelText(/Client name/i), { target: { value: "Next client" } });
+    fireEvent.change(screen.getByLabelText(/Inspection location/i), { target: { value: "Next yard" } });
+    const lateResult = request.upload(vi.fn(), new AbortController().signal);
+    await act(async () => upload.resolve({ reportId: "accepted-old", jobId: "job-old", status: "processing" }));
+    await lateResult;
+    expect(screen.getByLabelText(/Client name/i)).toHaveValue("Next client");
+    expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("asset-photo.jpg");
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    const nextPersistence = deferred<string>();
+    mocks.enqueue.mockReturnValueOnce(nextPersistence.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledTimes(2));
+    const next = mocks.enqueue.mock.calls[1][0] as BackgroundUploadRequest;
+    expect(next.scopeId).not.toBe(request.scopeId);
+    expect(next.clientSubmissionId).not.toBe(request.clientSubmissionId);
+    expect(next.details.client_name).toBe("Next client");
+    await act(async () => nextPersistence.reject(new Error("Storage unavailable. Retry this same report.")));
+    view.unmount();
+    expect(request.signal?.aborted).toBe(false);
+  });
+
+  it("keeps an ordinary form and media when durable handoff fails", async () => {
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockRejectedValueOnce(new Error("Browser storage is full. Free space and retry this same report."));
+    render(<AssetForm onSuccess={onSuccess} />);
+    await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await screen.findByText(/Browser storage is full/);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.createAsset).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/Client name/i)).toHaveValue("Workflow Client");
+    expect(screen.getByTestId("selected-asset-media")).toHaveTextContent("asset-photo.jpg");
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+  });
+
+  it.each(["cancel", "session", "unmount"] as const)("ignores a late handoff after %s", async (interruption) => {
+    const persistence = deferred<string>();
+    const onSuccess = vi.fn();
+    mocks.enqueue.mockReturnValueOnce(persistence.promise);
+    const view = render(<AssetForm onSuccess={onSuccess} />);
+    await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
+    fireEvent.click(screen.getByRole("button", { name: "Create report" }));
+    await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledOnce());
+    const request = mocks.enqueue.mock.calls[0][0] as BackgroundUploadRequest;
+    if (interruption === "cancel") fireEvent.click(screen.getByRole("button", { name: "Stop upload" }));
+    else if (interruption === "session") advanceAuthSession();
+    else view.unmount();
+    await act(async () => persistence.resolve("late-job"));
+    if (interruption !== "session") expect(request.signal?.aborted).toBe(true);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mocks.toastSuccess).not.toHaveBeenCalled();
+    expect(mocks.deleteScopedDraft).not.toHaveBeenCalled();
+    expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
+  });
+
   it.each([
     { failure: new Error("Network Error"), expected: /connection|network/i },
     { failure: Object.assign(new Error("Request failed with status code 409"), { response: { status: 409, data: { code: "DRAFT_REVISION_CONFLICT", message: "This draft changed on another device. Review the latest saved version." } } }), expected: /version already saved/i },
@@ -371,7 +468,7 @@ describe("AssetForm manual save and submission workflow", () => {
   it.each([{}, { reportId: "unaccepted-placeholder", phase: "upload", status: "uploading" }])("does not clear a form for an incomplete acceptance receipt %j", async (receipt) => {
     const onSuccess = vi.fn();
     mocks.createAsset.mockResolvedValue(receipt);
-    render(<AssetForm onSuccess={onSuccess} />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" onSuccess={onSuccess} />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
@@ -388,7 +485,7 @@ describe("AssetForm manual save and submission workflow", () => {
   it("keeps current data when an earlier accepted report is found", async () => {
     const onSuccess = vi.fn();
     mocks.createAsset.mockResolvedValue({ reportId: "old-report", jobId: "old-job", status: "processed", reusedAcceptance: true });
-    render(<AssetForm onSuccess={onSuccess} />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" onSuccess={onSuccess} />);
     await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
     await screen.findByText(/earlier submission was already accepted/);
@@ -400,7 +497,7 @@ describe("AssetForm manual save and submission workflow", () => {
 
   it.each([true, false])("offers separate saved recovery only for authoritative eligibility %s", async (canCreateSeparate) => {
     mocks.createAsset.mockRejectedValue({ response: { status: 409, data: { code: "UPLOAD_SESSION_REPORT_UNAVAILABLE", data: { sessionId: "old-session", accepted: true, reportAvailable: false, canCreateSeparate } } } });
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
     await screen.findByText(/old submission cannot be reused/);
@@ -413,7 +510,7 @@ describe("AssetForm manual save and submission workflow", () => {
   it("checks an existing report in another tab without closing the unsent form", async () => {
     const onSuccess = vi.fn();
     mocks.createAsset.mockRejectedValue({ response: { status: 409, data: { code: "ACTIVE_REPORT_EXISTS" } } });
-    render(<AssetForm onSuccess={onSuccess} />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" onSuccess={onSuccess} />);
     await waitForResolvedAssetLocation(); fillRequiredReportFields(); addTestMedia();
     fireEvent.click(screen.getByRole("button", { name: "Create report" }));
     const dialog = await screen.findByRole("dialog", { name: "Report already processing" });
@@ -465,6 +562,7 @@ describe("AssetForm manual save and submission workflow", () => {
       }
       fireEvent.click(screen.getByRole("button", { name: "Create Lot & Continue" }));
       await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
+      expect(mocks.enqueue).not.toHaveBeenCalled();
       expect(onAcceptedAndContinue).not.toHaveBeenCalled();
       expect(mocks.deleteDraftByClientId).not.toHaveBeenCalled();
       const details = mocks.createAsset.mock.calls[0][0];
@@ -645,7 +743,7 @@ describe("AssetForm manual save and submission workflow", () => {
 
   it("submits sparse per-lot video counts with every selected clip in lot order", async () => {
     mocks.createAsset.mockResolvedValueOnce({ reportId: "video-report", jobId: "accepted-job", status: "processing" });
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     fireEvent.click(screen.getByRole("button", { name: "Add sparse lot videos" }));
@@ -892,7 +990,7 @@ describe("AssetForm manual save and submission workflow", () => {
         });
       }
     );
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
@@ -902,6 +1000,7 @@ describe("AssetForm manual save and submission workflow", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Uploading your report",
     });
+    await waitFor(() => expect(mocks.createAsset).toHaveBeenCalledOnce());
     expect(mocks.createAsset.mock.calls[0][0].watermark_images).toBe(false);
     expect(dialog).toHaveClass("fixed", "inset-0", "z-[1500]");
     expect(
@@ -968,7 +1067,7 @@ describe("AssetForm manual save and submission workflow", () => {
           return retryUpload.promise;
         }
     );
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
@@ -1022,7 +1121,7 @@ describe("AssetForm manual save and submission workflow", () => {
         },
       })
       .mockResolvedValueOnce({ message: "Accepted", reportId: "accepted-report", jobId: "accepted-job", status: "processing" });
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
@@ -1054,7 +1153,7 @@ describe("AssetForm manual save and submission workflow", () => {
     const cleanup = deferred<void>();
     mocks.createAsset.mockResolvedValueOnce({ message: "Accepted", reportId: "accepted-report", jobId: "accepted-job", status: "processing" });
     mocks.deleteDraftByClientId.mockReturnValueOnce(cleanup.promise);
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
@@ -1174,7 +1273,7 @@ describe("AssetForm manual save and submission workflow", () => {
         else error?.({} as GeolocationPositionError);
       }
     );
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     const location = await waitForResolvedAssetLocation();
 
     fireEvent.click(screen.getByRole("button", { name: "Re-detect" }));
@@ -1192,7 +1291,7 @@ describe("AssetForm manual save and submission workflow", () => {
   });
 
   it("preserves the readable name, exact coordinates, and attribution when the provider fails", async () => {
-    render(<AssetForm />);
+    render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     const location = await waitForResolvedAssetLocation();
     mocks.reverseGeocode.mockRejectedValueOnce(
       new Error("Reverse geocoding unavailable")
@@ -1436,7 +1535,7 @@ describe("AssetForm manual save and submission workflow", () => {
         });
       }
     );
-    const draftView = render(<AssetForm />);
+    const draftView = render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
     await waitFor(() => expect(saveSignal).toBeInstanceOf(AbortSignal));
     draftView.unmount();
@@ -1460,7 +1559,7 @@ describe("AssetForm manual save and submission workflow", () => {
         });
       }
     );
-    const submissionView = render(<AssetForm />);
+    const submissionView = render(<AssetForm resumeLocalDraftScopeId="upload-review:asset-inline" />);
     await waitForResolvedAssetLocation();
     fillRequiredReportFields();
     addTestMedia();
