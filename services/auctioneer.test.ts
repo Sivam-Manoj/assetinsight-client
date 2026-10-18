@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import API from "@/lib/api";
-import { AuctioneerService } from "./auctioneer";
+import { AuctioneerService, auctioneerReopenErrorMessage } from "./auctioneer";
 
 vi.mock("@/lib/api", () => ({
   default: {
@@ -415,6 +415,105 @@ describe("AuctioneerService contract close", () => {
       {},
       { _retry: true, timeout: 30_000 }
     );
+  });
+
+  it.each([0, "reopened-epoch-2"])("closes with the exact saved access revision: %s", async (revision) => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: {
+      contractId: "contract-1", closedAt: "2026-10-03T12:00:00.000Z",
+      taskCompleted: false, alreadyCompleted: false, userStatus: "completed",
+    } } });
+    await AuctioneerService.closeContractPart("contract-1", revision);
+    expect(API.post).toHaveBeenCalledExactlyOnceWith("/auctioneer/contracts/contract-1/close-my-part",
+      { accessRevision: revision }, { _retry: true, timeout: 30_000 });
+  });
+
+  it.each([undefined, "old-revision"])("preserves a capture-epoch refusal for close revision %s", async (revision) => {
+    const refusal = { response: { status: 409, data: { code: "auctioneer_contract_capture_changed" } } };
+    vi.mocked(API.post).mockRejectedValueOnce(refusal);
+    await expect(AuctioneerService.closeContractPart("contract-1", revision)).rejects.toBe(refusal);
+    expect(API.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the actual delivery epoch without borrowing a current contract revision", async () => {
+    vi.mocked(API.get).mockResolvedValueOnce({ data: { data: { items: [
+      { workItemId: "old", state: "sent", contract: { accessRevision: "new-contract-revision" } },
+      { workItemId: "new", state: "sent", accessRevision: "saved-revision" },
+    ] } } });
+    const deliveries = await AuctioneerService.getDeliveries();
+    expect(deliveries[0].accessRevision).toBeUndefined();
+    expect(deliveries[1].accessRevision).toBe("saved-revision");
+  });
+
+  it("keeps optional reopen metadata without treating malformed values as permission", async () => {
+    vi.mocked(API.get).mockResolvedValueOnce({ data: { data: { items: [
+      { contractId: "c-1", reopenUntil: "2026-10-27T15:00:00.000Z", eventTime: "09:00", eventClosed: false, accessRevision: 0 },
+      { contractId: "c-2", reopenUntil: {}, eventTime: [], eventClosed: "false", accessRevision: {} },
+    ] } } });
+    const [valid, malformed] = await AuctioneerService.getIncoming();
+    expect(valid).toMatchObject({ reopenUntil: "2026-10-27T15:00:00.000Z", eventTime: "09:00", eventClosed: false, accessRevision: 0 });
+    expect(malformed).toMatchObject({ reopenUntil: undefined, eventTime: undefined, eventClosed: undefined, accessRevision: undefined });
+    expect(valid).not.toHaveProperty("reopen");
+  });
+
+  it("reads fresh capture permission without trusting or sending a client user", async () => {
+    vi.mocked(API.get).mockResolvedValueOnce({ data: { success: true, data: {
+      reopen: { allowed: true, reason: null, reopenUntil: "2026-10-27T15:00:00.000Z" }, accessRevision: "revision-2",
+    } } });
+    await expect(AuctioneerService.getCapturePermission("contract/1")).resolves.toMatchObject({
+      reopen: { allowed: true, reason: null, reopenUntil: "2026-10-27T15:00:00.000Z" }, accessRevision: "revision-2",
+    });
+    expect(API.get).toHaveBeenCalledExactlyOnceWith("/auctioneer/contracts/contract%2F1/capture-permission");
+  });
+
+  it("retains a durable pending reopen check independently of allowed", async () => {
+    vi.mocked(API.get).mockResolvedValueOnce({ data: { success: true, data: {
+      confirmationPending: true, reopen: { allowed: false, reason: null, reopenUntil: null },
+    } } });
+    await expect(AuctioneerService.getCapturePermission("contract-1")).resolves.toMatchObject({
+      confirmationPending: true, reopen: { allowed: false, reopenUntil: null },
+    });
+  });
+
+  it.each([
+    { success: false, data: { reopen: { allowed: true } } },
+    { success: true, data: { reopen: { allowed: "true" } } },
+    { success: true, data: { contractId: "other", reopen: { allowed: true } } },
+    { success: true, data: {} },
+  ])("rejects malformed or mismatched permission: %j", async (data) => {
+    vi.mocked(API.get).mockResolvedValueOnce({ data });
+    await expect(AuctioneerService.getCapturePermission("contract-1")).rejects.toThrow("permission could not be confirmed");
+  });
+
+  it.each([
+    { reopened: true, alreadyOpen: false, accessRevision: 0 },
+    { reopened: false, alreadyOpen: true, accessRevision: "new-revision" },
+  ])("accepts exact reopen receipts and suppresses authentication replay: %j", async (outcome) => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: { contractId: "contract/1", ...outcome } } });
+    await expect(AuctioneerService.reopenContractPart("contract/1")).resolves.toEqual({ contractId: "contract/1", ...outcome });
+    expect(API.post).toHaveBeenCalledExactlyOnceWith("/auctioneer/contracts/contract%2F1/reopen", {}, { _retry: true, timeout: 30_000 });
+  });
+
+  it.each([
+    { contractId: "other" }, { reopened: false }, { alreadyOpen: true },
+    { accessRevision: undefined }, { accessRevision: "" }, { accessRevision: {} },
+    { reopened: "true" },
+  ])("rejects unrelated or incomplete reopen receipts: %j", async (overrides) => {
+    vi.mocked(API.post).mockResolvedValueOnce({ data: { success: true, data: {
+      contractId: "contract-1", reopened: true, alreadyOpen: false, accessRevision: 2, ...overrides,
+    } } });
+    await expect(AuctioneerService.reopenContractPart("contract-1")).rejects.toThrow("Re-opening was not confirmed");
+    expect(API.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("never presents raw reopen transport errors or an unknown server code", () => {
+    for (const error of [
+      new Error("Request failed with status code 409 at http://127.0.0.1/private"),
+      { response: { status: 409, data: { code: "UNKNOWN", message: "http://localhost/private" } } },
+      { response: { status: 409, data: { code: "toString" } } },
+      { response: { data: { message: { secret: "hidden" } } } },
+    ]) {
+      expect(auctioneerReopenErrorMessage(error)).toBe("Re-opening was not confirmed. Refresh Incoming to check this contract before trying again. Your existing reports are unchanged.");
+    }
   });
 
   it("rejects a missing outcome and propagates a refusal unchanged", async () => {

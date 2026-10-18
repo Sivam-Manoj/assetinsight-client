@@ -716,7 +716,7 @@ export default function ReportsPage() {
     deliveryRevisionRef.current += 1;
     try {
       setClosingContractId(contractId);
-      const result = await AuctioneerService.closeContractPart(contractId);
+      const result = await AuctioneerService.closeContractPart(contractId, delivery.accessRevision);
       if (!isCurrent()) return;
       // The server records the close on every one of this user's assigned
       // deliveries for the contract, so every such row changes, not just this
@@ -724,6 +724,7 @@ export default function ReportsPage() {
       setAuctioneerDeliveries((current) =>
         current.map((item) =>
           item.contractId === contractId &&
+          item.accessRevision === delivery.accessRevision &&
           item.contractCompletionScope === "user"
             ? {
                 ...item,
@@ -749,6 +750,10 @@ export default function ReportsPage() {
       }
     } catch (closeError: any) {
       if (!isCurrent()) return;
+      if (closeError?.response?.data?.code === "auctioneer_contract_capture_changed") {
+        toast.error("This contract's access changed after it was re-opened. Refresh Reports, then close your current part when all new deliveries are finished.");
+        return;
+      }
       const serverMessage = closeError?.response?.data?.message;
       toast.error(typeof serverMessage === "string" && serverMessage.trim()
         ? serverMessage.trim()

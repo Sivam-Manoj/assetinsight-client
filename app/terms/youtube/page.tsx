@@ -12,19 +12,19 @@ export default function YoutubeTermsPage() {
       <article className="mx-auto max-w-3xl rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-12 [&_a]:underline [&_a]:underline-offset-4">
         <Link href="/">Back to Asset Insight</Link>
         <h1 className="mt-10 text-3xl font-semibold tracking-tight sm:text-4xl">YouTube feature terms</h1>
-        <p className="mt-5 leading-7 text-slate-600">Last updated 29 September 2026</p>
+        <p className="mt-5 leading-7 text-slate-600">Last updated 18 October 2026</p>
         <div className="mt-8 space-y-8 leading-7 text-slate-600">
           <section>
             <h2 className="text-xl font-semibold text-slate-950">YouTube&apos;s terms and privacy</h2>
             <p className="mt-3">Asset Insight&apos;s optional video publishing feature uses YouTube API Services. By using these YouTube features, you agree to be bound by the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>. Review the <Link href="/privacy#youtube-privacy">Asset Insight privacy notice</Link> and <a href="https://policies.google.com/privacy">Google Privacy Policy</a> before connecting a channel or authorizing a video upload.</p>
           </section>
           <section>
-            <h2 className="text-xl font-semibold text-slate-950">Authority and review</h2>
-            <p className="mt-3">Connect only a channel you are authorized to manage, and submit only videos you have the necessary rights and permissions to share. Connecting makes this channel available to authorized Asset Insight administrators and superadmins for shared management. An administrator must review the individual video title, description, and visibility and explicitly confirm the YouTube action. Review the original footage, audio, and embedded information for confidential or personal content. Connecting a channel or submitting a report is not by itself authorization to upload a video to YouTube.</p>
+            <h2 className="text-xl font-semibold text-slate-950">Authority and automatic public publication</h2>
+            <p className="mt-3">Connect only a channel you are authorized to manage, and submit only videos you have the necessary rights and permissions to share publicly. Connecting makes this channel available to authorized Asset Insight administrators and superadmins for shared management. With a channel connected, explicitly submitting or resubmitting an Asset or Lot Listing report with eligible saved lot videos authorizes automatic public publication to that shared channel. No separate per-video administrator review or visibility choice is required. Publication uses the saved lot number, Title and Description, bounded to YouTube&apos;s limits, without new analysis. Original video bytes include their audio and embedded metadata without privacy redaction. Review that text and footage for personal or confidential content before submitting.</p>
           </section>
           <section>
             <h2 className="text-xl font-semibold text-slate-950">Visibility and report release</h2>
-            <p className="mt-3">Choose Private, Unlisted, or Public. Public content is available to anyone; unlisted content can be viewed and shared by anyone with its link. Private viewing is controlled by YouTube. Asset Insight initially transfers approved videos privately and applies the requested visibility only when the report&apos;s existing approval and release requirements are met. YouTube review, upload limits, or other restrictions may prevent that change. A saved link is not a guarantee of public availability.</p>
+            <p className="mt-3">Public is the automatic publication target. Asset Insight initially transfers eligible videos privately as a staging step, then requests Public only when the current report&apos;s existing approval and release requirements are met. Private staging is not a selectable final visibility setting. Public content is available to anyone. The interface shows Public only after YouTube confirms it; YouTube review, upload limits, channel permissions or other restrictions may prevent that change. A saved link is not a guarantee of public availability. Eligible videos already queued by an explicit report submission, including those formerly waiting for manual review, may resume automatically. The service does not scan unrelated, unsubmitted historical reports to create uploads; capturing media, saving a draft or connecting a channel alone does not submit them.</p>
           </section>
           <section>
             <h2 className="text-xl font-semibold text-slate-950">Stopping access and removing data</h2>

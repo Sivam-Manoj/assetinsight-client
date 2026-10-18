@@ -50,4 +50,18 @@ describe("public privacy notice", () => {
     expect(screen.getByRole("link", { name: "manom8193@gmail.com" })).toHaveAttribute("href", "mailto:manom8193@gmail.com");
     expect(screen.getByRole("link", { name: "Asset Insight YouTube feature terms" })).toHaveAttribute("href", "/terms/youtube");
   });
+
+  it("discloses automatic public submission, original media and truthful staging without promising a separate review", () => {
+    render(<PrivacyPage />);
+    expect(screen.getByText(/explicitly submitting or resubmitting an Asset or Lot Listing report/)).toHaveTextContent("There is no separate per-video administrator review or visibility selection");
+    const sharing = screen.getByText(/Public titles and descriptions use the saved lot number/);
+    expect(sharing).toHaveTextContent("Original video bytes, including audio and embedded metadata");
+    expect(sharing).toHaveTextContent("only after YouTube confirms it");
+    expect(sharing).toHaveTextContent("existing approval and release requirements");
+    expect(screen.getByText(/Eligible videos already queued by an explicit report submission/)).toHaveTextContent("previously waiting for manual review");
+    expect(screen.getByText(/Eligible videos already queued by an explicit report submission/)).toHaveTextContent("does not scan or submit unrelated, unsubmitted historical reports");
+    expect(screen.getByText(/Historical administrator video-review records/)).toHaveTextContent("automatic publication does not create a human review");
+    expect(screen.queryByText(/Each video requires a separate administrator review/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/choose Private, Unlisted, or Public/)).not.toBeInTheDocument();
+  });
 });

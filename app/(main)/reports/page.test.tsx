@@ -1004,7 +1004,7 @@ describe("My Reports thumbnails", () => {
         within(table).getByRole("button", { name: /Close my part of this contract: CV-THUMB-100/ })
       );
 
-      await waitFor(() => expect(mocks.closeContractPart).toHaveBeenCalledWith("contract-thumb"));
+      await waitFor(() => expect(mocks.closeContractPart).toHaveBeenCalledWith("contract-thumb", undefined));
       expect(mocks.closeContractPart).toHaveBeenCalledTimes(1);
       expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Close your part of contract CV-THUMB-100?"));
       await waitFor(() =>
@@ -1026,6 +1026,33 @@ describe("My Reports thumbnails", () => {
       const table = await completedTable();
       fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
       await waitFor(() => expect(within(table).getByText("Sent · contract complete")).toBeInTheDocument());
+    });
+
+    it.each([0, "reopen-revision-2"])("passes the delivery's exact re-open revision to close: %s", async (accessRevision) => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([{ ...sentAssigned, accessRevision }]);
+      mocks.closeContractPart.mockResolvedValue({ contractId: "contract-thumb", closedAt: "2026-10-03T12:00:00.000Z", taskCompleted: false, userStatus: "completed" });
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(mocks.closeContractPart).toHaveBeenCalledExactlyOnceWith("contract-thumb", accessRevision));
+      expect(toast.success).toHaveBeenCalled();
+    });
+
+    it.each([undefined, "old-revision"])("retains the report and explains an epoch refusal for revision %s", async (accessRevision) => {
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      mocks.getAssetReports.mockResolvedValue({ data: [reportWithThumbnail] });
+      mocks.getDeliveries.mockResolvedValue([{ ...sentAssigned, accessRevision }]);
+      mocks.closeContractPart.mockRejectedValue({ response: { status: 409, data: {
+        code: "auctioneer_contract_capture_changed", message: "status code 409 http://127.0.0.1/private",
+      } } });
+      const table = await completedTable();
+      fireEvent.click(within(table).getByRole("button", { name: /Close my part of this contract/ }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("This contract's access changed after it was re-opened. Refresh Reports, then close your current part when all new deliveries are finished."));
+      expect(mocks.closeContractPart).toHaveBeenCalledExactlyOnceWith("contract-thumb", accessRevision);
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(within(table).getByRole("button", { name: /Close my part of this contract/ })).toBeEnabled();
+      expect(within(table).queryByText("Sent · your part closed")).not.toBeInTheDocument();
     });
 
     it("does nothing when the confirmation is declined", async () => {

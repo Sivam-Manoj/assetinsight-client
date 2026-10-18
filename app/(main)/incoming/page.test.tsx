@@ -13,6 +13,7 @@ import type {
   AuctioneerWorkItemSetup,
 } from "@/services/auctioneer";
 import IncomingPage from "./page";
+import { advanceAuthSession } from "@/lib/auth-storage";
 
 const mocks = vi.hoisted(() => ({
   getIncoming: vi.fn(),
@@ -21,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
   getSetup: vi.fn(),
   releaseClaim: vi.fn(),
+  getCapturePermission: vi.fn(),
+  reopenContractPart: vi.fn(),
   routerPush: vi.fn(),
   authUser: {
     _id: "user-1",
@@ -47,7 +50,8 @@ vi.mock("@/context/AuthContext", () => ({
   }),
 }));
 
-vi.mock("@/services/auctioneer", () => {
+vi.mock("@/services/auctioneer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/auctioneer")>();
   const service = {
     getIncoming: mocks.getIncoming,
     getStatus: mocks.getStatus,
@@ -55,8 +59,11 @@ vi.mock("@/services/auctioneer", () => {
     claim: mocks.claim,
     getSetup: mocks.getSetup,
     releaseClaim: mocks.releaseClaim,
+    getCapturePermission: mocks.getCapturePermission,
+    reopenContractPart: mocks.reopenContractPart,
   };
   return {
+    ...actual,
     default: service,
     AuctioneerService: service,
   };
@@ -156,6 +163,8 @@ describe("Incoming", () => {
     mocks.claim.mockReset();
     mocks.getSetup.mockReset();
     mocks.releaseClaim.mockReset();
+    mocks.getCapturePermission.mockReset();
+    mocks.reopenContractPart.mockReset();
     mocks.routerPush.mockReset();
     window.sessionStorage.clear();
     mocks.authUser = {
@@ -173,6 +182,7 @@ describe("Incoming", () => {
     mocks.claim.mockResolvedValue(setupFor(availableItem));
     mocks.getSetup.mockResolvedValue(setupFor(claimedItem));
     mocks.releaseClaim.mockResolvedValue(undefined);
+    mocks.getCapturePermission.mockResolvedValue({ reopen: { allowed: false, reason: null, reopenUntil: null } });
   });
 
   it("shows a lightweight loading state until the queue and status resolve", async () => {
@@ -310,6 +320,187 @@ describe("Incoming", () => {
       fireEvent.click(screen.getByRole("tab", { name: /Completed/ }));
 
       expect(await screen.findByText("Nothing sent back yet")).toBeVisible();
+    });
+  });
+
+  describe("Re-Open completed contracts", () => {
+    const sent = { ...claimedItem, status: "sent" as const };
+    const allowed = { reopen: { allowed: true, reason: null, reopenUntil: "2026-10-27T15:00:00.000Z" } };
+    const reopened = { contractId: sent.contractId, reopened: true, alreadyOpen: false, accessRevision: 2 };
+    async function openCompleted() {
+      await screen.findByRole("tab", { name: /Completed/ });
+      fireEvent.click(screen.getByRole("tab", { name: /Completed/ }));
+      return selectContract(sent.contractNo);
+    }
+
+    it("requires fresh allowed permission rather than an event date or cached row", async () => {
+      mocks.getIncoming.mockResolvedValue([{ ...sent, reopenUntil: "2099-01-01T00:00:00.000Z", eventClosed: false }]);
+      renderIncoming();
+      const panel = await openCompleted();
+      await waitFor(() => expect(mocks.getCapturePermission).toHaveBeenCalledWith(sent.contractId));
+      expect(within(panel).queryByRole("button", { name: "Re-Open" })).toBeNull();
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+    });
+
+    it("uses allowed permission even when the local row has not reached sent status", async () => {
+      mocks.getIncoming.mockResolvedValue([claimedItem]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      renderIncoming();
+      const panel = await selectContract(claimedItem.contractNo);
+      expect(await within(panel).findByRole("button", { name: "Re-Open" })).toBeEnabled();
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+    });
+
+    it("rechecks permission, locks double clicks and selects fresh work with its new revision", async () => {
+      let finish!: (value: typeof reopened) => void;
+      mocks.getIncoming.mockResolvedValueOnce([sent]).mockResolvedValue([
+        sent, { ...availableItem, contractId: sent.contractId, cycleKey: "reopen-cycle", kind: "unknown", accessRevision: 2 },
+      ]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      mocks.reopenContractPart.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      renderIncoming();
+      const panel = await openCompleted();
+      const button = await within(panel).findByRole("button", { name: "Re-Open" });
+      expect(within(panel).getByText(/Re-open until 27 Oct.*9:00/)).toHaveTextContent("Saskatchewan");
+      fireEvent.click(button);
+      fireEvent.click(button);
+      await waitFor(() => expect(mocks.reopenContractPart).toHaveBeenCalledExactlyOnceWith(sent.contractId));
+      expect(mocks.getCapturePermission).toHaveBeenCalledTimes(2);
+      expect(mocks.claim).not.toHaveBeenCalled();
+      await act(async () => finish(reopened));
+      await waitFor(() => expect(screen.getByRole("tab", { name: /Outstanding/ })).toHaveAttribute("aria-selected", "true"));
+      expect(screen.getByRole("button", { name: "Claim and create report" })).toBeEnabled();
+      expect(mocks.getIncoming).toHaveBeenLastCalledWith(true);
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+    });
+
+    it("refuses without posting when the deadline changed after the button appeared", async () => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValueOnce(allowed).mockResolvedValue({
+        reopen: { allowed: false, reason: "LOTS_CLOSING_STARTED", reopenUntil: null },
+      });
+      renderIncoming();
+      const panel = await openCompleted();
+      fireEvent.click(await within(panel).findByRole("button", { name: "Re-Open" }));
+      expect(await within(panel).findByRole("alert")).toHaveTextContent("lots have started closing");
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: `Review ${sent.contractNo}` })).toBeVisible();
+    });
+
+    it.each([
+      ["EVENT_CLOSED", "event is closed or cancelled"],
+      ["PROPOSAL_REVIEWED", "proposal has already been reviewed"],
+      ["REVOKED", "assignment to this contract has been revoked"],
+      ["NO_GRANT", "not currently assigned"],
+      ["AMBIGUOUS_REOPEN_USER", "could not identify your contract assignment"],
+    ])("shows useful refusal guidance for %s", async (code, message) => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      mocks.reopenContractPart.mockRejectedValue({ response: { status: 409, data: { code, message: "http://127.0.0.1/internal Request failed with status code 409" } } });
+      renderIncoming();
+      const panel = await openCompleted();
+      fireEvent.click(await within(panel).findByRole("button", { name: "Re-Open" }));
+      expect(await within(panel).findByRole("alert")).toHaveTextContent(message);
+      expect(within(panel).getByRole("alert")).not.toHaveTextContent(/409|127\.0\.0\.1/);
+      expect(screen.getByRole("button", { name: `Review ${sent.contractNo}` })).toBeVisible();
+    });
+
+    it("offers explicit reconciliation of an uncertain prior request even after allowed becomes false", async () => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValue({
+        confirmationPending: true, reopen: { allowed: false, reason: null, reopenUntil: null },
+      });
+      mocks.reopenContractPart.mockResolvedValue({ ...reopened, reopened: false, alreadyOpen: true });
+      renderIncoming();
+      const panel = await openCompleted();
+      const check = await within(panel).findByRole("button", { name: "Check Re-Open" });
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+      fireEvent.click(check);
+      await waitFor(() => expect(mocks.reopenContractPart).toHaveBeenCalledExactlyOnceWith(sent.contractId));
+      expect(await within(panel).findByRole("alert")).toHaveTextContent("Your part is open");
+      expect(within(panel).getByRole("button", { name: "Refresh Incoming" })).toBeEnabled();
+    });
+
+    it("does not turn a pending check into a new reopen after its old intent is cleared", async () => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValueOnce({
+        confirmationPending: true, reopen: { allowed: false, reason: null, reopenUntil: null },
+      }).mockResolvedValue(allowed);
+      renderIncoming();
+      const panel = await openCompleted();
+      fireEvent.click(await within(panel).findByRole("button", { name: "Check Re-Open" }));
+      expect(await within(panel).findByRole("alert")).toHaveTextContent("previous Re-Open request has already been checked");
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+      expect(await within(panel).findByRole("button", { name: "Re-Open" })).toBeEnabled();
+    });
+
+    it("keeps confirmed access after refresh fails and retries only the queue", async () => {
+      mocks.getIncoming.mockResolvedValueOnce([sent]).mockRejectedValueOnce(new Error("http://localhost/private"))
+        .mockResolvedValue([{ ...availableItem, contractId: sent.contractId, accessRevision: 2 }]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      mocks.reopenContractPart.mockResolvedValue(reopened);
+      renderIncoming();
+      const panel = await openCompleted();
+      fireEvent.click(await within(panel).findByRole("button", { name: "Re-Open" }));
+      expect(await within(panel).findByRole("alert")).toHaveTextContent("Your part is open, but Incoming could not refresh");
+      fireEvent.click(within(panel).getByRole("button", { name: "Refresh Incoming" }));
+      await waitFor(() => expect(screen.getByRole("tab", { name: /Outstanding/ })).toHaveAttribute("aria-selected", "true"));
+      expect(mocks.reopenContractPart).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores a late success after the signed-in session changes", async () => {
+      let finish!: (value: typeof reopened) => void;
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      mocks.reopenContractPart.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      renderIncoming();
+      const panel = await openCompleted();
+      fireEvent.click(await within(panel).findByRole("button", { name: "Re-Open" }));
+      await waitFor(() => expect(mocks.reopenContractPart).toHaveBeenCalledTimes(1));
+      advanceAuthSession();
+      await act(async () => finish(reopened));
+      expect(mocks.getIncoming).toHaveBeenCalledTimes(1);
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+    });
+
+    it("cannot use a previous session's displayed button before React receives the account change", async () => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      renderIncoming();
+      const panel = await openCompleted();
+      const button = await within(panel).findByRole("button", { name: "Re-Open" });
+      advanceAuthSession();
+      fireEvent.click(button);
+      expect(mocks.getCapturePermission).toHaveBeenCalledTimes(1);
+      expect(mocks.reopenContractPart).not.toHaveBeenCalled();
+    });
+
+    it("shows a safe retry when permission cannot be loaded", async () => {
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockRejectedValue(new Error("http://127.0.0.1/private status code 409"));
+      renderIncoming();
+      const panel = await openCompleted();
+      expect(await within(panel).findByRole("status")).toHaveTextContent("Re-open availability could not be checked");
+      expect(within(panel).queryByRole("button", { name: "Re-Open" })).toBeNull();
+      mocks.getCapturePermission.mockResolvedValue(allowed);
+      fireEvent.click(within(panel).getByRole("button", { name: "Check again" }));
+      expect(await within(panel).findByRole("button", { name: "Re-Open" })).toBeEnabled();
+    });
+
+    it("hides previously cached permission until a new selection finishes checking", async () => {
+      let finish!: (value: typeof allowed) => void;
+      mocks.getIncoming.mockResolvedValue([sent]);
+      mocks.getCapturePermission.mockResolvedValueOnce(allowed).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+      renderIncoming();
+      const panel = await openCompleted();
+      await within(panel).findByRole("button", { name: "Re-Open" });
+      fireEvent.click(within(panel).getByRole("button", { name: "Close contract details" }));
+      await waitFor(() => expect(panel).toHaveAttribute("data-open", "false"));
+      await selectContract(sent.contractNo);
+      await waitFor(() => expect(mocks.getCapturePermission).toHaveBeenCalledTimes(2));
+      expect(within(panel).queryByRole("button", { name: "Re-Open" })).toBeNull();
+      await act(async () => finish(allowed));
+      expect(await within(panel).findByRole("button", { name: "Re-Open" })).toBeEnabled();
     });
   });
 

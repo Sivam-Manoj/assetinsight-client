@@ -17,15 +17,18 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import Loading from "@/components/common/Loading";
 import { useAuthContext } from "@/context/AuthContext";
 import AuctioneerService, {
+  type AuctioneerContractReopen,
   type AuctioneerIncomingItem,
   type AuctioneerReportType,
 } from "@/services/auctioneer";
 import { navigateToReportForm } from "@/services/reportFormNavigation";
+import AuctioneerReopenAction from "@/components/reports/AuctioneerReopenAction";
+import { captureAuthSession } from "@/lib/auth-storage";
 import styles from "./Incoming.module.css";
 
 type IncomingData = {
@@ -133,6 +136,17 @@ export default function IncomingPage() {
     useState<AuctioneerReportType>("asset");
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const reopenBusy = useRef<symbol | null>(null);
+  const sessionRevision = captureAuthSession().revision;
+  const onReopenBusyChange = useCallback((busy: boolean, operation: symbol) => {
+    if (busy) {
+      reopenBusy.current = operation;
+      setBusyAction("reopen");
+    } else if (reopenBusy.current === operation) {
+      reopenBusy.current = null;
+      setBusyAction(null);
+    }
+  }, []);
 
   const {
     data,
@@ -234,9 +248,32 @@ export default function IncomingPage() {
     [mutate, mutateGlobal, userId]
   );
 
+  const onReopened = useCallback(async (receipt: AuctioneerContractReopen, isCurrent: () => boolean) => {
+    // Retain the confirmed revision even if the following queue read fails.
+    if (!isCurrent()) return false;
+    await mutate((previous) => previous ? {
+      ...previous,
+      items: previous.items.map((item) => item.contractId === receipt.contractId
+        ? { ...item, accessRevision: receipt.accessRevision } : item),
+    } : previous, { revalidate: false });
+    if (!isCurrent()) return false;
+    const refreshed = await AuctioneerService.getIncoming(true);
+    if (!isCurrent()) return false;
+    const next = refreshed.find((item) => item.contractId === receipt.contractId && item.status !== "sent" &&
+      item.accessRevision === receipt.accessRevision);
+    if (!next) return false;
+    // Adopt the row and its selection together. Publishing the queue first can
+    // unmount the completed row and revoke this very handoff before selection.
+    setSelectedKey(next.cycleKey);
+    setQueueTab("outstanding");
+    await mutate({ items: refreshed, integrationAvailable: true, warning: null }, { revalidate: false });
+    if (userId) void mutateGlobal(["auctioneer/navigation-summary", userId]);
+    return true;
+  }, [mutate, mutateGlobal, userId]);
+
   const openSetup = useCallback(
     async (item: AuctioneerIncomingItem) => {
-      if (!item.workItemId) return;
+      if (!item.workItemId || reopenBusy.current) return;
       setBusyAction(`open:${item.workItemId}`);
       setActionError(null);
       try {
@@ -257,7 +294,7 @@ export default function IncomingPage() {
   );
 
   const claim = useCallback(async () => {
-    if (!selected || selected.status !== "available" || busyAction) return;
+    if (!selected || selected.status !== "available" || busyAction || reopenBusy.current) return;
     setBusyAction(`claim:${selected.cycleKey}`);
     setActionError(null);
     try {
@@ -286,7 +323,7 @@ export default function IncomingPage() {
   }, [busyAction, refresh, reportType, router, selected]);
 
   const release = useCallback(async () => {
-    if (!selected?.workItemId || busyAction) return;
+    if (!selected?.workItemId || busyAction || reopenBusy.current) return;
     setBusyAction(`release:${selected.workItemId}`);
     setActionError(null);
     try {
@@ -306,7 +343,7 @@ export default function IncomingPage() {
   }, [busyAction, refresh, selected]);
 
   const primaryAction = useCallback(() => {
-    if (!selected) return;
+    if (!selected || reopenBusy.current) return;
     const mine = isMine(selected);
     if (
       mine &&
@@ -426,7 +463,7 @@ export default function IncomingPage() {
               <h2 className={styles.tableTitle}>Assigned contract queue</h2>
               <p className={styles.tableSubtitle}>
                 {queueTab === "completed"
-                  ? "Reports already sent back to Auctioneer. Nothing further is needed here."
+                  ? "Reports already sent back to Auctioneer. Select a contract to check whether more lots can be added."
                   : "Each row contains only the lots assigned to your account."}
               </p>
             </div>
@@ -739,6 +776,15 @@ export default function IncomingPage() {
                 ) : null}
 
                 <div className={styles.detailActions}>
+                  {selected.contractId ? (
+                    <AuctioneerReopenAction
+                      key={`${userId}:${sessionRevision}:${selected.cycleKey}`}
+                      item={selected}
+                      busy={Boolean(busyAction)}
+                      onBusyChange={onReopenBusyChange}
+                      onReopened={onReopened}
+                    />
+                  ) : null}
                   <button
                     className="app-button app-button--primary"
                     disabled={selectedBlocked || Boolean(busyAction)}

@@ -1,5 +1,36 @@
 # Create Lot & Continue
 
+## Re-Open a completed contract (2026-10-17, local)
+
+Select an Incoming row to check current capture permission. **Re-Open**
+appears only after a fresh owner/session-scoped permission read explicitly allows
+it. The optional deadline displays in Saskatchewan time; the browser never grants
+access from its clock, the deadline, or an old completed report. Auctioneer decides
+whether lots have started closing, the event is closed/cancelled, the proposal was
+reviewed, or the user no longer has the assignment.
+
+The action freshly checks permission again, then calls the backend's own-user
+`POST /auctioneer/contracts/:contractId/reopen` with `{}`. It never sends a client
+user ID/name or automatically replays the lifecycle mutation after authentication
+failure. An exact confirmed receipt retains its `accessRevision`; a forced Incoming
+read must return new unsent work with the same revision before the page selects
+it. Extra lots use the existing capture/send/close workflow. Existing reports and
+their lots/media remain separate.
+
+If the server retained an uncertain explicit request, `confirmationPending: true`
+offers **Check Re-Open**, even when `reopen.allowed` is now false because the user
+may already be open. This is an explicit reconciliation, never a page-load POST.
+A confirmed reopen followed by a failed queue refresh offers **Refresh Incoming**;
+that retry reads the queue only. Errors retain the completed row and use actionable
+business guidance rather than raw status codes or internal URLs. Backend support
+must precede the web release; the upstream Auctioneer 2.0 rollout is also required.
+
+Reports' **Close my part** sends the access revision saved with that delivery.
+Old initial-epoch rows retain compatibility with `{}`; after Re-Open, the server
+rejects missing or outdated revisions so a late close cannot finish the new part.
+That refusal keeps the report visible and asks the user to refresh Reports. A
+successful close updates matching-epoch rows only.
+
 ## Incoming contract contacts (2026-10-01)
 
 The Incoming queue and selected-contract details show separate **Customer**,

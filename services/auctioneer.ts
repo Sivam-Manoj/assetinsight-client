@@ -17,7 +17,26 @@ export type AuctioneerPersonRef = {
   email?: string;
 };
 
-export type AuctioneerIncomingItem = {
+export type AuctioneerContractReopenMetadata = {
+  reopenUntil?: string | null;
+  eventTime?: string;
+  eventClosed?: boolean;
+  accessRevision?: string | number;
+};
+
+export type AuctioneerCapturePermission = AuctioneerContractReopenMetadata & {
+  reopen: { allowed: boolean; reason: string | null; reopenUntil: string | null };
+  confirmationPending?: boolean;
+};
+
+export type AuctioneerContractReopen = {
+  contractId: string;
+  reopened: boolean;
+  alreadyOpen: boolean;
+  accessRevision: string | number;
+};
+
+export type AuctioneerIncomingItem = AuctioneerContractReopenMetadata & {
   cycleKey: string;
   workItemId?: string;
   contractId: string;
@@ -66,7 +85,7 @@ export type AuctioneerWorkItemSetup = {
   status?: AuctioneerIncomingStatus;
   reportId?: string;
   canResumeUpload?: boolean;
-  contract: {
+  contract: AuctioneerContractReopenMetadata & {
     id: string;
     contractNo: string;
     customerName: string;
@@ -99,6 +118,8 @@ export type AuctioneerDeliverySummary = {
   /** The Auctioneer contract this delivery belongs to. */
   contractId?: string;
   contractNo?: string;
+  /** Access epoch saved with this delivery; never inferred from another report. */
+  accessRevision?: string | number;
   state: AuctioneerDeliveryState;
   canSend?: boolean;
   canCompleteContract?: boolean;
@@ -184,6 +205,46 @@ function contractDescription(...values: unknown[]): string | undefined {
   )?.trim();
 }
 
+function accessRevision(value: unknown): string | number | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  return undefined;
+}
+
+function reopenMetadata(raw: UnknownRecord, contract: UnknownRecord): AuctioneerContractReopenMetadata {
+  const until = raw.reopenUntil ?? contract.reopenUntil;
+  const eventTime = raw.eventTime ?? contract.eventTime;
+  const eventClosed = raw.eventClosed ?? contract.eventClosed;
+  return {
+    reopenUntil: typeof until === "string" && Number.isFinite(Date.parse(until)) ? until : undefined,
+    eventTime: typeof eventTime === "string" && eventTime.trim() ? eventTime : undefined,
+    eventClosed: typeof eventClosed === "boolean" ? eventClosed : undefined,
+    accessRevision: accessRevision(raw.accessRevision ?? contract.accessRevision),
+  };
+}
+
+const REOPEN_REFUSALS: Record<string, string> = {
+  LOTS_CLOSING_STARTED: "This event's lots have started closing, so this contract can no longer be re-opened.",
+  EVENT_CLOSED: "This event is closed or cancelled, so this contract cannot be re-opened.",
+  PROPOSAL_REVIEWED: "This proposal has already been reviewed. Contact your office before adding more lots.",
+  REVOKED: "Your assignment to this contract has been revoked. Contact your office to check access.",
+  NO_GRANT: "You are not currently assigned to this contract. Contact your office to check access.",
+  AMBIGUOUS_REOPEN_USER: "Auctioneer could not identify your contract assignment. Ask your office to check your user assignment.",
+};
+
+/** Only known business reasons reach this lifecycle action; transport details stay private. */
+export function auctioneerReopenErrorMessage(error: unknown): string {
+  const raw = asRecord(error);
+  const response = asRecord(raw.response);
+  const data = asRecord(response.data);
+  const nested = asRecord(data.data);
+  const code = data.code ?? nested.code ?? raw.code;
+  if (typeof code === "string" && Object.hasOwn(REOPEN_REFUSALS, code)) return REOPEN_REFUSALS[code];
+  if (response.status === 401) return "Your sign-in needs refreshing. Sign in again, then check this contract before re-opening it.";
+  if (response.status === 403) return "You no longer have permission to re-open this contract. Contact your office to check access.";
+  return "Re-opening was not confirmed. Refresh Incoming to check this contract before trying again. Your existing reports are unchanged.";
+}
+
 function normalizeKind(value: unknown, record: UnknownRecord): AuctioneerIncomingKind {
   const kind = textValue(value).toLowerCase();
   if (kind.includes("unknown")) return "unknown";
@@ -233,6 +294,7 @@ function normalizeIncomingItem(value: unknown): AuctioneerIncomingItem {
   const tasks = Array.isArray(item.tasks) ? item.tasks : [];
 
   return {
+    ...reopenMetadata(item, contract),
     cycleKey: cycleKey || contractId,
     workItemId: textValue(
       item.workItemId,
@@ -407,6 +469,7 @@ function normalizeSetup(value: unknown): AuctioneerWorkItemSetup {
     reportId: textValue(raw.reportId, raw.report_id) || undefined,
     canResumeUpload: typeof raw.canResumeUpload === "boolean" ? raw.canResumeUpload : undefined,
     contract: {
+      ...reopenMetadata(raw, contract),
       id: textValue(
         raw.contractId,
         raw.contract_id,
@@ -484,6 +547,7 @@ function normalizeDelivery(value: unknown): AuctioneerDeliverySummary {
     reportType: normalizeReportType(raw.reportType),
     contractId: textValue(raw.contractId, raw.contract_id) || undefined,
     contractNo: textValue(raw.contractNo, raw.contract_no) || undefined,
+    accessRevision: accessRevision(raw.accessRevision),
     state: textValue(
       delivery.state,
       delivery.status,
@@ -565,6 +629,44 @@ export const AuctioneerService = {
     };
   },
 
+  async getCapturePermission(contractId: string): Promise<AuctioneerCapturePermission> {
+    const response = await API.get(
+      `/auctioneer/contracts/${encodeURIComponent(contractId)}/capture-permission`
+    );
+    const raw = asRecord(unwrap(response.data));
+    const reopen = asRecord(raw.reopen);
+    if (asRecord(response.data).success !== true || typeof reopen.allowed !== "boolean" ||
+      (raw.contractId !== undefined && raw.contractId !== contractId)) {
+      throw new Error("Re-open permission could not be confirmed.");
+    }
+    return {
+      ...reopenMetadata(raw, {}),
+      confirmationPending: raw.confirmationPending === true,
+      reopen: {
+        allowed: reopen.allowed === true,
+        reason: typeof reopen.reason === "string" ? reopen.reason : null,
+        reopenUntil: typeof reopen.reopenUntil === "string" && Number.isFinite(Date.parse(reopen.reopenUntil))
+          ? reopen.reopenUntil : null,
+      },
+    };
+  },
+
+  async reopenContractPart(contractId: string): Promise<AuctioneerContractReopen> {
+    const response = await API.post(
+      `/auctioneer/contracts/${encodeURIComponent(contractId)}/reopen`,
+      {},
+      { _retry: true, timeout: 30_000 } as RetriableAxiosConfig
+    );
+    const raw = asRecord(unwrap(response.data));
+    const revision = accessRevision(raw.accessRevision);
+    if (asRecord(response.data).success !== true || raw.contractId !== contractId ||
+      typeof raw.reopened !== "boolean" || typeof raw.alreadyOpen !== "boolean" ||
+      raw.reopened === raw.alreadyOpen || revision === undefined) {
+      throw new Error("Re-opening was not confirmed.");
+    }
+    return { contractId, reopened: raw.reopened, alreadyOpen: raw.alreadyOpen, accessRevision: revision };
+  },
+
   async claim(cycleKey: string, reportType: AuctioneerReportType) {
     const response = await API.post(
       `/auctioneer/incoming/${encodeURIComponent(cycleKey)}/claim`,
@@ -643,11 +745,15 @@ export const AuctioneerService = {
    * who is closing is sent from here.
    */
   async closeContractPart(
-    contractId: string
+    contractId: string,
+    revision?: string | number
   ): Promise<AuctioneerContractPartClose> {
+    if (revision !== undefined && accessRevision(revision) === undefined) {
+      throw new Error("Contract access changed. Refresh Reports before closing your part.");
+    }
     const response = await API.post(
       `/auctioneer/contracts/${encodeURIComponent(contractId)}/close-my-part`,
-      {},
+      revision === undefined ? {} : { accessRevision: revision },
       { _retry: true, timeout: 30_000 } as RetriableAxiosConfig
     );
     const raw = asRecord(unwrap(response.data));

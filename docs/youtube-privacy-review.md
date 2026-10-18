@@ -1,5 +1,45 @@
 # YouTube privacy controls and production checklist
 
+## Automatic public publication correction — 18 October 2026 (local, not deployed)
+
+The current `/privacy` and `/terms/youtube` source supersedes the earlier per-video
+review/visibility promises below. With the shared channel connected, explicit
+Asset/Lot Listing submission or resubmission authorizes eligible saved lot videos
+for automatic publication. The system uses the saved lot number, Title and
+Description (bounded to provider limits) and sends unchanged original video bytes,
+including audio and embedded metadata, without privacy redaction. No new analysis
+or fabricated human-review audit is introduced. Users must review saved text and
+footage before submitting and have rights to share that content publicly.
+
+Transfers stage privately, then request Public only after the current report
+meets its existing approval/release requirements. Public remains provider-confirmed,
+not inferred from an accepted upload or saved URL. Previously submitted queued
+receipts, including old pending-review receipts, may resume automatically; no scan
+of unrelated unsubmitted historical reports creates new transfers. Same-session
+recovery, uncertain-final duplicate prevention, original media/ZIP retention,
+Google revocation/erase controls, suppression receipts and separate YouTube Studio
+deletion remain. Privacy copy does not claim Google approval or live eligibility.
+
+Both pages remain static anonymous/pending-device routes. Public contact, device
+security disclosures, account/data removal and direct Google/YouTube links are
+unchanged. Deploy the tested backend API/workers and matching admin/public web
+copy together; no deployment is implied by these local source edits. Current
+verification is recorded at handoff. The September release and its evidence below
+are historical, not evidence that this October correction is live.
+
+Local October gate: privacy/terms/proxy30 tests, typecheck, lint and a fresh
+Turbopack production build pass. Four Chromium anonymous/pending-device scenarios
+at1366/390/320px light/dark verify public200s, keyboard policy round-trips,
+16 retained protected-route redirects, no overlays/overflow/console errors or
+API/external browser requests. Browser plugin was absent; existing Playwright
+was used. Environment-file reads were blocked; QA-only fonts came from installed
+Geist files over loopback after two external mock-format failures. Product
+assets/config and prior Re-Open files are unchanged. No Google/customer/device,
+push or production action. Evidence:
+`/tmp/assetinsight-youtube-public-copy-20261018.uq6WaX/verification.json`.
+
+## Historical release — 29 September 2026
+
 Implemented and deployed, 29 September 2026. The owner approved the public contact
 `manom8193@gmail.com` and the additional review, revocation and cleanup controls.
 Application deployment does not constitute Google approval or channel connection.
