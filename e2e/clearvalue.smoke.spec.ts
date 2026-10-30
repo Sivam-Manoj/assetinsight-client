@@ -512,7 +512,7 @@ for (const kind of ['asset', 'lot-listing'] as const) {
     const setup = { workItemId: "split-work", cycleKey: "split-cycle", clientSubmissionId: "split-submission",
       status: "claimed", reportType: kind === "asset" ? "asset" : "lotListing", kind: "scheduleA",
       contract: { id: "split-contract", contractNo: "SPLIT-100", customerName: "Split client" },
-      lots: [{ sourceKey: "parent-line", lotId: "upstream-parent", lotNumber: "100", description: "Original line" }],
+      lots: [{ sourceKey: "parent-line", lotId: "upstream-parent", lotNumber: "100", description: "Original line", severalLots: true }],
     };
     await page.addInitScript(({ kind, setup }) => {
       sessionStorage.setItem("cv:report-form-handoff:v1", JSON.stringify({ version: 1, kind, auctioneer: setup }));
