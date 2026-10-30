@@ -35,6 +35,8 @@ import {
   parseBrowserCoordinateLocation,
 } from "@/lib/browserLocation";
 import { BrowserLocationService } from "@/services/browserLocation";
+import CurrencySelect from "./CurrencySelect";
+import { currencyForReportLocation, normalizeReportCurrency } from "@/lib/reportCurrency";
 import { useAuthContext } from "@/context/AuthContext";
 import { createLotListing } from "@/services/lotListing";
 import { backgroundUploads } from "@/services/backgroundUploadManager";
@@ -366,7 +368,8 @@ export default function LotListingForm({
     string | null
   >(null);
   const [language, setLanguage] = useState<"en" | "fr" | "es">(continuationDetails?.language ?? "en");
-  const [currency, setCurrency] = useState(continuationDetails?.currency ?? ("CAD"));
+  const [currency, setCurrency] = useState(continuationDetails?.currency ?? currencyForReportLocation(continuationDetails?.location || importedLocation) ?? "CAD");
+  const currencyTouchedRef = useRef(Boolean(auctioneer || continuationDetails?.currency));
   const [bankPhotosEnabled, setBankPhotosEnabled] = useState(continuationDetails?.bankPhotosEnabled ?? (false));
   const [watermarkImages, setWatermarkImages] = useState(continuationDetails?.watermarkImages ?? (false));
 
@@ -562,6 +565,10 @@ export default function LotListingForm({
         setLatitude(coordinates.latitude);
         setLongitude(coordinates.longitude);
         setLocation(resolved.location);
+        if (!currencyTouchedRef.current) {
+          const detected = normalizeReportCurrency(resolved.currency) || currencyForReportLocation(resolved.location);
+          setCurrency(detected || "");
+        }
         setLocationAttribution(
           formatBrowserLocationAttribution(resolved.attribution)
         );
@@ -634,9 +641,9 @@ export default function LotListingForm({
   }, [resolveCoordinatesToLocation]);
 
   useEffect(() => {
-    if (auctioneer) return;
+    if (auctioneer || continuationDetails?.location) return;
     requestCurrentLocation();
-  }, [auctioneer, requestCurrentLocation]);
+  }, [auctioneer, continuationDetails?.location, requestCurrentLocation]);
 
   const buildDraftEnvelope = useCallback(
     async (
@@ -891,6 +898,7 @@ export default function LotListingForm({
       }
       setLanguage(data.language || "en");
       setCurrency(data.currency || "CAD");
+      currencyTouchedRef.current = Boolean(data.currency?.trim());
       setBankPhotosEnabled(Boolean(data.bankPhotosEnabled));
       setWatermarkImages(data.watermarkImages === true);
       setMixedLots(Array.isArray(data.lots) ? data.lots : []);
@@ -1228,7 +1236,8 @@ export default function LotListingForm({
       auctioneer ? "Imported from Auctioneer" : "Detecting current location..."
     );
     setLanguage("en");
-    setCurrency("CAD");
+    setCurrency(currencyForReportLocation(importedLocation) || "CAD");
+    currencyTouchedRef.current = Boolean(auctioneer);
     setBankPhotosEnabled(false);
     setWatermarkImages(false);
     setError(null);
@@ -1330,7 +1339,7 @@ export default function LotListingForm({
         nextErrors.contractNo = "Enter a contract number.";
       }
       if (!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())) {
-        nextErrors.currency = "Use a three-letter currency code such as CAD.";
+        nextErrors.currency = "Choose a currency.";
       }
       if (!hasUsableReportLocation(location)) {
         nextErrors.location =
@@ -2109,25 +2118,19 @@ export default function LotListingForm({
                 id="lot-currency"
                 label="Currency"
                 required
-                hint="Use the three-letter ISO code."
+                hint="Detected from the inspection location. Choose a different currency if needed."
                 error={errors.currency}
               >
-                <input
-                  type="text"
+                <CurrencySelect
                   value={currency}
                   onChange={(event) => {
-                    setCurrency(event.target.value.toUpperCase());
+                    currencyTouchedRef.current = true;
+                    setCurrency(event.target.value);
                     clearFieldError("currency");
                     markDirty();
                   }}
-                  placeholder="CAD"
-                  maxLength={3}
-                  autoComplete="off"
                   disabled={submitting}
-                  className={formClassNames(
-                    formControlClass,
-                    "uppercase"
-                  )}
+                  className={formSelectClass}
                 />
               </FormField>
 
@@ -2163,6 +2166,11 @@ export default function LotListingForm({
                     setLocationStatus("Manually entered inspection location");
                     clearFieldError("location");
                     markDirty();
+                  }}
+                  onBlur={(event) => {
+                    if (currencyTouchedRef.current) return;
+                    const detected = currencyForReportLocation(event.target.value);
+                    if (detected) { setCurrency(detected); markDirty(); }
                   }}
                   placeholder="Detecting browser location…"
                   autoComplete="off"
