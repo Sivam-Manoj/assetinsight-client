@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Building2,
@@ -17,7 +17,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import Loading from "@/components/common/Loading";
 import { useAuthContext } from "@/context/AuthContext";
@@ -28,6 +28,7 @@ import AuctioneerService, {
 } from "@/services/auctioneer";
 import { navigateToReportForm } from "@/services/reportFormNavigation";
 import AuctioneerReopenAction from "@/components/reports/AuctioneerReopenAction";
+import ArrivalPhotoRequests from "./ArrivalPhotoRequests";
 import { captureAuthSession } from "@/lib/auth-storage";
 import { formatCalendarDate } from "@/lib/calendarDate";
 import styles from "./Incoming.module.css";
@@ -135,7 +136,9 @@ function visibleRefreshInterval() {
     : 0;
 }
 
-export default function IncomingPage() {
+function IncomingContent() {
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
   const { user, sessionPresent } = useAuthContext();
   const userId = user?._id || user?.id;
   const requestOwner = userId || (sessionPresent ? "pending-session" : null);
@@ -176,7 +179,33 @@ export default function IncomingPage() {
     }
   );
   const items = data?.items ?? [];
-  const [queueTab, setQueueTab] = useState<"outstanding" | "completed">("outstanding");
+  // Arrival Photo Requests is the third tab (owner, 2026-11-03), opened
+  // straight from a link such as /incoming?tab=arrival after photos are sent.
+  const [queueTab, setQueueTab] = useState<"outstanding" | "completed" | "arrival">("outstanding");
+  useEffect(() => {
+    setQueueTab(requestedTab === "arrival" || requestedTab === "completed" ? requestedTab : "outstanding");
+    setSelectedKey(null);
+  }, [requestedTab]);
+  const selectTab = (tab: "outstanding" | "completed" | "arrival") => {
+    setQueueTab(tab);
+    setSelectedKey(null);
+    router.replace(`/incoming?tab=${tab}`, { scroll: false });
+  };
+  /*
+    Arrival photo requests (owner, 2026-11-03; ArrivalPhotoRequests.tsx): read
+    from Auctioneer on the same schedule as the queue above.
+  */
+  const {
+    data: arrivalRequestsData,
+    error: arrivalRequestsError,
+    isValidating: arrivalRequestsLoading,
+    mutate: refreshArrivalRequests,
+  } = useSWR(
+    requestOwner ? ["auctioneer/arrival-photo-requests", requestOwner] : null,
+    () => AuctioneerService.getArrivalPhotoRequests(),
+    { refreshInterval: visibleRefreshInterval, refreshWhenHidden: false, refreshWhenOffline: false, revalidateOnFocus: true }
+  );
+  const arrivalRequests = arrivalRequestsData ?? [];
 
   const isMine = useCallback(
     (item: AuctioneerIncomingItem) => {
@@ -479,7 +508,9 @@ export default function IncomingPage() {
             <div>
               <h2 className={styles.tableTitle}>Assigned contract queue</h2>
               <p className={styles.tableSubtitle}>
-                {queueTab === "completed"
+                {queueTab === "arrival"
+                  ? "Lots the office asked you to photograph on arrival. The photos are watermarked, not processed, and kept in the lot's Office Only section."
+                  : queueTab === "completed"
                   ? "Reports already sent back to Auctioneer. Select a contract to check whether more lots can be added."
                   : "Only the lots assigned to you. Select a contract to claim or continue it."}
               </p>
@@ -495,8 +526,7 @@ export default function IncomingPage() {
                 role="tab"
                 aria-selected={queueTab === "outstanding"}
                 onClick={() => {
-                  setQueueTab("outstanding");
-                  setSelectedKey(null);
+                  selectTab("outstanding");
                 }}
                 className={`${styles.tab} ${queueTab === "outstanding" ? styles.tabActive : ""}`}
               >
@@ -507,17 +537,34 @@ export default function IncomingPage() {
                 role="tab"
                 aria-selected={queueTab === "completed"}
                 onClick={() => {
-                  setQueueTab("completed");
-                  setSelectedKey(null);
+                  selectTab("completed");
                 }}
                 className={`${styles.tab} ${queueTab === "completed" ? styles.tabActive : ""}`}
               >
                 Completed <span className={styles.tabCount}>{completedItems.length}</span>
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={queueTab === "arrival"}
+                onClick={() => {
+                  selectTab("arrival");
+                }}
+                className={`${styles.tab} ${queueTab === "arrival" ? styles.tabActive : ""}`}
+              >
+                Arrival Photo Requests <span className={styles.tabCount}>{arrivalRequests.length}</span>
+              </button>
             </div>
           </div>
 
-          {!visibleItems.length ? (
+          {queueTab === "arrival" ? (
+            <ArrivalPhotoRequests
+              requests={arrivalRequests}
+              loading={arrivalRequestsLoading}
+              error={arrivalRequestsError ? "Arrival photo requests could not be loaded. Check the connection and try again." : null}
+              onRefresh={() => void refreshArrivalRequests()}
+            />
+          ) : !visibleItems.length ? (
             <div className={styles.emptyTable}>
               <div>
                 <span className={styles.emptyIcon}>
@@ -866,4 +913,8 @@ export default function IncomingPage() {
 
     </div>
   );
+}
+
+export default function IncomingPage() {
+  return <Suspense fallback={<Loading />}><IncomingContent /></Suspense>;
 }
