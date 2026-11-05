@@ -1554,6 +1554,12 @@ export default function PreviewModal({
         </div>
       )}
 
+      {!previewData?.is_merged_report && duplicateLotNumberKeys.size > 0 && (
+        <div role="alert" className="app-alert app-alert--warning mb-4">
+          Duplicate lot numbers {Array.from(duplicateLotNumberKeys).join(", ")} must be corrected before report files can be generated. Edit the affected lot numbers, then Save.
+        </div>
+      )}
+
       {workflowLocked && (
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-[var(--app-info-border)] bg-[var(--app-info-soft)] p-4">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-[var(--app-info)]" />

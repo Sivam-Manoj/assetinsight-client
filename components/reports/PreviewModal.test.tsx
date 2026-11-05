@@ -169,6 +169,23 @@ const lotSelectedMethods = (lot: number) => {
 };
 
 describe("PreviewModal valuation methods", () => {
+  it("warns about explicit duplicate lot numbers before Save and clears after correction without renumbering other lots", async () => {
+    const response = makePreviewResponse();
+    const first = response.data.preview_data.lots[0];
+    first.lot_number = "duplicate-1";
+    response.data.preview_data.lots.push({ ...first, lot_number: "duplicate-1", title: "Second saved lot" });
+    render(<PreviewModal isOpen reportId="duplicate-preview" onClose={vi.fn()}
+      loadPreviewDataOverride={vi.fn().mockResolvedValue(response)} />);
+    await screen.findByDisplayValue("Test Client");
+    expect(screen.getByText(/Duplicate lot numbers duplicate-1 must be corrected/)).toBeInTheDocument();
+    const inputs = screen.getAllByDisplayValue("duplicate-1");
+    fireEvent.change(inputs[inputs.length - 1], { target: { value: "duplicate-2" } });
+    expect(screen.queryByText(/Duplicate lot numbers duplicate-1 must be corrected/)).not.toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("duplicate-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue("duplicate-2").length).toBeGreaterThan(0);
+    expect(mocks.submitForApproval).not.toHaveBeenCalled();
+  });
+
   it("recovers an empty 49-lot selection with a confirmed FLV percentage and preserves all lots on Save", async () => {
     const response: any = makePreviewResponse();
     Object.assign(response.data.preview_data, { include_valuation_table: false, valuation_methods: [], valuation_data: null,
