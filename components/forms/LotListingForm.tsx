@@ -402,8 +402,8 @@ export default function LotListingForm({
      watermarked and not processed by Asset Insight. They are just images that
      are sent to Auctioneer and saved in the 'Office Only' section." The photos
      go to one of this user's arrival photo requests (Incoming → Arrival Photo
-     Requests, which opens this form with ?arrivalRequest=<id> and the switch
-     on). Submit then sends them, and nothing else, through
+     Requests, which opens this form with ?arrivalRequest=<id>). Submit then sends
+     them, and nothing else, through
      AuctioneerService.sendArrivalPhotos: no report, no AI, no draft.
   */
   const [arrivalPhotos, setArrivalPhotos] = useState(false);
@@ -439,6 +439,9 @@ export default function LotListingForm({
   const [arrivalRequestLoading, setArrivalRequestLoading] = useState(false);
   const [arrivalRequestRetry, setArrivalRequestRetry] = useState(0);
   arrivalContextRef.current = { userId, requestId: arrivalRequestId };
+  // The chosen request's contract, shown (locked) in Contract Number while Arrival Photos is on.
+  const arrivalContractNumber =
+    arrivalRequests.find((request) => request.requestId === arrivalRequestId)?.contractNumber?.trim() || "";
   useEffect(() => {
     // Read after mount, so the server render and the first client render agree.
     const fromLink = new URLSearchParams(window.location.search).get("arrivalRequest");
@@ -2337,23 +2340,29 @@ export default function LotListingForm({
             }
           >
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {/*
+                Arrival Photos uses the chosen request's contract as a read-only
+                label. Sending is bound to that request ID; the ordinary report
+                contract remains separate.
+              */}
               <FormField
                 id="lot-contract-number"
                 label="Contract Number"
-                required
-                error={errors.contractNo}
+                required={!arrivalPhotos}
+                hint={arrivalPhotos ? "From the arrival photo request chosen below." : undefined}
+                error={arrivalPhotos ? undefined : errors.contractNo}
               >
                 <input
                   type="text"
-                  value={contractNo}
-                  readOnly={Boolean(auctioneer)}
-                  aria-readonly={Boolean(auctioneer)}
+                  value={arrivalPhotos ? arrivalContractNumber : contractNo}
+                  readOnly={Boolean(auctioneer) || arrivalPhotos}
+                  aria-readonly={Boolean(auctioneer) || arrivalPhotos}
                   onChange={(event) => {
                     setContractNo(event.target.value);
                     clearFieldError("contractNo");
                     markDirty();
                   }}
-                  placeholder="e.g., CTR-2026-001"
+                  placeholder={arrivalPhotos ? "Choose the arrival photo request" : "e.g., CTR-2026-001"}
                   autoComplete="off"
                   disabled={submitting}
                   className={formControlClass}
@@ -2456,9 +2465,9 @@ export default function LotListingForm({
                 />
               </FormField>
 
-              {/* The three switches side by side, Arrival Photos in the middle
-                  (owner, 2026-11-03, marked between the other two). */}
-              <div className={`grid grid-cols-1 gap-5 sm:col-span-2 ${auctioneer ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+              {/* Incoming → Arrival Photo Requests opens the photo-only mode.
+                  Ordinary Lot Listing keeps only its report photo settings. */}
+              <div className="grid grid-cols-1 gap-5 sm:col-span-2 sm:grid-cols-2">
               <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-4 py-3">
                 <FormSwitch
                   id="lot-bank-photos"
@@ -2472,28 +2481,6 @@ export default function LotListingForm({
                   disabled={submitting || arrivalPhotos}
                 />
               </div>
-
-              {/* Arrival photos belong to a lot already in Auctioneer, never to
-                  the Auctioneer contract this form may be capturing. */}
-              {!auctioneer ? <div
-                className={`rounded-lg border px-4 py-3 ${arrivalPhotos ? "border-violet-400 bg-violet-50" : "border-[var(--app-control-border)] bg-[var(--app-panel-alt)]"}`}
-                data-testid="arrival-photos-switch"
-              >
-                <FormSwitch
-                  id="lot-arrival-photos"
-                  label="Arrival Photos"
-                  description="Choose before adding photos. Sends to the lot's Office Only in Auctioneer without analysis. Use a new form for arrival photos when resuming a draft."
-                  checked={arrivalPhotos}
-                  onChange={(event) => {
-                    if (arrivalModeLocked || arrivalHasMedia) return;
-                    arrivalPhotosRef.current = event.target.checked;
-                    arrivalSentRef.current = false;
-                    setArrivalPhotos(event.target.checked);
-                    if (!event.target.checked) setArrivalRequestId("");
-                  }}
-                  disabled={submitting || !arrivalModeReady || arrivalModeLocked || arrivalHasMedia}
-                />
-              </div> : null}
 
               <div className="rounded-lg border border-[var(--app-control-border)] bg-[var(--app-panel-alt)] px-4 py-3">
                 <FormSwitch

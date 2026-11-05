@@ -1885,7 +1885,7 @@ describe("LotListingForm explicit save and upload workflow", () => {
 describe("arrival photos stay separate from report generation", () => {
   beforeEach(() => {
     mocks.userId = "user-1";
-    mocks.apiGet.mockResolvedValue({ data: { success: true, data: [] } });
+    mocks.apiGet.mockReset().mockResolvedValue({ data: { success: true, data: [] } });
     window.history.replaceState({}, "", "/create/lot-listing?arrivalRequest=request-one");
     mocks.push.mockClear(); mocks.apiPost.mockReset(); mocks.toastSuccess.mockClear();
   });
@@ -1901,7 +1901,7 @@ describe("arrival photos stay separate from report generation", () => {
       ? { success: true, data: { sent: 1, stored: 1, skipped: 0, photoCount: 1 } }
       : { success: false } });
     render(<SWRConfig value={{ provider: () => cache }}><LotListingForm /></SWRConfig>);
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Arrival Photos/ })).toBeChecked());
+    await waitFor(() => expect(screen.getByTestId("arrival-photo-request-picker")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Add test media"));
     fireEvent.click(screen.getByRole("button", { name: "Send Arrival Photos" }));
     if (confirmed) {
@@ -1916,24 +1916,103 @@ describe("arrival photos stay separate from report generation", () => {
     expect(mocks.apiPost).toHaveBeenCalledTimes(1);
     expect(mocks.apiPost.mock.calls[0][0]).toContain("/arrival-photo-requests/request-one/photos");
   });
+  // Owner, 2026-11-04: "remove the arrival photos switch on the website too".
+  it("offers no Arrival Photos switch on an ordinary Lot Listing; Incoming's link is the way in", async () => {
+    window.history.replaceState({}, "", "/create/lot-listing");
+    render(<LotListingForm />);
+    await screen.findByLabelText(/^Contract Number/);
+    expect(screen.queryByRole("checkbox", { name: /^Arrival Photos/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("arrival-photos-switch")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("arrival-photo-request-picker")).not.toBeInTheDocument();
+  });
+  // Owner, 2026-11-04 (Lot 0615 · Contract 825661): "this will auto populate
+  // contract number right?" The chosen request's contract fills the field, locked.
+  it("fills Contract Number from the chosen request and locks it", async () => {
+    mocks.apiGet.mockResolvedValue({ data: { success: true, data: [{
+      requestId: "request-one", requestedAt: "2026-11-04T19:03:00Z", requestedBy: "Office", lotId: "lot-1",
+      lotNumber: "0615", description: "Office furniture", serialNumber: null, make: null, model: null, year: null,
+      location: null, contractId: "contract-1", contractNumber: "825661", consignorName: null, eventNumber: null,
+      officeOnlyPhotoCount: 0,
+    }] } });
+    render(<LotListingForm />);
+    await waitFor(() => expect(screen.getByTestId("arrival-photo-request-picker")).toBeInTheDocument());
+    const contract = screen.getByLabelText(/^Contract Number/);
+    await waitFor(() => expect(contract).toHaveValue("825661"));
+    expect(contract).toHaveAttribute("readonly");
+    expect(contract).not.toBeRequired();
+  });
+  it("changes the locked contract with the selected request and sends only to that request", async () => {
+    mocks.apiGet.mockResolvedValue({ data: { success: true, data: [
+      { requestId: "request-one", contractNumber: "00123", lotNumber: "1", description: "First lot" },
+      { requestId: "request-two", contractNumber: " 00456-A ", lotNumber: "2", description: "Second lot" },
+    ] } });
+    mocks.apiPost.mockResolvedValue({ data: { success: true, data: { sent: 1, stored: 1, skipped: 0, photoCount: 1 } } });
+    render(<LotListingForm />);
+    const contract = await screen.findByLabelText(/^Contract Number/);
+    await waitFor(() => expect(contract).toHaveValue("00123"));
+    fireEvent.change(screen.getByLabelText(/^Arrival photo request/), { target: { value: "request-two" } });
+    expect(contract).toHaveValue("00456-A");
+    expect(contract).toHaveAttribute("readonly");
+    fireEvent.click(screen.getByText("Add test media"));
+    fireEvent.click(screen.getByRole("button", { name: "Send Arrival Photos" }));
+    await waitFor(() => expect(mocks.apiPost).toHaveBeenCalledOnce());
+    expect(mocks.apiPost.mock.calls[0][0]).toContain("/arrival-photo-requests/request-two/photos");
+    expect((mocks.apiPost.mock.calls[0][1] as FormData).has("contractNo")).toBe(false);
+  });
+  it("keeps the contract blank and sending paused while the request list loads, then uses its current value", async () => {
+    const response = deferred<unknown>();
+    mocks.apiGet.mockReturnValue(response.promise);
+    render(<LotListingForm />);
+    const contract = await screen.findByLabelText(/^Contract Number/);
+    expect(contract).toHaveValue("");
+    expect(contract).toHaveAttribute("readonly");
+    fireEvent.click(screen.getByText("Add test media"));
+    fireEvent.click(screen.getByRole("button", { name: "Send Arrival Photos" }));
+    expect(mocks.apiPost).not.toHaveBeenCalled();
+    await act(async () => response.resolve({ data: { success: true, data: [
+      { requestId: "request-one", contractNumber: "REQUEST-123", lotNumber: "1", description: "Requested lot" },
+    ] } }));
+    expect(contract).toHaveValue("REQUEST-123");
+    expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("lot-photo.jpg");
+  });
+  it("does not turn a restored report draft into Arrival Photos because of the page query", async () => {
+    mocks.restoreLots.mockResolvedValue([]);
+    const draft = makeLotResumeDraft();
+    render(<LotListingForm resumeDraft={draft} />);
+    const contract = await screen.findByLabelText(/^Contract Number/);
+    expect(contract).toHaveValue("LOT-RESTORE-1");
+    expect(contract).not.toHaveAttribute("readonly");
+    expect(screen.queryByTestId("arrival-photo-request-picker")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Lot Listing" })).toBeInTheDocument();
+    expect(mocks.apiGet).not.toHaveBeenCalled();
+  });
+  it("retains the assigned Auctioneer contract even when the page has an Arrival query", async () => {
+    render(<LotListingForm auctioneer={makeAuctioneerSetup("scheduleA")} />);
+    const contract = await screen.findByLabelText(/^Contract Number/);
+    expect(contract).toHaveValue("IMPORTED-100");
+    expect(contract).toHaveAttribute("readonly");
+    expect(screen.queryByTestId("arrival-photo-request-picker")).not.toBeInTheDocument();
+    expect(screen.getByTestId("listing-source-locks")).toHaveTextContent('"sourceMappedLots":true');
+    expect(mocks.apiGet).not.toHaveBeenCalled();
+  });
   it("retains photos and refuses a false success response", async () => {
     mocks.apiPost.mockResolvedValue({ data: { success: false } });
     render(<LotListingForm />);
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Arrival Photos/ })).toBeChecked());
+    await waitFor(() => expect(screen.getByTestId("arrival-photo-request-picker")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Add test media"));
     fireEvent.click(screen.getByRole("button", { name: "Send Arrival Photos" }));
     await screen.findByText(/Auctioneer did not confirm all the photos/);
     expect(screen.getByTestId("selected-listing-media")).toHaveTextContent("lot-photo.jpg");
     expect(mocks.push).not.toHaveBeenCalled();
     expect(mocks.toastSuccess).not.toHaveBeenCalled();
-    expect(screen.getByRole("checkbox", { name: /^Arrival Photos/ })).toBeDisabled();
+    expect(screen.queryByRole("checkbox", { name: /^Arrival Photos/ })).not.toBeInTheDocument();
     expect(mocks.apiPost.mock.calls[0][0]).toContain("/arrival-photo-requests/request-one/photos");
   });
   it("does not route a late successful response into a changed account", async () => {
     let resolve!: (value: unknown) => void;
     mocks.apiPost.mockReturnValue(new Promise((done) => { resolve = done; }));
     const view = render(<LotListingForm />);
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: /^Arrival Photos/ })).toBeChecked());
+    await waitFor(() => expect(screen.getByTestId("arrival-photo-request-picker")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Add test media"));
     fireEvent.click(screen.getByRole("button", { name: "Send Arrival Photos" }));
     await waitFor(() => expect(mocks.apiPost).toHaveBeenCalled());
